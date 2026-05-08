@@ -1,42 +1,54 @@
-# Necesary files for build
+# KuoteSuite Frontend
 
-For this project to build succesfully please verify that you have the latest auth-config.ts file. This file is to be added to the .app/ directory.
+This is the Angular 12 frontend for KuoteSuite.
 
-# Gui
+## Development
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 12.2.2.
+```bash
+npm ci
+npm start
+```
 
-## Development server
+Default URL:
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The app will automatically reload if you change any of the source files.
-
-## Code scaffolding
-
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+```text
+http://localhost:4200
+```
 
 ## Build
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+```bash
+npm run build
+```
 
-## Running unit tests
+## Local Login
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+The frontend now uses a simple local development login through `src/app/_services/auth.service.ts`.
 
-## Running end-to-end tests
+Built-in users:
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+- Admin
+- Sales
+- Project Manager
+- Technician
 
-## Further help
+This is only for local development. It is not production authentication.
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
+## API Endpoint
 
-## MSAL Dependency
-``` npm install @azure/msal-browser @azure/msal-angular@latest```
+The frontend API base URL is configured in:
 
-## Material Design Dependency
-``` npm i @angular/material @angular/cdk @angular/animations```
+```text
+src/environments/environment.ts
+src/environments/environment.prod.ts
+```
 
-## Environment Variables
-- Defined in environments.ts
--  msAuthority : {URL OF MS Auth login}
--  msClientId :  {MSAL provided ID}
+Default:
+
+```text
+http://localhost:3000
+```
+
+## Future Azure/Entra Login
+
+Azure/Entra login should be reintroduced through the local `AuthService` abstraction instead of importing provider SDKs directly into route components. Backend JWT validation must be added before using this app on a company network.

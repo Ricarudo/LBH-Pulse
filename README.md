@@ -34,7 +34,7 @@ DATABASE_MIGRATION_PLAN.md
 | Current database | MySQL 8 |
 | Migration database | PostgreSQL 16 |
 | Migration ORM | Prisma 6.19.3 |
-| Authentication | Microsoft MSAL / Microsoft Entra ID |
+| Authentication | Local development login |
 | Package manager | npm |
 | UI | Angular Material, Angular CDK, custom CSS |
 | Containerization | Docker Compose files are present but still need cleanup |
@@ -43,7 +43,6 @@ DATABASE_MIGRATION_PLAN.md
 
 - Node.js 18 with npm is the recommended runtime for this phase.
 - Docker Desktop is recommended for MySQL/PostgreSQL services.
-- Microsoft Entra ID / Azure AD app registration is needed for real MSAL login.
 
 Newer Node versions may work, but Angular 12 still needs `NODE_OPTIONS=--openssl-legacy-provider` in frontend scripts because its Webpack toolchain predates modern OpenSSL defaults.
 
@@ -56,15 +55,12 @@ cd backend
 copy .env.example .env
 ```
 
-Then update the Microsoft values in `backend/.env`.
+The backend no longer requires Microsoft/Azure auth values for local startup.
 
 Important backend variables:
 
 ```bash
 PORT=3000
-CLIENTID=your-microsoft-app-client-id
-AUTHORITY=https://login.microsoftonline.com/your-tenant-id
-CLIENTSECRET=your-microsoft-app-client-secret
 
 DATABASE_HOST=localhost
 MYSQL_HOST=localhost
@@ -81,14 +77,29 @@ POSTGRES_PASSWORD=kuotesuite_dev_password
 POSTGRES_DB=kuotesuite
 ```
 
-Frontend MSAL values currently live in:
+Frontend API configuration currently lives in:
 
 ```text
 gui/src/environments/environment.ts
 gui/src/environments/environment.prod.ts
 ```
 
-Review those values before deploying against a real Microsoft tenant.
+Default API URL:
+
+```text
+http://localhost:3000
+```
+
+## Local Development Login
+
+Azure/MSAL login has been removed from the active runtime path. The Angular app now provides a local development login with four built-in users:
+
+- Admin
+- Sales
+- Project Manager
+- Technician
+
+This login is frontend-only and is not secure enough for production or company-network deployment. Backend API routes are still unprotected until JWT validation and role enforcement are added.
 
 ## Install Dependencies
 
@@ -206,6 +217,7 @@ Read `DATABASE_MIGRATION_PLAN.md` before converting routes.
 - Backend routes still open MySQL connections at route-module import time.
 - Several backend SQL statements interpolate request data directly.
 - Backend API routes are not protected by backend authentication middleware.
+- Local development login is frontend-only and should be replaced or backed by server-side token validation before company use.
 - Supplier routes exist but are not mounted by the backend app.
 - Frontend services reference labor/material cost endpoints that do not appear to exist in the backend.
 - The frontend remains on Angular 12 and has not been migrated to a modern Angular version.
@@ -220,7 +232,7 @@ Read `DATABASE_MIGRATION_PLAN.md` before converting routes.
 2. Add focused backend tests for the migrated items route.
 3. Create a shared backend database client/service layer.
 4. Replace route-level SQL interpolation with Prisma or parameterized queries.
-5. Add backend authentication and authorization middleware.
+5. Add backend authentication and authorization middleware with JWT validation.
 6. Continue PostgreSQL migration route by route.
 7. Modernize Docker Compose for local-network hosting.
 8. Expand CRM features only after the backend/database foundation is stable.

@@ -1,13 +1,15 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { protectedResources } from '../auth-config';
+import { apiConfig } from '../auth-config';
+import { AuthService } from './auth.service';
+import { of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 
 //Models
 import { Lead } from '../_models/lead';
 import { Client, ClientSite, PointOfContact } from '../_models/client';
 import { Quote } from '../_models/quote';
 import { User } from '../_models/user';
-import { take } from 'rxjs/operators';
 import { Item } from '../_models/item';
 import { Entry, LaborCost } from '../_models/entry';
 
@@ -21,7 +23,7 @@ import { Entry, LaborCost } from '../_models/entry';
     client_id: number;
     client_site_id: number;
     point_of_contact_id: number;
-    url = protectedResources.quoteSuiteApi.endpoint;
+    url = apiConfig.endpoint;
     
     //States
     states: { [key: string]: string } = {
@@ -43,7 +45,7 @@ import { Entry, LaborCost } from '../_models/entry';
  
 
 
-    constructor(private http: HttpClient) {
+    constructor(private http: HttpClient, private authService: AuthService) {
       this.clients = [];
       this.client_id = 0;
       this.client_site_id = 0;
@@ -58,11 +60,36 @@ import { Entry, LaborCost } from '../_models/entry';
      //---- USERS
 
     getUsers() { 
-      return this.http.get<User[]>(this.url + "/users", this.httpOptions);               
+      const localUsers = this.authService.getLocalApiUsers();
+
+      return this.http.get<User[]>(this.url + "/users", this.httpOptions)
+        .pipe(
+          map((users: User[]) => this.mergeUsers(users || [], localUsers)),
+          catchError(() => of(localUsers))
+        );               
     }
 
     getUser(user_id: String) { 
-      return this.http.get<User[]>(this.url + "/users/'"+user_id+"'", this.httpOptions);               
+      const localUser = this.authService.getLocalUserById(String(user_id));
+
+      if (localUser) {
+        return of([{
+          user_id: localUser.id,
+          name: localUser.name,
+          email: localUser.email
+        }]);
+      }
+
+      return this.http.get<User[]>(this.url + "/users/"+user_id, this.httpOptions);               
+    }
+
+    private mergeUsers(users: User[], localUsers: User[]): User[] {
+      const mergedUsers = new Map<string, User>();
+
+      localUsers.forEach((user) => mergedUsers.set(user.user_id, user));
+      users.forEach((user) => mergedUsers.set(user.user_id, user));
+
+      return Array.from(mergedUsers.values());
     }
 
     createUser(user: any){

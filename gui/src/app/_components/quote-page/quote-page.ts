@@ -20,9 +20,9 @@ import { Client, ClientSite, PointOfContact } from 'src/app/_models/client';
 //Services
 import { HttpRequestService } from 'src/app/_services/httpRequest.service';
 import { Item } from 'src/app/_models/item';
-import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
-import { AuthenticationResult, EventMessage, EventType, InteractionStatus } from '@azure/msal-browser';
-import { filter, subscribeOn, takeUntil } from 'rxjs/operators';
+import { AuthService } from 'src/app/_services/auth.service';
+import { roles } from 'src/app/auth-config';
+import { subscribeOn } from 'rxjs/operators';
 
 //Components
 import { ClientManagerComponent } from '../client-manager/client-manager';
@@ -119,7 +119,7 @@ export class QuotePageComponent implements OnInit {
   
 
   constructor(private route: ActivatedRoute, private router: Router, private service: HttpRequestService,private calculator: CostCalculator, 
-    private fb:FormBuilder, public dialog: MatDialog, private authService: MsalService,private msalBroadcastService: MsalBroadcastService) { 
+    private fb:FormBuilder, public dialog: MatDialog, private authService: AuthService) { 
     this.bomForm = this.fb.group({
       billEntries: this.fb.array([])
     })
@@ -179,15 +179,7 @@ export class QuotePageComponent implements OnInit {
         });
 
       
-        //Get credentials
-        this.msalBroadcastService.inProgress$
-        .pipe(
-          filter((status: InteractionStatus) => status === InteractionStatus.None)
-        )
-        .subscribe(() => {
-          this.checkAndSetActiveAccount();
-          this.getClaims(this.authService.instance.getActiveAccount()?.idTokenClaims);   
-        });
+        this.setCurrentUserContext();
       })
     })
 
@@ -205,24 +197,14 @@ export class QuotePageComponent implements OnInit {
 
 //-------------- Authentication ------------------------------------
 
-
-  checkAndSetActiveAccount() {
-    /**
-     * If no active account set but there are accounts signed in, sets first account to active account
-     * To use active account set here, subscribe to inProgress$ first in your component
-     * Note: Basic usage demonstrated. Your app may require more complicated account selection logic
-     */
-    let activeAccount = this.authService.instance.getActiveAccount();
-
-    if (!activeAccount && this.authService.instance.getAllAccounts().length > 0) {
-      let accounts = this.authService.instance.getAllAccounts();
-      this.authService.instance.setActiveAccount(accounts[0]);
-    }
+  setCurrentUserContext(): void {
+    const user = this.authService.getCurrentUser();
+    this.user_role = user ? user.role : null;
+    this.user_id = user ? user.id : null;
   }
 
-  getClaims(claims: any) {
-    this.user_role = claims ? claims['roles']: null;  
-    this.user_id = claims ? claims['oid']: null;  
+  canManageApproval(): boolean {
+    return this.authService.hasRole([roles.Admin, roles.ProjectManager]);
   }
 
 //-------------- Users, Clients, ClienSites and POC ------------------------------------

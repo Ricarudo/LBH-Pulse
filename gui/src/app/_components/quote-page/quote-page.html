@@ -1,10 +1,10 @@
 <mat-card id="htmlData">
     <div class="top_menu">
-    <button id="approval-manager-btn" *ngIf="user_role == 'User.Manager' && sent_to_approve" class="button action_button top_menu_button" (click)="sendToRevisionQuote()" type="submit">SEND TO REVISION</button>
-    <button id="approval-manager-btn" *ngIf="user_role == 'User.Manager' && sent_to_approve" class="button action_button top_menu_button" (click)="approveQuote()" type="submit"> APPROVE QUOTE</button>
+    <button id="approval-manager-btn" *ngIf="canManageApproval() && sent_to_approve" class="button action_button top_menu_button" (click)="sendToRevisionQuote()" type="submit">SEND TO REVISION</button>
+    <button id="approval-manager-btn" *ngIf="canManageApproval() && sent_to_approve" class="button action_button top_menu_button" (click)="approveQuote()" type="submit"> APPROVE QUOTE</button>
     <button id="approval-btn" *ngIf="!sent_to_approve" class="button action_button top_menu_button" (click)="sendToApprovalQuote()" type="submit"> SEND TO APPROVAL</button>
-    <button id="won-btn" *ngIf="!sent_to_approve || user_role == 'User.Manager'" class="button action_button top_menu_button" (click)="markAsWonQuote()" type="submit">MARK AS WON</button>
-    <button id="lost-btn" *ngIf="!sent_to_approve || user_role == 'User.Manager'" class="button action_button top_menu_button" (click)="markAsLostQuote()" type="submit">MARK AS LOST</button>
+    <button id="won-btn" *ngIf="!sent_to_approve || canManageApproval()" class="button action_button top_menu_button" (click)="markAsWonQuote()" type="submit">MARK AS WON</button>
+    <button id="lost-btn" *ngIf="!sent_to_approve || canManageApproval()" class="button action_button top_menu_button" (click)="markAsLostQuote()" type="submit">MARK AS LOST</button>
     <button id="archive-btn" class="button action_button top_menu_button" (click)="archiveQuote()" type="submit">ARCHIVE QUOTE</button>
     </div>
 

@@ -1,55 +1,61 @@
-
-
-
-<mat-drawer-container class="app-container" >
-    <mat-drawer mode="side" *ngIf="loginDisplay" opened class="app-sidenav" >
-      <div>
-        <img (click)="login()" class="title" src="./assets/resources/kuote_suite_logo.png">
-        <button *ngIf="loginDisplay" class="settings_menu"  mat-icon-button [matMenuTriggerFor]="menu">
-          <mat-icon [ngStyle]="{'color':'white'}">menu</mat-icon>
+<mat-drawer-container class="app-container">
+  <mat-drawer mode="side" *ngIf="loginDisplay" opened class="app-sidenav">
+    <div>
+      <img (click)="redirectToLeads()" class="title" src="./assets/resources/kuote_suite_logo.png">
+      <button *ngIf="loginDisplay" class="settings_menu" mat-icon-button [matMenuTriggerFor]="menu">
+        <mat-icon [ngStyle]="{'color':'white'}">menu</mat-icon>
+      </button>
+      <mat-menu #menu="matMenu" [overlapTrigger]="false">
+        <button mat-menu-item disabled *ngIf="currentUser">
+          <mat-icon>person</mat-icon>
+          <span>{{ currentUser.name }} ({{ currentUser.roleLabel }})</span>
         </button>
-        <mat-menu #menu="matMenu" [overlapTrigger]="false">
-          <button mat-menu-item>
-            <div (click)="logout()">
+        <button mat-menu-item>
+          <div (click)="logout()">
             <mat-icon>exit_to_app</mat-icon>
             <span>Logout</span>
-            </div>
-          </button>
-        </mat-menu>
+          </div>
+        </button>
+      </mat-menu>
+    </div>
+    <div class="sidenav-buttons">
+      <div class="nav-header">
+        <button mat-raised-button class="create-button" [routerLink]="['lead-page/create']">CREATE LEAD</button>
       </div>
-      <div class="sidenav-buttons">
-        <div class="nav-header">
-          <button mat-raised-button class="create-button"  [routerLink]="['lead-page/create']">CREATE LEAD</button>
-        </div>
-        <div class="nav_button_container">
-          <img class="nav_button_image"  src="./assets/resources/leads_icon.png">
-          <div class="nav-button"  (click)="redirectToLeads()">Leads</div>
-        </div>
-        <div class="nav_button_container">
-          <img class="nav_button_image"   src="./assets/resources/quotes_icon.png">
-          <div class="nav-button"  (click)="redirectToQuotes()" >Quotes</div>
-        </div>
-        <div class="nav_button_container">
-          <img class="nav_button_image"  src="./assets/resources/statistics_icon.png">
-          <div mat-button class="nav-button"  (click)="redirectToStatistics()">Statistics</div>
-        </div>
-        <div class="footer">Developed by Team Scriptbase @2021</div>
+      <div class="nav_button_container">
+        <img class="nav_button_image" src="./assets/resources/leads_icon.png">
+        <div class="nav-button" (click)="redirectToLeads()">Leads</div>
       </div>
-    </mat-drawer>
+      <div class="nav_button_container">
+        <img class="nav_button_image" src="./assets/resources/quotes_icon.png">
+        <div class="nav-button" (click)="redirectToQuotes()">Quotes</div>
+      </div>
+      <div class="nav_button_container">
+        <img class="nav_button_image" src="./assets/resources/statistics_icon.png">
+        <div mat-button class="nav-button" (click)="redirectToStatistics()">Statistics</div>
+      </div>
+      <div class="footer">Developed by Team Scriptbase @2021</div>
+    </div>
+  </mat-drawer>
 
-
-  <mat-drawer-content id ="app-main" class="app-main">
-
+  <mat-drawer-content id="app-main" class="app-main">
     <div class="container">
-      <!--This is to avoid reload during acquireTokenSilent() because of hidden iframe -->
       <router-outlet *ngIf="!isIframe || loginDisplay"></router-outlet>
       <div class="login" *ngIf="!loginDisplay">
-        <img class="titlelogin" src="./assets/resources/kuote_suite_logo.png">
-        <img class="login-button" src="./assets/resources/sign_in_with_microsoft.png" (click)="login()">
+        <div class="local-login-card">
+          <img class="titlelogin" src="./assets/resources/kuote_suite_logo.png">
+          <h1>Local Development Login</h1>
+          <p>Select a built-in user to continue. This is not production authentication.</p>
+          <label for="local-user">User</label>
+          <select id="local-user" [(ngModel)]="selectedUserId">
+            <option *ngFor="let user of localUsers" [value]="user.id">
+              {{ user.name }} - {{ user.roleLabel }}
+            </option>
+          </select>
+          <button mat-raised-button color="primary" class="login-button" (click)="login()">Sign In</button>
+        </div>
       </div>
-      <div class="footer-login">A R2 Communications Group Product. | Developed by Team Scriptbased © 2021.</div>
+      <div class="footer-login">A R2 Communications Group Product. | Developed by Team Scriptbase &copy; 2021.</div>
     </div>
-
   </mat-drawer-content>
 </mat-drawer-container>
-

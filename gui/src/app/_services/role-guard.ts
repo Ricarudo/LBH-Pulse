@@ -1,40 +1,31 @@
 import { Injectable } from '@angular/core';
-import { 
+import {
+  ActivatedRouteSnapshot,
   CanActivate,
-  ActivatedRouteSnapshot
+  Router,
+  UrlTree
 } from '@angular/router';
-import { MsalService } from '@azure/msal-angular';
-import { AccountInfo } from '@azure/msal-common';
-
-interface Account extends AccountInfo {
-  idTokenClaims?: {
-    roles?: string[]
-  }
-}
+import { AuthService } from './auth.service';
 
 @Injectable({
-    providedIn: 'root'
-  })
+  providedIn: 'root'
+})
 export class RoleGuardService implements CanActivate {
 
-  constructor(private authService: MsalService) {}
-  
-  canActivate(route: ActivatedRouteSnapshot): boolean {
-    const expectedRoles: any[] = route.data.expectedRole;
-    let account: Account = this.authService.instance.getAllAccounts()[0];
-    console.log(expectedRoles)
+  constructor(private authService: AuthService, private router: Router) {}
 
-    if (!account.idTokenClaims?.roles) {
-      window.alert('Token does not have roles claim. Please ensure that your account is assigned to an app role and then sign-out and sign-in again.');
-      return false;
-    } else 
-      for(let i = 0; i < expectedRoles.length; i++){
-        console.log("ROLE USER HAS = " + expectedRoles[i] )
-        if (account.idTokenClaims?.roles?.includes(expectedRoles[i])) {
-          return true;
-      } 
+  canActivate(route: ActivatedRouteSnapshot): boolean | UrlTree {
+    const expectedRoles = route.data.expectedRole as string[] | undefined;
+
+    if (!this.authService.isAuthenticated()) {
+      return this.router.createUrlTree(['/']);
     }
-    window.alert('You do not have access as expected role is missing. Please ensure that your account is assigned to an app role and then sign-out and sign-in again.');
-    return false;
+
+    if (this.authService.hasRole(expectedRoles)) {
+      return true;
+    }
+
+    window.alert('Your local development user does not have access to this page.');
+    return this.router.createUrlTree(['/']);
   }
 }

@@ -50,15 +50,3 @@ services:
       MYSQL_DB: ${DB_HOST}
     depends_on:
       - database
-    secrets:
-      - CLIENTID
-      - CLIENTSECRET
-      - AUTHORITY
-
-secrets:
-    CLIENTID:
-      external: true
-    CLIENTSECRET:
-      external: true
-    AUTHORITY:
-      external: true

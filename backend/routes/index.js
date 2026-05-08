@@ -3,18 +3,7 @@ var express = require('express');
 var router = express.Router();
 
 router.use('/', (req, res, next) => {
-  //validate user, data, perms
-
-  const authCodeUrlParameters = {
-    scopes: ["user.read"],
-    redirectUri: "http://localhost:6000/redirect",
-  };
-
-  pca.getAuthCodeUrl(authCodeUrlParameters).then((response) => {
-      res.redirect(response);
-  }).catch((error) => console.log(JSON.stringify(error)));
-
-
+  // TODO: Add backend JWT validation here when Azure/Entra auth is reintroduced.
   req.headers["content-type"] = 'application/json';
   console.log("Loaded Index");
   next();//cascades to lower API call with injected headers

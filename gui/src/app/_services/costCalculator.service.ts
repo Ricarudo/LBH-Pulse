@@ -1,8 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { protectedResources } from '../auth-config';
 import { FormArray } from '@angular/forms';
-import { ServerError } from '@azure/msal-common';
 
 @Injectable({
     providedIn: 'root'

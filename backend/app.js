@@ -5,12 +5,10 @@ var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 require('dotenv').config(); // handles our .env variables
-const msal = require('@azure/msal-node');
 
 const FRONTEND_PORT = Number(process.env.FRONTEND_PORT || 4200);
 const FRONTEND_HOST = process.env.FRONTEND_HOST || 'localhost';
 const FRONTEND_API = process.env.FRONTEND || `http://${FRONTEND_HOST}:${FRONTEND_PORT}`;
-const SERVER_PORT = Number(process.env.PORT || 3000);
 
 var app = express();
 // NOTE: bin/www owns server startup. Keeping app.listen out of this module
@@ -31,62 +29,13 @@ app.use('/leads/', require('./routes/leads'));
 app.use('/items/', require('./routes/items'));
 app.use('/clients/', require('./routes/clients'));
 
-// Authentication
-const hasMsalConfig = Boolean(process.env.CLIENTID && process.env.AUTHORITY && process.env.CLIENTSECRET);
-const config = {
-    auth: {
-        clientId: process.env.CLIENTID,
-        authority: process.env.AUTHORITY,
-        clientSecret: process.env.CLIENTSECRET
-    },
-    system: {
-        loggerOptions: {
-            loggerCallback(loglevel, message, containsPii) {
-                console.log(message);
-            },
-            piiLoggingEnabled: false,
-            logLevel: msal.LogLevel.Verbose
-        }
-    }
-};
-
-// Create the MSAL application object only when secrets are present. This keeps
-// local installs/tests from crashing before auth configuration is available.
-const cca = hasMsalConfig ? new msal.ConfidentialClientApplication(config) : null;
-
-app.get('/login', (req, res) => {
-    if (!cca) {
-        return res.status(503).json({ error: 'Microsoft authentication is not configured.' });
-    }
-
-    const authCodeUrlParameters = {
-        scopes: ['user.read'],
-        redirectUri: `http://localhost:${SERVER_PORT}/auth_response`
-    };
-
-    // Get URL to sign user in and consent to scopes needed for application.
-    cca.getAuthCodeUrl(authCodeUrlParameters).then((response) => {
-        res.redirect(response);
-    }).catch((error) => console.log(JSON.stringify(error)));
-});
-
-app.get('/auth_response', (req, res) => {
-    if (!cca) {
-        return res.status(503).json({ error: 'Microsoft authentication is not configured.' });
-    }
-
-    const tokenRequest = {
-        code: req.query.code,
-        scopes: ['user.read'],
-        redirectUri: `http://localhost:${SERVER_PORT}/auth_response`
-    };
-
-    cca.acquireTokenByCode(tokenRequest).then((response) => {
-        console.log('\nResponse: \n:', response);
-        res.sendStatus(200);
-    }).catch((error) => {
-        console.log(error);
-        res.status(500).send(error);
+// TODO: Add backend JWT validation middleware here before company-network use.
+// The current local-development login is frontend-only and does not protect API routes.
+app.get('/auth/status', (req, res) => {
+    res.json({
+        mode: 'local-development',
+        authenticated: false,
+        message: 'Local development login is handled by the Angular frontend. API routes are not protected yet.'
     });
 });
 

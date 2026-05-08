@@ -5,9 +5,16 @@
 
 ## Required Env. Variables
 ---
-- CLIENTID=""
-- AUTHORITY=''
-- CLIENTSECRET=""
+- `PORT`
+- `FRONTEND`
+- `MYSQL_HOST`
+- `MYSQL_USER`
+- `MYSQL_PASSWORD`
+- `MYSQL_DATABASE`
+- `MYSQL_PORT`
+- `DATABASE_URL` for Prisma/PostgreSQL migration work
+
+Local development login is currently handled by the Angular frontend. Azure/Entra settings are no longer required for backend startup.
 ---
 
 ## Running Unit Test

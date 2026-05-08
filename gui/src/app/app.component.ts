@@ -1,12 +1,8 @@
-import { Component, OnInit, Inject, OnDestroy } from '@angular/core';
-import { MsalService, MsalBroadcastService, MSAL_GUARD_CONFIG, MsalGuardConfiguration } from '@azure/msal-angular';
-import { EventMessage, EventType, InteractionType, PopupRequest, RedirectRequest } from '@azure/msal-browser';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
 import { Subject } from 'rxjs';
-import { filter, takeUntil } from 'rxjs/operators';
-import { ActivatedRoute, Router } from '@angular/router';
-
-
-
+import { takeUntil } from 'rxjs/operators';
+import { AuthService, LocalUser } from './_services/auth.service';
 
 @Component({
   selector: 'app-root',
@@ -17,85 +13,61 @@ export class AppComponent implements OnInit, OnDestroy {
   title = 'Kuote Suite';
   isIframe = false;
   loginDisplay = false;
-  
-  
+  localUsers: LocalUser[] = [];
+  currentUser: LocalUser | null = null;
+  selectedUserId = 'local-admin';
+
   private readonly _destroying$ = new Subject<void>();
 
   constructor(
-    @Inject(MSAL_GUARD_CONFIG) private msalGuardConfig: MsalGuardConfiguration,
-    private authService: MsalService,
-    private msalBroadcastService: MsalBroadcastService,  private router: Router, 
-
+    private authService: AuthService,
+    private router: Router
   ) {}
 
   ngOnInit(): void {
     this.isIframe = window !== window.parent && !window.opener;
+    this.localUsers = this.authService.getLocalUsers();
 
-    this.checkAccount();
-
-    /**
-     * You can subscribe to MSAL events as shown below. For more info,
-     * visit: https://github.com/AzureAD/microsoft-authentication-library-for-js/blob/dev/lib/msal-angular/docs/v2-docs/events.md
-     */
-    this.msalBroadcastService.msalSubject$
-      .pipe(
-        filter((msg: EventMessage) => msg.eventType === EventType.LOGIN_SUCCESS || msg.eventType === EventType.ACQUIRE_TOKEN_SUCCESS),
-        takeUntil(this._destroying$)
-      )
-      .subscribe((result) => {
-        this.checkAccount();
-
-      });
-
-      
-
-  }
-
-  checkAccount() {
-    this.loginDisplay = this.authService.instance.getAllAccounts().length > 0;
-  }
-
-  login() {
-    if (this.msalGuardConfig.interactionType === InteractionType.Popup) {
-      if (this.msalGuardConfig.authRequest){
-        this.authService.loginPopup({...this.msalGuardConfig.authRequest} as PopupRequest)
-          .subscribe(() => this.checkAccount());
-        } else {
-          this.authService.loginPopup()
-            .subscribe(() => this.checkAccount());
-      }
-    } else {
-      if (this.msalGuardConfig.authRequest){
-        this.authService.loginRedirect({...this.msalGuardConfig.authRequest} as RedirectRequest);
-      } else {
-        this.authService.loginRedirect();
-      }
+    const existingUser = this.authService.getCurrentUser();
+    if (existingUser) {
+      this.selectedUserId = existingUser.id;
     }
+
+    this.authService.currentUser$
+      .pipe(takeUntil(this._destroying$))
+      .subscribe((user) => {
+        this.currentUser = user;
+        this.loginDisplay = Boolean(user);
+      });
   }
-  redirectToLeads() {
+
+  login(): void {
+    const user = this.authService.login(this.selectedUserId);
+    this.selectedUserId = user.id;
     this.router.navigate(['/lDashboard']);
   }
 
-  redirectToQuotes() {
+  redirectToLeads(): void {
+    this.router.navigate(['/lDashboard']);
+  }
+
+  redirectToQuotes(): void {
     this.router.navigate(['/qDashboard']);
   }
 
-  redirectToStatistics() {
-    this.router.navigate(['/statistics'])
+  redirectToStatistics(): void {
+    this.router.navigate(['/statistics']);
   }
 
-  logout() {
+  logout(): void {
     this.authService.logout();
+    this.router.navigate(['/']);
   }
 
-  getPicture(){
-    // this.profileService.getProfile().subscribe((response: Profile) => {
-    //   const profile = response;
-    //   console.log(profile);
-    // })
+  getPicture(): void {
+    // Future profile providers can hook in here if Azure/Entra login is restored.
   }
 
-  // unsubscribe to events when component is destroyed
   ngOnDestroy(): void {
     this._destroying$.next(undefined);
     this._destroying$.complete();

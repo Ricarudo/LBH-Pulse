@@ -7,9 +7,8 @@ import { Quote } from '../../_models/quote';
 
 //Services
 import { HttpRequestService } from 'src/app/_services/httpRequest.service';
-import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
-import { AuthenticationResult, EventMessage, EventType, InteractionStatus } from '@azure/msal-browser';
-import { filter, takeUntil } from 'rxjs/operators';
+import { AuthService } from 'src/app/_services/auth.service';
+import { roles } from 'src/app/auth-config';
 
 
 @Component({
@@ -26,44 +25,22 @@ export class QDashboardComponent implements OnInit {
   user_role: any =[];
   user_id: any = [];
 
-  constructor(private route: ActivatedRoute, private authService: MsalService, private router: Router, private service: HttpRequestService, private msalBroadcastService: MsalBroadcastService) { }
+  constructor(private route: ActivatedRoute, private authService: AuthService, private router: Router, private service: HttpRequestService) { }
 
   ngOnInit(): void {
-    //this.getAll();
-    this.msalBroadcastService.inProgress$
-      .pipe(
-        filter((status: InteractionStatus) => status === InteractionStatus.None)
-      )
-      .subscribe(() => {
-        this.checkAndSetActiveAccount();
-        this.getClaims(this.authService.instance.getActiveAccount()?.idTokenClaims);
-        if(this.user_role=="User.Estimator"){
-          this.getUserQuotes(this.user_id);
-        }else{
-          this.getAll();
-        }
-        
-      });
-  }
+    this.setCurrentUserContext();
 
-
-  checkAndSetActiveAccount() {
-    /**
-     * If no active account set but there are accounts signed in, sets first account to active account
-     * To use active account set here, subscribe to inProgress$ first in your component
-     * Note: Basic usage demonstrated. Your app may require more complicated account selection logic
-     */
-    let activeAccount = this.authService.instance.getActiveAccount();
-
-    if (!activeAccount && this.authService.instance.getAllAccounts().length > 0) {
-      let accounts = this.authService.instance.getAllAccounts();
-      this.authService.instance.setActiveAccount(accounts[0]);
+    if(this.user_role === roles.Sales || this.user_role === roles.Technician){
+      this.getUserQuotes(this.user_id);
+    }else{
+      this.getAll();
     }
   }
 
-  getClaims(claims: any) {
-    this.user_role = claims ? claims['roles']: null;  
-    this.user_id = claims ? claims['oid']: null;  
+  setCurrentUserContext(): void {
+    const user = this.authService.getCurrentUser();
+    this.user_role = user ? user.role : null;
+    this.user_id = user ? user.id : null;
   }
 
 
