@@ -1,0 +1,87 @@
+[
+    {
+       "id" : 0,
+       "email" : "joe@mail.com",
+       "name" : "Joe",
+       "role" : "Estimator",
+       "phone" : "787-123-4567"
+    },
+    {
+        "id" : 1,
+        "email" : "ana@mail.com",
+        "name" : "Ana",
+        "role" : "Manager",
+        "phone" : "939-123-4567"
+     },
+     {
+        "id" : 2,
+        "email" : "rodrigo@mail.com",
+        "name" : "Rodrigo",
+        "role" : "Estimator",
+        "phone" : "787-690-1234"
+     },
+     {
+        "id" : 3,
+        "email" : "jose@mail.com",
+        "name" : "Jose",
+        "role" : "Estimator",
+        "phone" : "787-123-4567"
+     },
+     {
+         "id" : 4,
+         "email" : "juan@mail.com",
+         "name" : "Juan",
+         "role" : "Manager",
+         "phone" : "939-123-4567"
+      },
+      {
+         "id" : 5,
+         "email" : "hector@mail.com",
+         "name" : "Hector",
+         "role" : "Estimator",
+         "phone" : "787-690-1234"
+      },
+      {
+        "id" : 6,
+        "email" : "alejandro@mail.com",
+        "name" : "Alejandro",
+        "role" : "Estimator",
+        "phone" : "787-123-4567"
+     },
+     {
+         "id" : 7,
+         "email" : "nayda@mail.com",
+         "name" : "Nayda",
+         "role" : "Manager",
+         "phone" : "939-123-4567"
+      },
+      {
+         "id" : 8,
+         "email" : "ricardo@mail.com",
+         "name" : "Ricardo",
+         "role" : "Estimator",
+         "phone" : "787-690-1234"
+      },
+      {
+         "id" : 9,
+         "email" : "manuel@mail.com",
+         "name" : "Manuel",
+         "role" : "Estimator",
+         "phone" : "787-123-4567"
+      },
+      {
+          "id" : 10,
+          "email" : "luis@mail.com",
+          "name" : "Luis",
+          "role" : "Manager",
+          "phone" : "939-123-4567"
+       },
+       {
+          "id" : 11,
+          "email" : "gabriel@mail.com",
+          "name" : "Gabriel",
+          "role" : "Estimator",
+          "phone" : "787-690-1234"
+       }
+
+]

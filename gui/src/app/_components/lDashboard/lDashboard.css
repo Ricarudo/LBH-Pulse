@@ -1,0 +1,27 @@
+
+
+.card-section {
+    margin: 10%;
+    padding: 5%;
+}
+
+.lead-table {
+    width: calc(100% - 300px);
+    top:0;
+    position: fixed;
+    left: 300px;
+  }
+  
+  .mat-row .mat-cell {
+    border-bottom: 1px solid transparent;
+    border-top: 1px solid transparent;
+    cursor: pointer;
+  }
+  
+  .mat-row:hover .mat-cell {
+    border-color: currentColor;
+  }
+  
+  .demo-row-is-clicked {
+    font-weight: bold;
+  }

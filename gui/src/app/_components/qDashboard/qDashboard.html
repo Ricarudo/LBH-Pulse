@@ -1,0 +1,61 @@
+
+
+<table mat-table [dataSource]="quotes" class="mat-elevation-z8 quote-table">
+    <!-- Claim Column -->
+    <ng-container matColumnDef="r2 id">
+      <th mat-header-cell *matHeaderCellDef> R2 ID</th>
+      <td mat-cell *matCellDef="let quote"> {{quote.r2_id}} </td>
+    </ng-container>
+
+     <!-- Value Column -->
+     <ng-container matColumnDef="title">
+      <th mat-header-cell *matHeaderCellDef> Title </th>
+      <td mat-cell *matCellDef="let quote"> {{quote.title}} </td>
+    </ng-container>
+
+     <!-- Value Column -->
+     <ng-container matColumnDef="state_id">
+      <th mat-header-cell *matHeaderCellDef> Status </th>
+      <td mat-cell class="state_cell" *matCellDef="let quote"> {{quote.state_name}} </td>
+    </ng-container>
+  
+    <!-- Value Column -->
+    <ng-container matColumnDef="description">
+      <th mat-header-cell *matHeaderCellDef> Description </th>
+      <td mat-cell *matCellDef="let quote"> {{quote.projectDescription}} </td>
+    </ng-container>
+
+    <!-- Value Column -->
+    <ng-container matColumnDef="client">
+      <th mat-header-cell *matHeaderCellDef> Client </th>
+      <td mat-cell *matCellDef="let quote"> {{quote.client_name}} </td>
+    </ng-container>
+
+    <!-- Value Column -->
+    <ng-container matColumnDef="clientsite">
+      <th mat-header-cell *matHeaderCellDef> Client Site </th>
+      <td mat-cell *matCellDef="let quote"> {{quote.client_site_name}} </td>
+    </ng-container>
+
+    <!-- Value Column -->
+    <ng-container matColumnDef="poc">
+      <th mat-header-cell *matHeaderCellDef> Point of Contact </th>
+      <td mat-cell *matCellDef="let quote"> {{quote.point_of_contact_name}} </td>
+    </ng-container>
+
+    <!-- Value Column -->
+    <ng-container matColumnDef="dateReceived">
+      <th mat-header-cell *matHeaderCellDef> Date Received </th>
+      <td mat-cell *matCellDef="let quote"> {{quote.dateReceived}} </td>
+    </ng-container>
+
+    <!-- Value Column -->
+    <ng-container matColumnDef="dueDate">
+      <th mat-header-cell *matHeaderCellDef> Date Due </th>
+      <td mat-cell *matCellDef="let quote"> {{quote.dueDate}} </td>
+    </ng-container>
+
+  
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row (click)="getQuotePage(quote.quote_id)" *matRowDef="let row; let quote; columns: displayedColumns;"></tr>
+</table>

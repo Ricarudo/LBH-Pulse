@@ -1,0 +1,384 @@
+<mat-card id="htmlData">
+    <div class="top_menu">
+    <button id="approval-manager-btn" *ngIf="user_role == 'User.Manager' && sent_to_approve" class="button action_button top_menu_button" (click)="sendToRevisionQuote()" type="submit">SEND TO REVISION</button>
+    <button id="approval-manager-btn" *ngIf="user_role == 'User.Manager' && sent_to_approve" class="button action_button top_menu_button" (click)="approveQuote()" type="submit"> APPROVE QUOTE</button>
+    <button id="approval-btn" *ngIf="!sent_to_approve" class="button action_button top_menu_button" (click)="sendToApprovalQuote()" type="submit"> SEND TO APPROVAL</button>
+    <button id="won-btn" *ngIf="!sent_to_approve || user_role == 'User.Manager'" class="button action_button top_menu_button" (click)="markAsWonQuote()" type="submit">MARK AS WON</button>
+    <button id="lost-btn" *ngIf="!sent_to_approve || user_role == 'User.Manager'" class="button action_button top_menu_button" (click)="markAsLostQuote()" type="submit">MARK AS LOST</button>
+    <button id="archive-btn" class="button action_button top_menu_button" (click)="archiveQuote()" type="submit">ARCHIVE QUOTE</button>
+    </div>
+
+   
+    <mat-card-title>Quote {{quote.r2_id}} <div class="state">({{this.quoteForm.value.state_name}})</div></mat-card-title>
+    <form [formGroup]="quoteForm">
+      <div class="row first_row">
+        <mat-form-field appearance="outline" class='form-input' id="title">
+            <mat-label> Quote Title</mat-label>
+            <input matInput placeholder="Title placeholder"  type="text" formControlName="title">
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class='form-input' id="assigned_employee">
+        <mat-label > Assigned Employee</mat-label>
+        <mat-select (click)="getAllUsers()" [(value)]="user_selected" >
+            <mat-option (click)="selectUser(user.user_id)" *ngFor="let user of users" [value]="user.user_id">
+                {{user.name}}
+            </mat-option>
+        </mat-select>
+        </mat-form-field>
+      </div>
+
+      <div class="row second_row">
+        <mat-form-field appearance="outline" class='form-input' id="date_created">
+          <mat-label>Date Created</mat-label>
+          <input matInput type="date" formControlName="dateCreated" [formControl]="inputFormControl">
+        </mat-form-field>
+  
+
+      <mat-form-field appearance="outline" class='form-input' >
+        <mat-label>Date Received</mat-label>
+        <input matInput type="date" formControlName="dateReceived" [formControl]="inputFormControl">
+      </mat-form-field>
+
+        <mat-form-field appearance="outline" class='form-input'>
+            <mat-label>Due Date</mat-label>
+            <input matInput type="date" formControlName="dueDate">
+        </mat-form-field>
+      </div>
+      <div class="row third_row large_row">
+        <mat-form-field  appearance="outline" class='form-input' id="project_description">
+            <mat-label>Project Description</mat-label>
+             <textarea matInput value={{quote.projectDescription}}></textarea>
+        </mat-form-field>
+      </div>
+   
+
+      <img id="quote_image" src="../assets/resources/R2_Logo_con_icon.png">
+         
+
+      <div class= "row fourth_row">
+        <div class="client_information">  
+          <p class="subheader">Client Information</p>
+          <div class="horizontal_line"><hr/></div>
+        </div>   
+        <mat-form-field appearance="outline" class='form-input' formControlName="client_name" >
+          <mat-label > Client</mat-label>
+          <mat-select formControlName="client_name" (click)="getAllClients()"  (selectionChange)="getAllClients()" >
+            <mat-select-trigger >{{this.quoteForm.value.client_name}}</mat-select-trigger>
+              <mat-option (click)="selectClient(client.client_id)" *ngFor="let client of clients" [value]="client.companyName">
+                  {{client.companyName}}
+                  <button class="settings_menu"  mat-icon-button [matMenuTriggerFor]="menu">
+                    <mat-icon [ngStyle]="{'color':'#B4C1CC'}">more_vert</mat-icon>
+                  </button>
+                  <mat-menu #menu="matMenu" [overlapTrigger]="false">
+                    <button mat-menu-item (click)="getClientInfo(client.client_id)">
+                      <div >
+                      <mat-icon>visibility</mat-icon>
+                      <span>View</span>
+                      </div>
+                    </button>
+                    <button mat-menu-item (click)="editClient(client.client_id)">
+                      <div >
+                      <mat-icon>edit</mat-icon>
+                      <span>Edit</span>
+                      </div>
+                    </button>
+                  </mat-menu>
+              </mat-option>
+              <mat-option><button  class="add_option" (click)="openDialogNewClient()">Add New Client</button></mat-option>
+          </mat-select>
+          </mat-form-field>
+          <button class="info_button"  mat-icon-button (click)="getClientInfo(this.quoteForm.value.client_id)" >
+            <mat-icon [ngStyle]="{'color':'#B4C1CC'}">info</mat-icon>
+        </button>
+  
+          <mat-form-field appearance="outline" class='form-input'>
+              <mat-label > Client Site</mat-label>
+          <mat-select [disabled]="!client_site_enable" formControlName="client_site_name" (click)="getAllClientSites()"  (selectionChange)="getAllClientSites()" >
+            <mat-select-trigger >{{this.quoteForm.value.client_site_name}}</mat-select-trigger>
+              <mat-option (click)="selectClientSite(client_site.client_id)" *ngFor="let client_site of client_sites" [value]="client_site.name">
+                  {{client_site.name}}
+                  <button class="settings_menu"  mat-icon-button [matMenuTriggerFor]="menu">
+                    <mat-icon [ngStyle]="{'color':'#B4C1CC'}">more_vert</mat-icon>
+                  </button>
+                  <mat-menu #menu="matMenu" [overlapTrigger]="false">
+                    <button mat-menu-item (click)="getClientSiteInfo(client_site.client_site_id, client_site.client_id)">
+                      <div >
+                      <mat-icon>visibility</mat-icon>
+                      <span>View</span>
+                      </div>
+                    </button>
+                    <button mat-menu-item (click)="editClientSite(client_site.client_site_id)">
+                      <div >
+                      <mat-icon>edit</mat-icon>
+                      <span>Edit</span>
+                      </div>
+                    </button>
+                  </mat-menu>
+              </mat-option>
+              <mat-option><button  class="add_option" (click)="openDialogNewClientSite()">Add New Client Site</button></mat-option>
+          </mat-select>
+          </mat-form-field> 
+          <button class="info_button"  mat-icon-button (click)="getClientSiteInfo(this.quoteForm.value.client_site_id, this.quoteForm.value.client_id)" >
+            <mat-icon [ngStyle]="{'color':'#B4C1CC'}">info</mat-icon>
+        </button> 
+  
+          <mat-form-field appearance="outline" class='form-input'>
+              <mat-label > Point Of Contact</mat-label>
+              <mat-select [disabled]="!poc_enable" formControlName="point_of_contact_name" (click)="getAllPointOfContacts()"  (selectionChange)="getAllPointOfContacts()" >
+                <mat-select-trigger >{{this.quoteForm.value.point_of_contact_name}}</mat-select-trigger>
+                  <mat-option (click)="selectPointOfContact(poc.point_of_contact_id)" *ngFor="let poc of point_of_contacts" [value]="poc.name">
+                      {{poc.name}}
+                      <button class="settings_menu"  mat-icon-button [matMenuTriggerFor]="menu">
+                        <mat-icon [ngStyle]="{'color':'#B4C1CC'}">more_vert</mat-icon>
+                      </button>
+                      <mat-menu #menu="matMenu" [overlapTrigger]="false">
+                        <button mat-menu-item (click)="getPointOfContactInfo(poc.point_of_contact_id, poc.client_id)">
+                          <div >
+                          <mat-icon>visibility</mat-icon>
+                          <span>View</span>
+                          </div>
+                        </button>
+                        <button mat-menu-item (click)="editPointOfContact(poc.point_of_contact_id)">
+                          <div >
+                          <mat-icon>edit</mat-icon>
+                          <span>Edit</span>
+                          </div>
+                        </button>
+                      </mat-menu>
+                  </mat-option>
+                  <mat-option><button  class="add_option" (click)="openDialogNewPOC()">Add New POC</button></mat-option>
+              </mat-select>
+          </mat-form-field>
+          <button class="info_button"  mat-icon-button (click)="getPointOfContactInfo(this.quoteForm.value.point_of_contact_id, this.quoteForm.value.client_id)" >
+            <mat-icon [ngStyle]="{'color':'#B4C1CC'}">info</mat-icon>
+        </button>
+        </div>
+  
+  
+        
+    </form>
+  <div>
+    <form [formGroup]="bomForm" (ngSubmit)="logAllBillEntries()">
+    
+
+  
+  <table class="table table-bordered" formArrayName="billEntries">
+<div class="bl_container">
+  <div class="bom_table">
+    <div class="bom_header">
+      <! This is the Bill of Material >
+      <div class="bom_header_element">
+        <p><label for="name">Bill Of Materials</label></p>
+        <div class="horizontal_line"><hr/></div>
+      </div>
+      <div class="add_new_entry_button bom_header_element"><button type="button" (click)="addBillEntry()" class="button action_button">Add New Entry</button></div>
+    </div>
+      <div class="shadow_box">
+      <tr *ngFor="let entry of billEntries().controls; let i=index" [formGroupName]="i">
+        <td class="billOfMaterialLine">
+        <! This is the Bill of Material Items >
+          <mat-form-field class="form-input small_input bl_element" >
+            <mat-label > Item</mat-label>
+      
+              <mat-select formControlName="item_id" (click)="getAllItems()"  (selectionChange)="getAllItems()" >
+                <mat-select-trigger >{{entry.value.item_name}}</mat-select-trigger>
+                  <mat-option (click)="selectItem(item.item_id, i)" *ngFor="let item of items" [value]="item.item_id">
+                      {{item.name}}
+                      <button class="settings_menu"  mat-icon-button [matMenuTriggerFor]="menu">
+                        <mat-icon [ngStyle]="{'color':'#B4C1CC'}">more_vert</mat-icon>
+                      </button>
+                      <mat-menu #menu="matMenu" [overlapTrigger]="false">
+                        <button mat-menu-item (click)="getItemInfo(item.item_id)">
+                          <div >
+                          <mat-icon>visibility</mat-icon>
+                          <span>View</span>
+                          </div>
+                        </button>
+                        <button mat-menu-item (click)="editItem(item.item_id)">
+                          <div >
+                          <mat-icon>edit</mat-icon>
+                          <span>Edit</span>
+                          </div>
+                        </button>
+                      </mat-menu>
+                  </mat-option>
+                  <mat-option><button  class="add_option" (click)="openDialogNewItem()">Add New Item</button></mat-option>
+              </mat-select>
+          </mat-form-field>
+        </td> 
+
+      <! This is the Bill of Material Quantity>
+        <td class="billOfMaterialLine">
+            <mat-form-field class='form-input bl_element quantity'>
+            <mat-label >Quantity</mat-label>
+            <input matInput type="number" formControlName="quantity" class="form-control">
+            </mat-form-field>
+        </td>
+
+        <td class="billOfMaterialLine trash">
+          <mat-icon class="delete_button" (click)="removeBillEntry(i)" [ngStyle]="{'color':'gray'}"> delete</mat-icon>
+        </td>
+      </tr>
+    </div>
+  </div>
+  <div class="labor_cost_table">
+    <! This is The Labor cost>
+    <p><label for="name">Labor Costs</label></p>
+    <div class="horizontal_line"><hr/></div>
+    <div class="shadow_box">
+      <tr *ngFor="let entry of billEntries().controls; let i=index" [formGroupName]="i">
+            
+        <td class="lc_element">  
+          <mat-form-field class='form-input bl_element'>
+          <mat-label >Workers</mat-label>
+          <input matInput type="number" formControlName="workers" class="form-control">
+          </mat-form-field>
+        </td>
+
+
+        <td class="lc_element">
+          <mat-form-field class='form-input bl_element '>
+          <mat-label >Unit Hours</mat-label>
+          <input matInput type="number" formControlName="unitHours" class="form-control">
+          </mat-form-field>
+        </td>
+          
+
+        <td class="lc_element">
+          <mat-form-field class='form-input bl_element '>
+          <mat-label>Rate</mat-label>
+          <input matInput  type="number" formControlName="rate" class="form-control">
+          </mat-form-field>
+        </td>
+        <td class="lc_element">
+          <mat-form-field class='form-input bl_element ' >
+          <mat-label>Exit Unit Cost</mat-label>
+          <input matInput  type="number" formControlName="unitLaborCost" class="form-control" [formControl]="inputFormControl" >
+          <span style="color: gray" matPrefix>$&nbsp;</span>
+          </mat-form-field>
+        </td>
+      </tr>
+  </div>
+  </div>
+</div>
+    <div class="mc_header_element">
+      <! This is The Material cost>
+      <p><label for="name">Material Costs</label></p>
+      <div class="horizontal_line"><hr/></div>
+    </div>
+    <div class="shadow_box">
+    <div class="mc_table">
+      <tr *ngFor="let entry of billEntries().controls; let i=index" [formGroupName]="i">
+
+        <td >
+          <mat-form-field class='form-input mc_element'>
+          <mat-label>Material Cost:</mat-label>
+          <input matInput  type="number" formControlName="materialCost" class="form-control" >
+          <span style="color: gray" matPrefix>$&nbsp;</span>
+
+          </mat-form-field>
+        </td>
+
+        <td>
+          <mat-form-field class='form-input mc_element'>
+          <mat-label>Contingency:</mat-label>
+          <input matInput  type="number" formControlName="contingency" class="form-control" [formControl]="inputFormControl"  >
+          </mat-form-field>
+        </td>
+        
+        <td>
+          <mat-form-field class='form-input mc_element'>
+          <mat-label>Taxes:</mat-label>
+          <input matInput  type="number" formControlName="taxes" class="form-control" [formControl]="inputFormControl"  >
+          </mat-form-field>
+        </td>
+
+
+        <td>
+          <mat-form-field class='form-input mc_element'>
+          <mat-label>Freight</mat-label>
+          <input matInput  type="number" formControlName="freight" class="form-control" [formControl]="inputFormControl" >
+          </mat-form-field>
+        </td>
+
+        <td>
+          <mat-form-field class='form-input mc_element'>
+          <mat-label>Profit:</mat-label>
+          <input matInput  type="number" formControlName="profit" class="form-control" >
+          <span style="color: gray" matPrefix>$&nbsp;</span>
+
+          </mat-form-field>
+        </td>
+        
+        <td>
+          <mat-form-field class='form-input mc_element'>
+          <mat-label>Supplier:</mat-label>
+          <input matInput  type="text" formControlName="supplier" class="form-control" >
+          </mat-form-field>
+        </td>
+
+        <td>
+          <mat-form-field class='form-input mc_element'>
+          <mat-label>Exit Cost:</mat-label>
+          <input matInput  type="number" formControlName="exitMaterialCost" class="form-control" [formControl]="inputFormControl" >
+          <span style="color: gray" matPrefix>$&nbsp;</span>
+
+          </mat-form-field>
+        </td>
+
+      </tr>
+    </div>
+  </div>
+</table>
+
+
+<div class="tc_header_element">
+ 
+  <p><label for="name">Total Calculations</label></p>
+  <div class="horizontal_line"><hr/></div>
+</div>
+<div class="shadow_box tc_box">
+
+    <p class="totallabor">Total Labor Cost: ${{roundTwoDecimals(this.totalLaborCost)}} </p>
+    <p class="totallabor">Total Material Cost: ${{roundTwoDecimals(this.totalMaterialCost)}} </p>
+    <p class="totallabor">Total Project Cost: ${{roundTwoDecimals(this.totalProjectCost)}} </p>
+    <p class="totallabor">Total Project Ratio: {{roundTwoDecimals(this.ratio)}} </p>
+
+  </div>
+  
+    <button type="submit" (click)="saveEntries()" class="button action_button">SAVE BOM</button>
+    <button type="submit"class="button action_button pdf_button" (click)="savePDF()">DOWNLOAD PDF</button>
+  </form>
+  </div>
+
+  <p id="proposal_page_title">Proposal Page</p>
+
+  <div class="horizontal_line"><hr/></div>
+
+  
+  <form [formGroup]="quoteForm">
+    <div class="row large_row">
+      <mat-form-field  appearance="outline" class='form-input multiline_input' id="proposal_page">
+          <mat-label>Proposal Page</mat-label>
+           <textarea matInput value={{quote.proposalSpecifications}}  ></textarea>
+      </mat-form-field>
+    </div>
+    <div class="client_information">
+    <p id="comments_title">Comments</p>
+    <div class="horizontal_line"><hr/></div>
+  </div>
+
+
+    <div class="row large_row">
+      <mat-form-field  appearance="outline" class='form-input multiline_input' id="comments">
+          <mat-label>Comments</mat-label>
+           <textarea matInput value={{quote.comments}}  ></textarea>
+      </mat-form-field>
+    </div>
+
+
+  </form>
+  <div class="horizontal_line"><hr/></div>
+
+  <button id="save_button" class="button action_button save_button" (click)="saveQuote()">SAVE QUOTE</button>
+</mat-card>

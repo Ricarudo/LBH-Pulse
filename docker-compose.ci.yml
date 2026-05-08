@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  
+  gui:
+    container_name: gui-container
+    restart: always
+    build: ./gui
+    ports:
+      - '4200:4200'
+
+    environment:
+      NODE_ENV: prod
+      DEBUG: 'false'
+    volumes:
+      - /usr/src/app/gui
+      - /usr/src/app/gui/node_modules
+    links:
+      - backend
+    command: npm start
+
+  database: 
+    build: ./database
+    container_name: database-container
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    ports: 
+      # - 3318:3306
+      - 3306:3306
+  
+    
+  backend:
+    container_name: backend-container
+    restart: always
+    # command: sh -c "npm cache clean --force && npm start"
+    build: ./backend
+    ports:
+      - 3000:3000
+    volumes:
+      - /usr/src/app/backend
+      - /usr/src/app/backend/node_modules
+    
+    # env_file: .env
+    environment:
+      NODE_ENV: prod
+      DATABASE_HOST: database
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MY_SQL_PWD}
+      MYSQL_DB: ${DB_HOST}
+    depends_on:
+      - database
+    secrets:
+      - CLIENTID
+      - CLIENTSECRET
+      - AUTHORITY
+
+secrets:
+    CLIENTID:
+      external: true
+    CLIENTSECRET:
+      external: true
+    AUTHORITY:
+      external: true

@@ -1,0 +1,141 @@
+@import url(https://fonts.googleapis.com/css?family=RobotoCondensed);
+
+.app-container{
+  width: 100%;
+  height: 100%;
+}
+
+.app-main{
+  background-color:rgb(189, 190, 188);
+  width: 100%;
+}
+  
+  .title {
+    margin: 10% 10%;
+    padding: 0%;
+    width: 150px;
+  }
+
+
+  .settings_menu{
+    position: absolute;
+    float: right;
+    top: 30px;
+    right: 30px;
+    height: 25px;
+  }
+
+  .settings_image:hover{
+    cursor: pointer;
+  }
+  
+  .create-button{
+    font-family: "Roboto Condensed";
+    font-size: x-large;
+    font-weight: bold;
+    color: #246194;
+    margin: 10% 10%;
+    padding: 10px;
+    border-radius: 25px;
+    width: 80%;
+ }
+
+ .create-button:hover{
+   color:#F4F4F4;
+   background-color: #1EB980;
+   font-weight: 500;
+ }
+  
+ .nav-button{
+    font-size: large;
+    color: white;
+    width: 100px;
+    position: absolute;
+    top: -60;bottom: 0;left: 40px;right: 0px;
+    margin: auto;
+    height: 42 px; 
+    cursor: pointer;
+ }
+
+ .nav-button:hover{
+   color:#1EB980;
+ }
+
+ .nav_button_container{
+   position: relative;
+   height: 65px;
+   display: block;
+   margin: 0 auto;
+ }
+
+
+ .nav_button_image{
+    position: absolute;
+    top:45px;bottom: 0;left: 0px;right: 120px;
+    margin: auto;
+    height: 42 px; 
+    cursor: pointer;
+ }
+
+  .app-sidenav{
+    background-color:rgb(58, 96, 153);
+    width: 300px;
+  }
+
+  .container{
+    margin:0;
+    width: 100%;
+    height: 100%;
+
+  }
+
+  .login{
+    width: 100%;
+    height: 100%;
+    min-width: 100px;
+    position: relative;
+    background-color:rgb(58, 96, 153);
+  }
+
+  .titlelogin {
+    position: absolute;
+    top: 35%;
+    left: 50%;
+    -ms-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
+    width: 30%;
+    min-width: 400px;
+    display: block;
+
+  }
+
+  .login-button{
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    -ms-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
+    height: 41px;
+    cursor: pointer;
+  }
+
+  .footer{
+    position: absolute;
+    bottom:10px;
+    left: 10px;
+    color: #B4C1CC;
+  }
+
+  .footer-login{
+    position: absolute;
+    display: block;
+    bottom:10px;
+    right: 10px;
+    margin: 0 auto;
+    color: #B4C1CC;
+  }
+
+.settings_image:hover{
+  background-color: rgb(35, 75, 136);
+}
+ 

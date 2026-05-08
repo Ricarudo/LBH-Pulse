@@ -1,0 +1,59 @@
+
+[
+    {
+        "id": 0,
+        "name": "cable",
+        "part-number": "012345",
+        "manufacturer": "Joe Doe",
+        "description": "Nothing to say here"
+    },
+    {
+        "id": 1,
+        "name": "PC",
+        "part-number": "0AX4KA",
+        "manufacturer": "Inca Prod",
+        "description": "Nothing to say here"
+    },
+    {
+        "id": 2,
+        "name": "wire",
+        "part-number": "420B14Z3IT",
+        "manufacturer": "Chardon LLC",
+        "description": "Nothing to say here"
+    },
+    {
+        "id": 3,
+        "name": "router",
+        "part-number": "54CK52BU",
+        "manufacturer": "Larcin Pierloser",
+        "description": "Nothing to say here"
+    },
+    {
+        "id": 4,
+        "name": "plugs",
+        "part-number": "987654321",
+        "manufacturer": "Joe Doe",
+        "description": "Nothing to say here"
+    },
+    {
+        "id": 5,
+        "name": "mouse",
+        "part-number": "1H4T3TYP1NG",
+        "manufacturer": "Inca Prod",
+        "description": "Nothing to say here"
+    },
+    {
+        "id": 6,
+        "name": "monitor",
+        "part-number": "420B14Z3IT",
+        "manufacturer": "Chardon LLC",
+        "description": "Nothing to say here"
+    },
+    {
+        "id": 7,
+        "name": "charger",
+        "part-number": "54CK52BU",
+        "manufacturer": "Larcin Pierloser",
+        "description": "Nothing to say here"
+    }
+]

@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// This first Prisma schema mirrors the legacy MySQL tables closely.
+// TODO: Add relations, foreign keys, indexes, and corrected data types after data cleanup is planned.
+model Client {
+  clientId    Int     @id @default(autoincrement()) @map("client_id")
+  companyName String?
+  comments    String?
+
+  @@map("Client")
+}
+
+model ClientSite {
+  clientSiteId Int     @id @default(autoincrement()) @map("client_site_id")
+  clientId     String? @map("client_id")
+  name         String?
+  address      String?
+  comments     String?
+
+  @@map("ClientSite")
+}
+
+model PointOfContact {
+  pointOfContactId Int     @id @default(autoincrement()) @map("point_of_contact_id")
+  clientId         Int?    @map("client_id")
+  name             String?
+  email            String?
+  phone            String?
+  jobTitle         String? @map("job_title")
+  comments         String?
+
+  @@map("PointOfContact")
+}
+
+model Supplier {
+  supplierId       Int     @id @default(autoincrement()) @map("supplier_id")
+  name             String?
+  email            String?
+  phone            Int?
+  pointOfContactId Int?    @map("point_of_contact_id")
+
+  @@map("Supplier")
+}
+
+model MaterialCost {
+  materialCostId         Int     @id @default(autoincrement()) @map("material_cost_id")
+  quoteId                Int?    @map("quote_id")
+  billOfMaterialsEntryId Int?    @map("bill_of_materials_entry_id")
+  materialCost           Float?
+  contigency             Float?
+  freight                Float?
+  taxes                  Float?
+  profit                 Float?
+  unitCost               Float?
+  extMaterialCost        Float?
+  taxFreight             Float?
+  cost                   Float?
+  supplierId             Float?  @map("supplier_id")
+  supplierQuote          String? @map("supplier_quote")
+
+  @@map("MaterialCost")
+}
+
+model LaborCost {
+  laborCostId            Int    @id @default(autoincrement()) @map("labor_cost_id")
+  quoteId                Int?   @map("quote_id")
+  billOfMaterialsEntryId Int?   @map("bill_of_materials_entry_id")
+  workers                Int?
+  hours                  Float?
+  costWorker             Float?
+  extCost                Float?
+  ratio                  Float?
+  unitCost               Float?
+  totalCost              Float?
+
+  @@map("LaborCost")
+}
+
+model BillOfMaterialsEntry {
+  billOfMaterialsEntryId Int     @id @default(autoincrement()) @map("bill_of_materials_entry_id")
+  quoteId                Int?    @map("quote_id")
+  itemId                 Int?    @map("item_id")
+  quantity               Int?
+  workers                Int?
+  unitHours              Float?
+  rate                   Float?
+  materialCost           Float?
+  contingencyPercent     Float?
+  freightPercent         Float?
+  profitMarkup           Float?
+  supplier               String?
+
+  @@map("BillOfMaterials_Entry")
+}
+
+model Item {
+  itemId       Int     @id @default(autoincrement()) @map("item_id")
+  name         String?
+  partNumber   String?
+  manufacturer String?
+  description  String?
+
+  @@map("Item")
+}
+
+model Attachment {
+  attachmentId Int     @id @default(autoincrement()) @map("attachment_id")
+  title        String?
+  file         String?
+  description  String?
+
+  @@map("Attachment")
+}
+
+model User {
+  userId String  @id @map("user_id") @db.VarChar(250)
+  name   String?
+  email  String?
+
+  @@map("User")
+}
+
+model State {
+  stateId Int     @id @default(autoincrement()) @map("state_id")
+  name    String?
+
+  @@map("State")
+}
+
+model Lead {
+  leadId             Int     @id @default(autoincrement()) @map("lead_id")
+  stateId            Int?    @map("state_id")
+  clientId           Int?    @map("client_id")
+  clientSiteId       Int?    @map("client_site_id")
+  pointOfContactId   Int?    @map("point_of_contact_id")
+  assignedEmployeeId String? @map("assigned_employee_id") @db.VarChar(250)
+  title              String?
+  dueDate            String?
+  dateReceived       String?
+  dateCreated        String?
+  projectDescription String?
+  comments           String?
+
+  @@map("Lead")
+}
+
+model Quote {
+  quoteId                Int     @id @default(autoincrement()) @map("quote_id")
+  r2Id                   String? @map("r2_id")
+  leadId                 Int?    @map("lead_id")
+  stateId                Int?    @map("state_id")
+  clientId               Int?    @map("client_id")
+  clientSiteId           Int?    @map("client_site_id")
+  pointOfContactId       Int?    @map("point_of_contact_id")
+  dueDate                String?
+  dateCreated            String?
+  dateReceived           String?
+  title                  String?
+  projectDescription     String?
+  comments               String?
+  currentEmployeeId      String? @map("current_employee_id") @db.VarChar(250)
+  proposalSpecifications String?
+
+  @@map("Quote")
+}

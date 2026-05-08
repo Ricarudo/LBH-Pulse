@@ -1,0 +1,215 @@
+#archive-btn:hover {
+    background-color: darkgray;
+    color: white;
+}
+
+#lost-btn:hover{
+    background-color: #FF6859;
+    color:white;
+}
+
+.form-input{
+    margin: 1%;
+    float: left;
+
+}
+
+.state{
+    display: inline-block;
+    font-weight: 300;
+    font-style: italic;
+}
+
+.add_option{
+    background:none;
+    border:none;
+    margin:0;
+    padding:0;
+    cursor: pointer;
+
+}
+
+.quote_form{
+    margin:auto;
+}
+
+.mat-card{
+    padding: 0;
+    padding-left: 30px;
+    min-width: 1200px;
+
+}
+
+.mat-card-title:not(:first-child){
+    margin-top: 30px;
+    margin-bottom: 30px;
+}
+
+.top_menu{
+    margin-left: -30px;
+}
+
+#title{
+    display: inline-block;
+    width: 372px;
+
+}
+
+#assigned_employee{
+    display: inline-block;
+}
+
+#project_description{
+    display: block;
+    width: 566px;
+}
+
+.form-input{
+    width: 180px;
+    display: inline-block;
+}
+
+.row{
+    display: block;
+    width: 600px;
+    margin-left: -6px;
+}
+
+#proposal_page{
+    display: block;
+    width: 566px;
+}
+
+#comments{
+    display: block;
+    width: 566px;
+}
+
+hr {
+    display: block;
+    height: 1px;
+    border: 0;
+    border-top: 1px solid #ccc;
+    margin: 1em 0;
+    padding: 0;
+}
+
+.horizontal_line{
+    width: 200px;
+    margin-bottom: 30px;
+}
+
+#save_button{
+    float: left;
+    margin-bottom: 60px;
+}
+
+#comments_title{
+    margin-top: 60px;
+}
+
+#proposal_page_title{
+    margin-top: 60px;
+}
+
+
+.bom_header_element{
+  display: inline-block;
+}
+
+.add_new_entry_button{
+    margin-left: 40px;
+    vertical-align: top;
+    
+}
+
+.bom_table{
+    flex:1;
+    min-width: 500px;
+
+}
+
+.bl_element{
+    margin-left: 20px;
+}
+
+.quantity > input{
+    margin-top: 40px;
+}
+
+.labor_cost_table{
+    flex:1;
+    margin-left: 40px;
+}
+
+.lc_element{
+    height: 65.31px;
+}
+
+.bl_container{
+    display: flex;
+
+}
+
+.mc_element{
+  margin-left: 20px;
+}
+
+
+.shadow_box{
+    box-shadow: rgba(0, 0, 0, 0.16) 0px 1px 4px;
+    padding: 10px;
+    padding-right: 25px;
+    margin-bottom: 30px;
+}
+
+.tc_box{
+    width: 300px;
+    padding-top: 20px;
+}
+
+.totallabor{
+    margin-left: 20px;
+}
+
+.pdf_button{
+    background-color: #B4C1CC;
+}
+
+.delete_button{
+    margin-left: 30px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+#quote_image{
+    position: absolute;
+    top:100px;
+    right: 170px;
+    height: 90px;
+}
+
+.mat-icon-button{
+    float: right;
+}
+
+.info_button{
+    float:left;
+    margin-top: 15px;
+}
+
+.client_information{
+    display: block;
+}
+
+#comments{
+    float: none;
+}
+
+#proposal_page{
+    float: none;
+}
+
+.trash{
+    vertical-align: middle;
+}

@@ -1,0 +1,79 @@
+<h1 mat-dialog-title>{{data.step}} Item</h1>
+    <div mat-dialog-content>
+
+    <form [formGroup]="newItemForm" *ngIf="createNewItemDialog">
+    
+        <mat-form-field class='form-input'>
+            <mat-label>Item Name</mat-label>
+            <input matInput type="text" formControlName="name">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Part Number</mat-label>
+            <input matInput type="text" formControlName="partNumber">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Manufacturer</mat-label>
+            <input matInput type="text" formControlName="manufacturer">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Description</mat-label>
+            <input matInput placeholder="Name"  type="text" formControlName="description">
+        </mat-form-field>
+         <button class="button" type="submit" (click)="createItem()"  mat-dialog-close>Save</button>
+        
+    </form>
+
+    <form [formGroup]="newItemForm" *ngIf="editItemDialog">
+    
+        <mat-form-field class='form-input'>
+            <mat-label>Item Name</mat-label>
+            <input matInput type="text" formControlName="name">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Part Number</mat-label>
+            <input matInput type="text" formControlName="partNumber">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Manufacturer</mat-label>
+            <input matInput type="text" formControlName="manufacturer">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Description</mat-label>
+            <input matInput placeholder="Name"  type="text" formControlName="description">
+        </mat-form-field>
+         <button class="button" type="submit" (click)="editItem()"  mat-dialog-close>Save</button>
+        
+    </form>
+
+
+    <form [formGroup]="newItemForm" *ngIf="viewItemDialog">
+    
+        <mat-form-field class='form-input'>
+            <mat-label>Item Name</mat-label>
+            <input matInput type="text" formControlName="name">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Part Number</mat-label>
+            <input matInput type="text" formControlName="partNumber">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Manufacturer</mat-label>
+            <input matInput type="text" formControlName="manufacturer">
+        </mat-form-field>
+
+        <mat-form-field class='form-input'>
+            <mat-label>Description</mat-label>
+            <input matInput placeholder="Name"  type="text" formControlName="description">
+        </mat-form-field>
+    
+    </form>
+
+    </div>

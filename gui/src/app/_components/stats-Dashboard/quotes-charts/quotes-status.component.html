@@ -1,0 +1,12 @@
+
+  <mat-card class="quote-chart-container">
+    <h2 class="quote-chart-header"> Quotes Statistics</h2>
+    <chart class="bar-chart" [type]="type" [data]="data" 
+      [options]="options"></chart>
+    <div class="btn-container">
+      <button class="status-count-btn" (click)="getQuoteLabelsAndCounts()">Status Count</button>
+      <button class="months-count-btn" (click)="getQuotesByMonth()">Quotes Per Month</button>
+    </div>
+    
+  </mat-card>
+
