@@ -2,7 +2,13 @@
 
 Date: 2026-05-09
 
-Purpose: Save the current repository/startup state after moving the app to a PostgreSQL and Prisma-only runtime path.
+Purpose: Save the current repository/startup state after moving the app to a PostgreSQL and Prisma-only runtime path and starting the UI modernization work.
+
+## Commit Practice
+
+- Commit at stable checkpoints instead of carrying large uncommitted batches.
+- Refresh this file before each checkpoint commit so crash/reboot recovery has the latest state.
+- Latest pushed baseline: `805e56d1` (`Migrate app to PostgreSQL runtime`).
 
 ## Current Runtime
 
@@ -40,6 +46,23 @@ npm test
 ```
 
 Result: Prisma validation passed, database setup passed, backend tests reported `23 passing`.
+
+```text
+cd gui
+npm run build
+```
+
+Result: Frontend build passed with the existing Angular CommonJS optimization warnings.
+
+## UI Foundation Progress
+
+- Global app font changed to Manrope.
+- `gui/src/index.html` now loads Manrope from Google Fonts while keeping Material Icons intact.
+- `gui/src/styles.css` applies Manrope to body text, forms, buttons, selects, menus, cards, and dialog text.
+- `gui/src/theme.scss` configures Angular Material typography to use Manrope.
+- Remaining direct Roboto Condensed usages were replaced in the app shell and client-manager dialog styles.
+
+Verification:
 
 ```text
 cd gui

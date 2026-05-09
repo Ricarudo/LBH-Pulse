@@ -1,7 +1,25 @@
 /* You can add global styles to this file, and also import other style files */
-@import url(https://fonts.googleapis.com/css?family=RobotoCondensed);
 html, body { height: 100%; }
-body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+body { margin: 0; font-family: "Manrope", "Helvetica Neue", sans-serif; }
+
+body,
+button,
+input,
+textarea,
+select,
+.mat-typography,
+.mat-card,
+.mat-form-field,
+.mat-select,
+.mat-option,
+.mat-menu-item,
+.mat-button,
+.mat-raised-button,
+.mat-dialog-title,
+.mat-dialog-content {
+    font-family: "Manrope", "Helvetica Neue", sans-serif !important;
+}
+
 .container { margin: 1%; }
 
 .add_option{
@@ -45,7 +63,7 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
     color: #334A55;
     font-weight: bold;
     font-size: 13px;
-    font-family: 'Roboto Condensed';
+    font-family: "Manrope", "Helvetica Neue", sans-serif;
     border-radius: 3px;
     margin: 4px;
 }
@@ -59,7 +77,7 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
     color: #334A55;
     font-weight: bold;
     font-size: 13px;
-    font-family: 'Roboto Condensed';
+    font-family: "Manrope", "Helvetica Neue", sans-serif;
     border-radius: 3px;
     margin: 4px;
     display: block;

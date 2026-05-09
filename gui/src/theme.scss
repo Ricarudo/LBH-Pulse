@@ -1,5 +1,10 @@
 @import '~@angular/material/theming';
-@include mat-core();
+
+$kuotesuite-typography: mat-typography-config(
+  $font-family: '"Manrope", "Helvetica Neue", sans-serif'
+);
+
+@include mat-core($kuotesuite-typography);
 
 /* ======== angular material custom theme ======== */
 $my-custom-primary: mat-palette($mat-green);
@@ -12,6 +17,7 @@ $my-custom-theme: mat-light-theme($my-custom-primary, $my-custom-accent, $my-cus
 
 // Main theme defination
 @include angular-material-theme($my-custom-theme);
+@include angular-material-typography($kuotesuite-typography);
 
 
 
