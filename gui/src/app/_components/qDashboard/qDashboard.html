@@ -1,6 +1,13 @@
+<section class="ks-page quote-dashboard-page">
+  <header class="ks-page-header">
+    <div>
+      <h1 class="ks-page-title">Quotes</h1>
+      <p class="ks-page-subtitle">Review active quote records and open a quote for details.</p>
+    </div>
+  </header>
 
-
-<table mat-table [dataSource]="quotes" class="mat-elevation-z8 quote-table">
+  <div class="ks-card ks-table-panel quote-table-panel">
+<table mat-table [dataSource]="quotes" class="quote-table ks-table">
     <!-- Claim Column -->
     <ng-container matColumnDef="r2 id">
       <th mat-header-cell *matHeaderCellDef> R2 ID</th>
@@ -16,7 +23,7 @@
      <!-- Value Column -->
      <ng-container matColumnDef="state_id">
       <th mat-header-cell *matHeaderCellDef> Status </th>
-      <td mat-cell class="state_cell" *matCellDef="let quote"> {{quote.state_name}} </td>
+      <td mat-cell class="state_cell" *matCellDef="let quote"><span class="ks-badge">{{quote.state_name}}</span></td>
     </ng-container>
   
     <!-- Value Column -->
@@ -59,3 +66,5 @@
     <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
     <tr mat-row (click)="getQuotePage(quote.quote_id)" *matRowDef="let row; let quote; columns: displayedColumns;"></tr>
 </table>
+  </div>
+</section>

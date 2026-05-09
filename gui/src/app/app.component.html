@@ -1,6 +1,6 @@
 <mat-drawer-container class="app-container">
   <mat-drawer mode="side" *ngIf="loginDisplay" opened class="app-sidenav">
-    <div>
+    <div class="sidenav-top">
       <img (click)="redirectToLeads()" class="title" src="./assets/resources/kuote_suite_logo.png">
       <button *ngIf="loginDisplay" class="settings_menu" mat-icon-button [matMenuTriggerFor]="menu">
         <mat-icon [ngStyle]="{'color':'white'}">menu</mat-icon>

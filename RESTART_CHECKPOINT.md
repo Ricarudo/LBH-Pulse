@@ -9,6 +9,7 @@ Purpose: Save the current repository/startup state after moving the app to a Pos
 - Commit at stable checkpoints instead of carrying large uncommitted batches.
 - Refresh this file before each checkpoint commit so crash/reboot recovery has the latest state.
 - Latest pushed baseline: `805e56d1` (`Migrate app to PostgreSQL runtime`).
+- Latest local checkpoint commit: `87797e43` (`Apply Manrope typography foundation`).
 
 ## Current Runtime
 
@@ -70,6 +71,44 @@ npm run build
 ```
 
 Result: Frontend build passed with the existing Angular CommonJS optimization warnings.
+
+## GUI Refresh Progress
+
+Completed first low-risk Material Design 3-inspired refresh slice:
+
+- Added shared visual foundation tokens in `gui/src/styles.css`:
+  - color roles
+  - surface/background roles
+  - spacing scale
+  - typography helpers
+  - radius and elevation tokens
+  - hover, focus, active, and disabled state styling
+- Added reusable `ks-*` page, card, table, and badge classes.
+- Updated Angular Material theme colors in `gui/src/theme.scss`.
+- Refreshed app shell/sidebar styling through the shared foundation layer.
+- Applied representative page styling to:
+  - Statistics dashboard
+  - Quotes list/dashboard
+- No business logic, database logic, authentication, or data-loading code was changed.
+
+Verification:
+
+```text
+cd gui
+npm run build
+```
+
+Result: Frontend build passed. Only existing CommonJS optimization warnings remain.
+
+Runtime smoke check:
+
+```text
+http://localhost:4200/#/statistics
+http://localhost:4200/#/qDashboard
+http://localhost:3000/health/database
+```
+
+Result: Angular dev server returned the app for both routes, and backend database health returned `{"status":"ok","database":"postgres"}`.
 
 ```text
 docker compose -f docker-compose.dev.yml config

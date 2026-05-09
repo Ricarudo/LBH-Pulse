@@ -1,35 +1,33 @@
-.quote-chart-container{
-    width: 40%;
-    max-height: 40%;
+.quote-chart-container {
+    width: 100%;
 }
 
-.col m8 s12 martneg10{
-    width: 40%;
-    max-height: 40%;
-}
-
-/* .bar-chart {
-    width: 35%;
-    max-height: 40%; 
-} */
-
-.quote-chart-header {
-    text-align: center;
-    font-size: 16px;
-    padding: 1%;
-    color: white;
-    background-color: rgb(48, 48, 122);
+.bar-chart {
+    display: block;
+    height: 360px;
 }
 
 .btn-container{
-    padding: 0.5%;
-    margin: 1.5%;
+    display: flex;
+    gap: var(--ks-space-2);
+    margin-top: var(--ks-space-4);
 }
 
-.months-count-btn{
-    margin: 0.3%;
-}
-
+.months-count-btn,
 .status-count-btn{
-    margin: 0.3%;
+    min-height: 36px;
+    padding: 0 var(--ks-space-4);
+    border: 1px solid var(--ks-outline);
+    border-radius: var(--ks-radius-pill);
+    background: var(--ks-surface);
+    color: var(--ks-primary);
+    font-weight: 800;
+    cursor: pointer;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.months-count-btn:hover,
+.status-count-btn:hover{
+    border-color: var(--ks-primary);
+    background: var(--ks-primary-container);
 }
