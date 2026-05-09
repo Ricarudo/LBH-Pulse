@@ -38,11 +38,11 @@ export class LeadPageComponent implements OnInit {
 
   newInstance!: Boolean;
   lead!: Lead;
-  users!: User[];
-  clients!: Client[];
+  users: User[] = [];
+  clients: Client[] = [];
   clientNames!: string[];
-  client_sites!: ClientSite[];
-  point_of_contacts!: PointOfContact[];
+  client_sites: ClientSite[] = [];
+  point_of_contacts: PointOfContact[] = [];
 
   client_id = 0;
 
@@ -55,9 +55,9 @@ export class LeadPageComponent implements OnInit {
     dateReceived: new FormControl('', [Validators.required]),
     dueDate: new FormControl('', [Validators.required]),
     projectDescription: new FormControl(''),
-    client_id: new FormControl(''),
-    client_site_id: new FormControl(''),
-    point_of_contact_id: new FormControl(''),
+    client_id: new FormControl('', [Validators.required]),
+    client_site_id: new FormControl('', [Validators.required]),
+    point_of_contact_id: new FormControl('', [Validators.required]),
     comments: new FormControl(''),
     client_name: new FormControl('', [Validators.required]),
     client_site_name: new FormControl('', [Validators.required]),
@@ -177,12 +177,24 @@ export class LeadPageComponent implements OnInit {
         // received data from dialog-component
         res.data.subscribe((result: any) => {
           this.service.getClient(result.client_id).subscribe((client: any)=>{
+            const createdClient = client[0];
+
             this.client_id = result.client_id;
             this.leadForm.patchValue({
-              client_id: client[0].client_id,
-              client_name: client[0].companyName
+              client_id: createdClient.client_id,
+              client_name: createdClient.companyName,
+              client_site_id: '',
+              client_site_name: '',
+              point_of_contact_id: '',
+              point_of_contact_name: ''
             });
+            this.client_sites = [];
+            this.point_of_contacts = [];
+            this.client_site_enable = true;
+            this.poc_enable = true;
             this.getAllClients();
+            this.getAllClientSites();
+            this.getAllPointOfContacts();
 
           });
         });
@@ -198,14 +210,46 @@ export class LeadPageComponent implements OnInit {
       });
   }
 
+  getSelectedClientName(): string {
+    const clientId = Number(this.leadForm.value.client_id);
+    const client = this.clients.find((item) => item.client_id === clientId);
+
+    return client ? client.companyName : this.leadForm.value.client_name || '';
+  }
+
+  getSelectedClientSiteName(): string {
+    const clientSiteId = Number(this.leadForm.value.client_site_id);
+    const clientSite = this.client_sites.find((item) => item.client_site_id === clientSiteId);
+
+    return clientSite ? clientSite.name : this.leadForm.value.client_site_name || '';
+  }
+
+  getSelectedPointOfContactName(): string {
+    const pointOfContactId = Number(this.leadForm.value.point_of_contact_id);
+    const pointOfContact = this.point_of_contacts.find((item) => item.point_of_contact_id === pointOfContactId);
+
+    return pointOfContact ? String(pointOfContact.name) : this.leadForm.value.point_of_contact_name || '';
+  }
+
   selectClient(client_id: number){
+    const client = this.clients.find((item) => item.client_id === client_id);
+
     this.leadForm.patchValue({
       client_id: client_id,
+      client_name: client ? client.companyName : '',
+      client_site_id: '',
+      client_site_name: '',
+      point_of_contact_id: '',
+      point_of_contact_name: ''
     });
+
     this.client_site_selected = 0;
     this.poc_selected = 0;
+    this.client_sites = [];
+    this.point_of_contacts = [];
 
     this.client_site_enable = true;
+    this.poc_enable = true;
 
     this.getAllClientSites();
     this.getAllPointOfContacts();
@@ -228,20 +272,28 @@ export class LeadPageComponent implements OnInit {
   }
 
   getAllClientSites(): void {
-    if(this.leadForm.value.client_id!=0){
-      this.service.getClientSites(this.leadForm.value.client_id)
+    const clientId = Number(this.leadForm.value.client_id);
+
+    if(clientId){
+      this.service.getClientSites(clientId)
         .subscribe((client_sites: ClientSite[]) => {
           this.client_sites = client_sites;
           console.log(this.client_sites);
           console.log(typeof client_sites);
         });
+    } else {
+      this.client_sites = [];
     }
   }
 
   selectClientSite(client_site_id: number){
+    const clientSite = this.client_sites.find((item) => item.client_site_id === client_site_id);
+
     this.leadForm.patchValue({
-      client_site_id: client_site_id
+      client_site_id: client_site_id,
+      client_site_name: clientSite ? clientSite.name : ''
     });
+
     this.poc_enable = true;
   }
 
@@ -262,19 +314,26 @@ export class LeadPageComponent implements OnInit {
   }
 
   getAllPointOfContacts(): void {
-    if(this.leadForm.value.client_id!=0){
-      this.service.getPointOfContacts(this.leadForm.value.client_id)
+    const clientId = Number(this.leadForm.value.client_id);
+
+    if(clientId){
+      this.service.getPointOfContacts(clientId)
         .subscribe((poc: PointOfContact[]) => {
           this.point_of_contacts = poc;
           console.log(this.point_of_contacts);
           console.log(typeof this.point_of_contacts);
         });
+    } else {
+      this.point_of_contacts = [];
     }
   }
 
   selectPointOfContact(point_of_contact_id: number){
+    const pointOfContact = this.point_of_contacts.find((item) => item.point_of_contact_id === point_of_contact_id);
+
     this.leadForm.patchValue({
-      point_of_contact_id: point_of_contact_id
+      point_of_contact_id: point_of_contact_id,
+      point_of_contact_name: pointOfContact ? String(pointOfContact.name) : ''
     });
   }
 

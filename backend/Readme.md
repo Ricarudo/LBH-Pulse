@@ -7,14 +7,10 @@
 ---
 - `PORT`
 - `FRONTEND`
-- `MYSQL_HOST`
-- `MYSQL_USER`
-- `MYSQL_PASSWORD`
-- `MYSQL_DATABASE`
-- `MYSQL_PORT`
-- `DATABASE_URL` for Prisma/PostgreSQL migration work
+- `DATABASE_URL`
 
 Local development login is currently handled by the Angular frontend. Azure/Entra settings are no longer required for backend startup.
+The backend uses Prisma with PostgreSQL for application data.
 ---
 
 ## Running Unit Test
@@ -35,4 +31,4 @@ run: ```npm test ```
 - Services
 -- Intermediaries that relay, cleanse and validate received Requests from Controllers before sending them to Repositories.
 - Repositories
--- Data Repositories that are the buckets where all the data from the SQL databases resides, is accessed and modified from.
+-- Data Repositories that are the buckets where application data resides, is accessed and modified from.

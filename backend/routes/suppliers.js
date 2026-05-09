@@ -1,162 +1,96 @@
-/** REST Enpoint for interacting with Suppliers in the DB */
-const e = require('cors');
+/** REST endpoint for interacting with Suppliers in the DB */
 var express = require('express');
 var router = express.Router();
-const { check, exists, not,notEmpty, isEmpty, trim, escape, isDate, isEmail, normalizeEmail, validationResult } = require('express-validator');
+const { check } = require('express-validator');
+const prisma = require('../config/prisma');
+const {
+  asyncRoute,
+  ensureValidRequest,
+  parseId,
+  nullableInt,
+  nullableString,
+  assertFound,
+  assertChanged
+} = require('../utils/route.utils');
 
+function mapSupplier(supplier) {
+  return {
+    supplier_id: supplier.supplierId,
+    name: supplier.name,
+    email: supplier.email,
+    phone: supplier.phone,
+    point_of_contact_id: supplier.pointOfContactId
+  };
+}
 
+function supplierData(body) {
+  return {
+    name: nullableString(body.name),
+    email: nullableString(body.email),
+    phone: nullableInt(body.phone),
+    pointOfContactId: nullableInt(body.point_of_contact_id)
+  };
+}
 
-var DataBaseHandler = require("../config/DataBaseHandler");
-var dataBaseHandler = new DataBaseHandler();
-
-var connection = dataBaseHandler.createConnection();
-
-const supplier_table = `Supplier`;
-
-/*Get all suppliers
-  Post new supplier*/
-  router.route('/')
-  .get((req, res) => {
-    var results = [];
-    connection.query(
-      `SELECT * FROM ${supplier_table};`, function (err, rows) {
-        if (err){
-          console.log(err);
-          res.status(400).json({ errors: err})
-          return;
-        }
-          rows.forEach((element) => {
-            results.push(
-                {
-                    "supplier_id" : element.supplier_id,
-                    "name": element.name,
-                    "email": element.email,
-                    "phone": element.phone
-                });
-        });
-        console.log("[ENDPOINT] GET All Suppliers", results);
-        res.json(results);
-      });
-  })
-  .post([ check("name").exists().not().isEmpty().trim().escape(),
-          check("email").exists().not().isEmpty().trim().escape(),
-          check("phone").exists().not().isEmpty().trim().escape()],(req , res) => {
-
-            const errors = validationResult(req);
-            if (!errors.isEmpty())
-            {
-              console.log(errors);
-              return res.status(400).json({ errors: errors.array() });
-            }
-
-            var supplier = req.body;
-            connection.query(
-            `INSERT INTO ${supplier_table} (name, email, phone)\
-            VALUES (?, ?, ?)`,
-            [supplier.name, supplier.email, supplier.phone], 
-            function(err, result, fields) {
-              if (err){
-                console.log(err);
-                res.status(400).json({ errors: err})
-                return;
-              }
-
-              if(result.affectedRows == 0){
-                console.log(result);
-                res.status(400).json({errors: "No Supplier with id found"});
-                return;
-              }
-
-              console.log("Last supplier inserted id = "+result.insertId);
-              res.json({"result":"completed", "supplier_id":result.insertId});
-            });
-            connection.commit();
-  });
-
-
-/*Get specific supplier
-  Update or delete specific supplier*/
-router.route('/:supplier_id')
-.get((req , res) => {
-  var results = [];
-  connection.query(
-    `SELECT * FROM ${supplier_table} WHERE supplier_id=${req.params.supplier_id}`, function (err, rows) {
-      if (err){
-        console.log(err);
-        res.status(400).json({ errors: err})
-        return;
-      }
-        rows.forEach((element) => {
-          results.push(
-              {
-                  "supplier_id": element.supplier_id,
-                  "name": element.name,
-                  "email": element.email,
-                  "phone": element.phone
-              });
-      });
-
-      if(results.length == 0){
-        res.status(400).json({errors: "No Supplier with ID found"})
-      }
-
-      console.log(`[ENDPOINT] GET Specific suppler with id:${req.params.supplier_id}`, results);
-      res.json(results);
+router.route('/')
+  .get(asyncRoute(async (req, res) => {
+    const suppliers = await prisma.supplier.findMany({
+      orderBy: { supplierId: 'asc' }
     });
-})
-.put([check("name").exists().not().isEmpty().trim().escape(),
-      check("phone").exists().not().isEmpty().trim().escape(),
-      check("email").exists().not().isEmpty().trim().escape()],(req , res) => {
 
-  const errors = validationResult(req);
-            if (!errors.isEmpty())
-            {
-              console.log(errors);
-              return res.status(400).json({ errors: errors.array() });
-            }
-  var supplier = req.body;
-  connection.query(
-  `UPDATE ${supplier_table} SET name = '${supplier.name}', email = '${supplier.email}', phone = '${supplier.phone}'\
-  WHERE supplier_id = '${req.params.supplier_id}';`,
-  function(err, result, fields) {
-    if (err){
-      console.log(err);
-      res.status(400).json({ errors: err})
+    res.json(suppliers.map(mapSupplier));
+  }))
+  .post([
+    check('name').exists().notEmpty().trim().escape(),
+    check('email').exists().notEmpty().trim().escape(),
+    check('phone').exists().notEmpty().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
       return;
     }
 
-    if(result.affectedRows == 0){
-      console.log(result);
-      res.status(400).json({errors: "No Supplier with id found"});
+    const supplier = await prisma.supplier.create({
+      data: supplierData(req.body)
+    });
+
+    res.json({ result: 'completed', supplier_id: supplier.supplierId });
+  }));
+
+router.route('/:supplier_id')
+  .get(asyncRoute(async (req, res) => {
+    const supplierId = parseId(req.params.supplier_id, 'supplier_id');
+    const supplier = await prisma.supplier.findUnique({
+      where: { supplierId }
+    });
+
+    res.json([mapSupplier(assertFound(supplier, 'No Supplier with ID found'))]);
+  }))
+  .put([
+    check('name').exists().notEmpty().trim().escape(),
+    check('phone').exists().notEmpty().trim().escape(),
+    check('email').exists().notEmpty().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
       return;
     }
 
-    console.log("Update supplier with id "+req.params.supplier_id);
-    res.json({"result":"completed", "supplier_id":req.params.supplier_id});
-  });
-  connection.commit();
-})
-.delete((req , res) => {
-  var supplier = req.body;
-  connection.query(
-  `DELETE FROM ${supplier_table} WHERE supplier_id = '${req.params.supplier_id}';`,
-  function(err, result, fields) {
-    if (err){
-      console.log(err);
-      res.status(400).json({ errors: err})
-      return;
-    }
+    const supplierId = parseId(req.params.supplier_id, 'supplier_id');
+    const result = await prisma.supplier.updateMany({
+      where: { supplierId },
+      data: supplierData(req.body)
+    });
 
-    if(result.affectedRows == 0){
-      console.log(result);
-      res.status(400).json({errors: "No Supplier with id found"});
-      return;
-    }
+    assertChanged(result, 'No Supplier with id found');
+    res.json({ result: 'completed', supplier_id: supplierId });
+  }))
+  .delete(asyncRoute(async (req, res) => {
+    const supplierId = parseId(req.params.supplier_id, 'supplier_id');
+    const result = await prisma.supplier.deleteMany({
+      where: { supplierId }
+    });
 
-    console.log("Supplier deleted with id "+req.params.supplier_id);
-    res.json({"result":"completed", "supplier_id":req.params.supplier_id});
-  });
-  connection.commit();
-});
+    assertChanged(result, 'No Supplier with id found');
+    res.json({ result: 'completed', supplier_id: supplierId });
+  }));
 
 module.exports = router;

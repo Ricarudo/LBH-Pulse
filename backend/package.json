@@ -8,6 +8,9 @@
     "debug": "nodemon ./bin/www",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:push": "prisma db push",
+    "prisma:seed": "node prisma/seed.js",
+    "db:setup": "npm run prisma:generate && npm run prisma:push && npm run prisma:seed",
     "prisma:validate": "prisma validate",
     "prisma:studio": "prisma studio"
   },
@@ -21,8 +24,7 @@
     "express-validator": "^6.15.0",
     "http-errors": "^2.0.1",
     "jade": "^0.31.2",
-    "morgan": "^1.10.1",
-    "mysql": "^2.18.1"
+    "morgan": "^1.10.1"
   },
   "devDependencies": {
     "chai": "^4.5.0",

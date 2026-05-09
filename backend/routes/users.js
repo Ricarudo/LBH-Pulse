@@ -1,140 +1,86 @@
-/** REST Enpoint for interacting with Users in the DB */
-const e = require('cors');
+/** REST endpoint for interacting with Users in the DB */
 var express = require('express');
 var router = express.Router();
-const { check, exists, not, notEmpty, isEmpty, trim, escape, isDate, isEmail, normalizeEmail, validationResult } = require('express-validator');
+const { check } = require('express-validator');
+const prisma = require('../config/prisma');
+const {
+  asyncRoute,
+  ensureValidRequest,
+  nullableString,
+  assertFound,
+  assertChanged
+} = require('../utils/route.utils');
 
+function mapUser(user) {
+  return {
+    user_id: user.userId,
+    name: user.name,
+    email: user.email
+  };
+}
 
-var DataBaseHandler = require("../config/DataBaseHandler");
-var dataBaseHandler = new DataBaseHandler();
-
-var connection = dataBaseHandler.createConnection();
-
-const user_table = `User`;
-
-/*Get all users
-  Post new user*/
-  router.route('/')
-  .get((req, res) => {
-    var results = [];
-    connection.query(
-      `SELECT * FROM ${user_table};`, function (err, rows) {
-        if (err){
-          console.log(err);
-          res.status(400).json({ errors: err})
-          return;
-        }
-          rows.forEach((element) => {
-            results.push(
-                {
-                    "user_id" : element.user_id,
-                    "name": element.name,
-                    "email": element.email,
-                });
-        });
-        console.log("[ENDPOINT] GET All Users", results);
-        res.json(results);
-      });
-  })
-  .post([check("name").exists().not().isEmpty().trim().escape(),
-          check("email").exists().not().isEmpty().trim().escape()],
-      (req , res) => {
-    console.log("posting user");
-    var user = req.body;
-    connection.query(
-    `INSERT INTO ${user_table} (user_id, name, email)\
-    VALUES (?, ?, ?)`,
-    [user.user_id, user.name, user.email], 
-    function(err, result, fields) {
-      if (err){
-        console.log(err);
-        res.status(400).json({ errors: err})
-        return;
-      }
-      else{
-
-        if(result.affectedRows == 0){
-          console.log(result);
-          res.status(400).json({errors: "No User with id found"});
-          return;
-        }
-
-      console.log("Last user inserted id = "+result.insertId);
-      res.json({"result":"completed", "user_id":user.user_id});}
+router.route('/')
+  .get(asyncRoute(async (req, res) => {
+    const users = await prisma.user.findMany({
+      orderBy: { name: 'asc' }
     });
-    connection.commit();
-  });
 
+    res.json(users.map(mapUser));
+  }))
+  .post([
+    check('user_id').exists().notEmpty().trim().escape(),
+    check('name').exists().notEmpty().trim().escape(),
+    check('email').exists().notEmpty().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
+      return;
+    }
 
-  /*Get specific user
-    Update or delete specific user*/
-  router.route('/:user_id')
-  .get((req , res) => {
-    var results = [];
-    connection.query(
-      `SELECT * FROM ${user_table} WHERE user_id=${req.params.user_id}`, function (err, rows) {
-        if (err){
-          console.log(err);
-          res.status(400).json({ errors: err})
-          return;
-        }
-          rows.forEach((element) => {
-            results.push(
-                {
-                    "user_id": element.user_id,
-                    "name": element.name,
-                    "email": element.email
-                });
-        });
-        console.log(`[ENDPOINT] GET Specific user with id:${req.params.user_id}`, results);
-        res.json(results);
-      });
-  })
-  .put([check("name").exists().not().isEmpty().trim().escape(),
-  check("email").exists().not().isEmpty().trim().escape()],(req , res) => {
-    var user = req.body;
-    connection.query(
-    `UPDATE ${user_table} SET name = '${user.name}', email = '${user.email}'\
-    WHERE user_id = '${req.params.user_id}';`,
-    function(err, result, fields) {
-      if (err){
-        console.log(err);
-        res.status(400).json({ errors: err})
-        return;
+    const user = await prisma.user.create({
+      data: {
+        userId: nullableString(req.body.user_id),
+        name: nullableString(req.body.name),
+        email: nullableString(req.body.email)
       }
-
-      if(result.affectedRows == 0){
-        console.log(result);
-        res.status(400).json({errors: "No User with id found"});
-        return;
-      }
-
-      console.log("Update user with id "+req.params.user_id);
-      res.json({"result":"completed", "user_id":req.params.user_id});
     });
-    connection.commit();
-  })
-  .delete((req , res) => {
-    var user = req.body;
-    connection.query(
-    `DELETE FROM ${user_table} WHERE user_id = '${req.params.user_id}';`,
-    function(err, result, fields) {
-      if (err){
-        console.log(err);
-        res.status(400).json({ errors: err})
-        return;
-      }
 
-      if(result.affectedRows == 0){
-        console.log(result);
-        res.status(400).json({errors: "No User with id found"});
-        return;
-      }
+    res.json({ result: 'completed', user_id: user.userId });
+  }));
 
-      console.log("User deleted with id: "+req.params.user_id);
-      res.json({"result":"completed", "user_id":req.params.user_id});
+router.route('/:user_id')
+  .get(asyncRoute(async (req, res) => {
+    const user = await prisma.user.findUnique({
+      where: { userId: req.params.user_id }
     });
-    connection.commit();
-  });
 
-  module.exports = router;
+    res.json([mapUser(assertFound(user, 'No User with id found'))]);
+  }))
+  .put([
+    check('name').exists().notEmpty().trim().escape(),
+    check('email').exists().notEmpty().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
+      return;
+    }
+
+    const result = await prisma.user.updateMany({
+      where: { userId: req.params.user_id },
+      data: {
+        name: nullableString(req.body.name),
+        email: nullableString(req.body.email)
+      }
+    });
+
+    assertChanged(result, 'No User with id found');
+    res.json({ result: 'completed', user_id: req.params.user_id });
+  }))
+  .delete(asyncRoute(async (req, res) => {
+    const result = await prisma.user.deleteMany({
+      where: { userId: req.params.user_id }
+    });
+
+    assertChanged(result, 'No User with id found');
+    res.json({ result: 'completed', user_id: req.params.user_id });
+  }));
+
+module.exports = router;

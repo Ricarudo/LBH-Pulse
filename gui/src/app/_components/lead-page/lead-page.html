@@ -51,9 +51,9 @@
         <mat-form-field appearance="outline" class="form-input small_input" >
         <mat-label > Client</mat-label>
         
-        <mat-select formControlName="client_name" (click)="getAllClients()"  (selectionChange)="getAllClientSites()" >
-            <mat-select-trigger >{{this.leadForm.value.client_name}}</mat-select-trigger>
-              <mat-option (click)="selectClient(client.client_id)" *ngFor="let client of clients" [value]="client.companyName">
+        <mat-select formControlName="client_id" (openedChange)="getAllClients()" (selectionChange)="selectClient($event.value)" >
+            <mat-select-trigger >{{getSelectedClientName()}}</mat-select-trigger>
+              <mat-option *ngFor="let client of clients" [value]="client.client_id">
                   {{client.companyName}}
                   <button class="settings_menu"  mat-icon-button [matMenuTriggerFor]="menu">
                     <mat-icon [ngStyle]="{'color':'#B4C1CC'}">more_vert</mat-icon>
@@ -75,7 +75,7 @@
               </mat-option>
               <mat-option><button  class="add_option" (click)="openDialogNewClient()">Add New Client</button></mat-option>
         </mat-select>
-        <mat-error *ngIf="leadForm.get('client_name')?.hasError('required')">
+        <mat-error *ngIf="leadForm.get('client_id')?.hasError('required')">
             Client is required.
         </mat-error>
         </mat-form-field>
@@ -86,9 +86,9 @@
 
         <mat-form-field appearance="outline"  class="form-input small_input right_field">
             <mat-label > Client Site</mat-label>
-            <mat-select [disabled]="!client_site_enable" formControlName="client_site_name" (click)="getAllClientSites()"  (selectionChange)="getAllClientSites()" >
-                <mat-select-trigger >{{this.leadForm.value.client_site_name}}</mat-select-trigger>
-                  <mat-option (click)="selectClientSite(client_site.client_id)" *ngFor="let client_site of client_sites" [value]="client_site.name">
+            <mat-select [disabled]="!client_site_enable" formControlName="client_site_id" (openedChange)="getAllClientSites()" (selectionChange)="selectClientSite($event.value)" >
+                <mat-select-trigger >{{getSelectedClientSiteName()}}</mat-select-trigger>
+                  <mat-option *ngFor="let client_site of client_sites" [value]="client_site.client_site_id">
                       {{client_site.name}}
                       <button class="settings_menu"  mat-icon-button [matMenuTriggerFor]="menu">
                         <mat-icon [ngStyle]="{'color':'#B4C1CC'}">more_vert</mat-icon>
@@ -110,7 +110,7 @@
                   </mat-option>
                   <mat-option><button  class="add_option" (click)="openDialogNewClientSite()">Add New Client Site</button></mat-option>
               </mat-select>
-        <mat-error *ngIf="leadForm.get('client_site_name')?.hasError('required')">
+        <mat-error *ngIf="leadForm.get('client_site_id')?.hasError('required')">
             Client Site is required.
         </mat-error>
         </mat-form-field>
@@ -121,9 +121,9 @@
 
         <mat-form-field appearance="outline" class="form-input small_input">
             <mat-label > Point Of Contact</mat-label>
-        <mat-select [disabled]="!poc_enable" formControlName="point_of_contact_name" (click)="getAllPointOfContacts()"  (selectionChange)="getAllPointOfContacts()" >
-            <mat-select-trigger >{{this.leadForm.value.point_of_contact_name}}</mat-select-trigger>
-              <mat-option (click)="selectPointOfContact(poc.point_of_contact_id)" *ngFor="let poc of point_of_contacts" [value]="poc.name">
+        <mat-select [disabled]="!poc_enable" formControlName="point_of_contact_id" (openedChange)="getAllPointOfContacts()" (selectionChange)="selectPointOfContact($event.value)" >
+            <mat-select-trigger >{{getSelectedPointOfContactName()}}</mat-select-trigger>
+              <mat-option *ngFor="let poc of point_of_contacts" [value]="poc.point_of_contact_id">
                   {{poc.name}}
                   <button class="settings_menu"  mat-icon-button [matMenuTriggerFor]="menu">
                     <mat-icon [ngStyle]="{'color':'#B4C1CC'}">more_vert</mat-icon>
@@ -145,7 +145,7 @@
               </mat-option>
               <mat-option><button  class="add_option" (click)="openDialogNewPOC()">Add New POC</button></mat-option>
           </mat-select>
-        <mat-error *ngIf="leadForm.get('point_of_contact_name')?.hasError('required')">
+        <mat-error *ngIf="leadForm.get('point_of_contact_id')?.hasError('required')">
             Point of Contact is required.
         </mat-error>
         </mat-form-field>

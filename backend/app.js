@@ -5,6 +5,7 @@ var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 require('dotenv').config(); // handles our .env variables
+const prisma = require('./config/prisma');
 
 const FRONTEND_PORT = Number(process.env.FRONTEND_PORT || 4200);
 const FRONTEND_HOST = process.env.FRONTEND_HOST || 'localhost';
@@ -28,6 +29,7 @@ app.use('/quotes/', require('./routes/quotes'));
 app.use('/leads/', require('./routes/leads'));
 app.use('/items/', require('./routes/items'));
 app.use('/clients/', require('./routes/clients'));
+app.use('/suppliers/', require('./routes/suppliers'));
 
 // TODO: Add backend JWT validation middleware here before company-network use.
 // The current local-development login is frontend-only and does not protect API routes.
@@ -37,6 +39,23 @@ app.get('/auth/status', (req, res) => {
         authenticated: false,
         message: 'Local development login is handled by the Angular frontend. API routes are not protected yet.'
     });
+});
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok' });
+});
+
+app.get('/health/database', async (req, res) => {
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        res.json({ status: 'ok', database: 'postgres' });
+    } catch (err) {
+        res.status(503).json({
+            status: 'unavailable',
+            database: 'postgres',
+            errors: err.message || err
+        });
+    }
 });
 
 // view engine setup

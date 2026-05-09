@@ -7,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// This first Prisma schema mirrors the legacy MySQL tables closely.
+// This first Prisma schema mirrors the original application tables closely.
 // TODO: Add relations, foreign keys, indexes, and corrected data types after data cleanup is planned.
 model Client {
   clientId    Int     @id @default(autoincrement()) @map("client_id")

@@ -1,16 +1,4 @@
-version: '3.8'
-
 services:
-
-
-  database: 
-    build: ./database
-    container_name: database-container
-    command: --default-authentication-plugin=mysql_native_password
-    restart: always
-    ports: 
-      # - 3318:3306
-      - 3306:3306
 
   gui:
     container_name: gui-container
@@ -27,7 +15,7 @@ services:
   backend:
     container_name: backend-container
     restart: always
-    # command: sh -c "npm cache clean --force && npm start"
+    command: sh -c "npm run db:setup && npm start"
     build: ./backend
     ports:
       - 3000:3000
@@ -37,15 +25,31 @@ services:
 
     environment:
       NODE_ENV: dev
-      DATABASE_HOST: database
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ${MY_SQL_PWD}
-      MYSQL_DB: ${DB_HOST}
+      FRONTEND: http://localhost:4200
+      DATABASE_URL: postgresql://kuotesuite:kuotesuite_dev_password@postgres:5432/kuotesuite?schema=public
     depends_on:
-      - database
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-container
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: kuotesuite
+      POSTGRES_PASSWORD: kuotesuite_dev_password
+      POSTGRES_DB: kuotesuite
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kuotesuite -d kuotesuite"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
 
 volumes:
-  todo-mysql-data:
+  postgres-data:
   backend:
   src:

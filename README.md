@@ -6,16 +6,15 @@ The current goal is to stabilize and modernize the downloaded codebase without r
 
 ## Current Status
 
-The application currently runs as an Angular frontend, Express backend, and MySQL database.
+The application currently runs as an Angular frontend, Express backend, and PostgreSQL database.
 
-PostgreSQL and Prisma have been added as a migration scaffold only. Existing API routes still use MySQL until they are converted one at a time.
+Backend API routes use Prisma against PostgreSQL. The legacy database runtime path has been removed from the app startup flow.
 
 ## Project Structure
 
 ```text
 backend/                  Express REST API
-backend/prisma/           Initial Prisma schema for PostgreSQL migration
-database/                 Existing MySQL Docker image and setup SQL
+backend/prisma/           Prisma schema and seed data for PostgreSQL
 gui/                      Angular 12 frontend
 dev-tools/                Legacy development helper scripts
 proxy/                    Proxy Dockerfile
@@ -31,9 +30,8 @@ DATABASE_MIGRATION_PLAN.md
 | --- | --- |
 | Frontend | Angular 12 |
 | Backend | Node.js + Express 4 |
-| Current database | MySQL 8 |
-| Migration database | PostgreSQL 16 |
-| Migration ORM | Prisma 6.19.3 |
+| Database | PostgreSQL 16 |
+| ORM | Prisma 6.19.3 |
 | Authentication | Local development login |
 | Package manager | npm |
 | UI | Angular Material, Angular CDK, custom CSS |
@@ -42,7 +40,7 @@ DATABASE_MIGRATION_PLAN.md
 ## Prerequisites
 
 - Node.js 18 with npm is the recommended runtime for this phase.
-- Docker Desktop is recommended for MySQL/PostgreSQL services.
+- Docker Desktop is recommended for the PostgreSQL service.
 
 Newer Node versions may work, but Angular 12 still needs `NODE_OPTIONS=--openssl-legacy-provider` in frontend scripts because its Webpack toolchain predates modern OpenSSL defaults.
 
@@ -61,13 +59,6 @@ Important backend variables:
 
 ```bash
 PORT=3000
-
-DATABASE_HOST=localhost
-MYSQL_HOST=localhost
-MYSQL_USER=root
-MYSQL_PASSWORD=testingpassword
-MYSQL_DATABASE=KuoteSuite
-MYSQL_PORT=3306
 
 DATABASE_URL=postgresql://kuotesuite:kuotesuite_dev_password@localhost:5432/kuotesuite?schema=public
 POSTGRES_HOST=localhost
@@ -119,10 +110,17 @@ npm ci
 
 ## Run Locally
 
-Start MySQL if you are using Docker for the database:
+Start PostgreSQL if you are using Docker for the database:
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d database
+docker compose -f docker-compose.dev.yml up -d postgres
+```
+
+Apply the Prisma schema and seed data:
+
+```bash
+cd backend
+npm run db:setup
 ```
 
 Start the backend:
@@ -164,7 +162,7 @@ cd backend
 npm test
 ```
 
-The backend tests require MySQL to be running and reachable with the configured database settings.
+The backend tests require PostgreSQL to be running and reachable through `DATABASE_URL`.
 
 ## Docker Development
 
@@ -172,12 +170,6 @@ Start the full development stack:
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
-```
-
-Start only MySQL:
-
-```bash
-docker compose -f docker-compose.dev.yml up -d database
 ```
 
 Start only PostgreSQL for Prisma migration work:
@@ -188,16 +180,15 @@ docker compose -f docker-compose.dev.yml up -d postgres
 
 Docker is usable for local development, but the compose files still need production/local-network hardening before company deployment.
 
-## PostgreSQL and Prisma Migration
+## PostgreSQL and Prisma
 
 Prisma 6.19.3 is installed because it supports the current Node 18 baseline. Prisma 7 currently requires Node 20.19+ and was intentionally not used in this phase.
 
 Current behavior:
 
-- Existing Express routes still run on MySQL.
-- PostgreSQL is available as a parallel Docker service.
-- `backend/prisma/schema.prisma` mirrors the legacy MySQL tables as a starting point.
-- Routes should be migrated gradually instead of switching the full app at once.
+- Express routes use Prisma models backed by PostgreSQL.
+- PostgreSQL is the only database service in the development compose stack.
+- `backend/prisma/schema.prisma` mirrors the original application tables as a compatibility starting point.
 
 Useful Prisma commands:
 
@@ -214,11 +205,8 @@ Read `DATABASE_MIGRATION_PLAN.md` before converting routes.
 
 ## Known Issues
 
-- Backend routes still open MySQL connections at route-module import time.
-- Several backend SQL statements interpolate request data directly.
 - Backend API routes are not protected by backend authentication middleware.
 - Local development login is frontend-only and should be replaced or backed by server-side token validation before company use.
-- Supplier routes exist but are not mounted by the backend app.
 - Frontend services reference labor/material cost endpoints that do not appear to exist in the backend.
 - The frontend remains on Angular 12 and has not been migrated to a modern Angular version.
 - Frontend builds still show CommonJS optimization warnings from legacy chart/PDF packages.
@@ -228,17 +216,14 @@ Read `DATABASE_MIGRATION_PLAN.md` before converting routes.
 
 ## Recommended Next Steps
 
-1. Convert `backend/routes/items.js` from MySQL raw SQL to Prisma/PostgreSQL as the first proof of concept.
-2. Add focused backend tests for the migrated items route.
-3. Create a shared backend database client/service layer.
-4. Replace route-level SQL interpolation with Prisma or parameterized queries.
-5. Add backend authentication and authorization middleware with JWT validation.
-6. Continue PostgreSQL migration route by route.
-7. Modernize Docker Compose for local-network hosting.
-8. Expand CRM features only after the backend/database foundation is stable.
+1. Add focused backend tests around the Prisma route behavior.
+2. Add backend authentication and authorization middleware with JWT validation.
+3. Continue refining Prisma schema relations, indexes, and data types.
+4. Modernize Docker Compose for local-network hosting.
+5. Expand CRM features only after the backend/database foundation is stable.
 
 ## Project Documentation
 
 - `PROJECT_ASSESSMENT.md`: inherited project assessment and setup-readiness review.
 - `DEPENDENCY_MODERNIZATION_REPORT.md`: dependency modernization work and remaining package risks.
-- `DATABASE_MIGRATION_PLAN.md`: MySQL-to-PostgreSQL/Prisma migration strategy.
+- `DATABASE_MIGRATION_PLAN.md`: PostgreSQL/Prisma migration strategy.

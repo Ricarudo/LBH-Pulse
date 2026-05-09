@@ -4,7 +4,7 @@ WORKDIR  /database-azure-backup
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update -y -q && \
-  apt-get install -y mysql-client-5.6 nodejs-legacy curl wget npm && \
+  apt-get install -y postgresql-client nodejs curl wget npm cron && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 

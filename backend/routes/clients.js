@@ -1,362 +1,264 @@
-/** REST Enpoint for interacting with Clients in the DB */
+/** REST endpoint for interacting with Clients in the DB */
 var express = require('express');
-const { route } = require('./leads');
-const { check, exists, not,notEmpty, isEmpty, trim, escape, isDate, isEmail, normalizeEmail, validationResult } = require('express-validator');
 var router = express.Router();
+const { check } = require('express-validator');
+const prisma = require('../config/prisma');
+const {
+  asyncRoute,
+  ensureValidRequest,
+  parseId,
+  nullableInt,
+  nullableString,
+  assertFound,
+  assertChanged
+} = require('../utils/route.utils');
 
+function mapClient(client) {
+  return {
+    client_id: client.clientId,
+    companyName: client.companyName,
+    comments: client.comments
+  };
+}
 
+function mapClientSite(clientSite) {
+  return {
+    client_site_id: clientSite.clientSiteId,
+    client_id: nullableInt(clientSite.clientId),
+    name: clientSite.name,
+    address: clientSite.address,
+    comments: clientSite.comments
+  };
+}
 
-var DataBaseHandler = require("../config/DataBaseHandler");
-var dataBaseHandler = new DataBaseHandler();
+function mapPointOfContact(pointOfContact) {
+  return {
+    point_of_contact_id: pointOfContact.pointOfContactId,
+    client_id: pointOfContact.clientId,
+    name: pointOfContact.name,
+    email: pointOfContact.email,
+    phone: pointOfContact.phone,
+    job_title: pointOfContact.jobTitle,
+    comments: pointOfContact.comments
+  };
+}
 
-var connection = dataBaseHandler.createConnection();
+function clientData(body) {
+  return {
+    companyName: nullableString(body.companyName),
+    comments: nullableString(body.comments)
+  };
+}
 
+function clientSiteData(body, clientId) {
+  return {
+    clientId: nullableString(clientId !== undefined ? clientId : body.client_id),
+    name: nullableString(body.name),
+    address: nullableString(body.address),
+    comments: nullableString(body.comments)
+  };
+}
 
-const client_table = `Client`;
-const poc_table = `PointOfContact`;
-const client_sites_table = `ClientSite`;
-
+function pointOfContactData(body, clientId) {
+  return {
+    clientId: nullableInt(clientId !== undefined ? clientId : body.client_id),
+    name: nullableString(body.name),
+    email: nullableString(body.email),
+    phone: nullableString(body.phone),
+    jobTitle: nullableString(body.job_title),
+    comments: nullableString(body.comments)
+  };
+}
 
 router.route('/')
-     .get((req, res) => {
-       var results = [];
-        connection.query(
-          `SELECT * FROM ${client_table};`, function (err, rows) {
-            if (err){
-              console.log(err);
-              res.status(400).json({ errors: err})
-              return;
-            }
-              rows.forEach((element) => {
-                results.push(
-                    {
-                        "client_id": element.client_id,
-                        "companyName": element.companyName,
-                        "comments": element.comments
-                    });
-            });
-            console.log("[ENDPOINT] GET All Clients:", results);
-            res.json(results);
-        });
-     })
-     .post([
-             check('comments').exists().trim().escape(),
-             check('companyName').exists().notEmpty().trim().escape()],(req , res) => {
-        
-        const errors = validationResult(req);
-        if (!errors.isEmpty())
-        {
-          res.status(400).json({ errors: errors.array() })
-          return ;      
-        }
-        
-        var client = req.body;
-        connection.query(
-        `INSERT INTO ${client_table} (companyName, comments)\
-        VALUES (?, ?)`,
-        [client.companyName, client.comments], function(err, result, fields) {
-          if (err){
-            console.log(err);
-            res.status(400).json({ errors: err})
-            return;
-          }
-          console.log("Last client inserted id = "+result.insertId);
-          res.json({"result":"completed", "client_id":result.insertId});
-        });
-        connection.commit();
-      });
-      
+  .get(asyncRoute(async (req, res) => {
+    const clients = await prisma.client.findMany({
+      orderBy: { clientId: 'asc' }
+    });
+
+    res.json(clients.map(mapClient));
+  }))
+  .post([
+    check('comments').exists().trim().escape(),
+    check('companyName').exists().notEmpty().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
+      return;
+    }
+
+    const client = await prisma.client.create({
+      data: clientData(req.body)
+    });
+
+    res.json({ result: 'completed', client_id: client.clientId });
+  }));
 
 router.route('/:id')
-      .get((req, res) => {
-        var results = [];
-        connection.query(
-          `SELECT * FROM ${client_table} WHERE client_id=${req.params.id};`, function (err, rows) {
-            if (err){
-              console.log(err);
-              res.status(400).json({ errors: err})
-              return;
-            }
-              rows.forEach((element) => {
-                results.push(
-                    {
-                        "client_id": element.client_id,
-                        "companyName": element.companyName,
-                        "comments": element.comments
-                    });
-            });
-            if(results.length == 0){
-              res.status(400).json({errors: "No Client with id found"});
-              return;
-            }
-            console.log("[ENDPOINT] GET Client with id:", results);
-            res.json(results);
-        });
-      })
-      .put([ check('comments').exists().trim().escape(),
-             check('companyName').exists().notEmpty().trim().escape()],
-            (req , res) => {
-            
-            const errors = validationResult(req);
-            if (!errors.isEmpty())
-              return res.status(400).json({ errors: errors.array() });    
+  .get(asyncRoute(async (req, res) => {
+    const clientId = parseId(req.params.id, 'client_id');
+    const client = await prisma.client.findUnique({
+      where: { clientId }
+    });
 
-            var client = req.body;
-            connection.query(
-            `UPDATE ${client_table} SET ? WHERE client_id=${req.params.id};`,[client],
-            function(err, result, fields) {
-              if (err){
-                console.log(err);
-                res.status(400).json({ errors: err})
-                return;
-              }
-              console.log("Update client with id "+req.params.id);
-              res.json({"result":"completed", "client_id":req.params.id});
-            });
-            connection.commit();
-      })
-      .delete((req , res) => {
-        connection.query(
-        `DELETE FROM ${client_table} WHERE client_id = '${req.params.id}';`,
-        function(err, result, fields) {
-          if (err){
-            console.log(err);
-            res.status(400).json({ errors: err})
-            return;
-          }
+    res.json([mapClient(assertFound(client, 'No Client with id found'))]);
+  }))
+  .put([
+    check('comments').exists().trim().escape(),
+    check('companyName').exists().notEmpty().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
+      return;
+    }
 
-          if(result.affectedRows == 0){
-            console.log(result);
-            res.status(400).json({errors: "No Client with id found"});
-            return;
-          }
-          console.log("Client deleted with id: "+req.params.id);
-          res.json({"result":"completed", "client_id":req.params.id});
-        });
-        connection.commit();
-      });
+    const clientId = parseId(req.params.id, 'client_id');
+    const result = await prisma.client.updateMany({
+      where: { clientId },
+      data: clientData(req.body)
+    });
+
+    assertChanged(result, 'No Client with id found');
+    res.json({ result: 'completed', client_id: clientId });
+  }))
+  .delete(asyncRoute(async (req, res) => {
+    const clientId = parseId(req.params.id, 'client_id');
+    const result = await prisma.client.deleteMany({
+      where: { clientId }
+    });
+
+    assertChanged(result, 'No Client with id found');
+    res.json({ result: 'completed', client_id: clientId });
+  }));
 
 router.route('/:id/client_sites')
-      .get((req , res) => {
-        var results = [];
-        connection.query(
-          `SELECT * FROM ${client_sites_table} WHERE client_id = ${req.params.id};`,
-           function (err, rows) {
-            if (err){
-              console.log(err);
-              res.status(400).json({ errors: err})
-              return;
-            }
-              rows.forEach((element) => {
-                results.push(
-                    {
-                        "client_site_id": element.client_site_id,
-                        "client_id": element.client_id,
-                        "name": element.name,
-                        "address": element.address,
-                        "comments": element.comments
-                    });
-            });
-            console.log("[ENDPOINT] GET All ClientSites:", results);
-            res.json(results);
-        });
-      })
-      .post([
-              check('name').exists().notEmpty().trim().escape(),
-              check('comments').exists().trim().escape(),
-              check('address').exists().notEmpty().trim().escape()],
-      
-      (req , res) => {
+  .get(asyncRoute(async (req, res) => {
+    const clientId = parseId(req.params.id, 'client_id');
+    const clientSites = await prisma.clientSite.findMany({
+      where: { clientId: String(clientId) },
+      orderBy: { clientSiteId: 'asc' }
+    });
 
-        const errors = validationResult(req);
-        if (!errors.isEmpty())
-          return res.status(400).json({ errors: errors.array() });    
-        
-        var client_site = req.body;
-        connection.query(
-        `INSERT INTO ${client_sites_table} (client_id, name, address, comments)\
-        VALUES (?, ?, ?, ?)`,
-        [req.params.id, client_site.name, client_site.address, client_site.comments], function(err, result, fields) {
-          if (err){
-            console.log(err);
-            res.status(400).json({ errors: err})
-            return;
-          }
-          console.log("Last client_site inserted id = "+result.insertId);
-          res.json({"result":"completed", "client_site_id":result.insertId});
-        });
-        connection.commit();
-      });
+    res.json(clientSites.map(mapClientSite));
+  }))
+  .post([
+    check('name').exists().notEmpty().trim().escape(),
+    check('comments').exists().trim().escape(),
+    check('address').exists().notEmpty().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
+      return;
+    }
 
+    const clientId = parseId(req.params.id, 'client_id');
+    const clientSite = await prisma.clientSite.create({
+      data: clientSiteData(req.body, clientId)
+    });
 
-      router.route('/:id/client_sites/:client_site_id')
-      .get((req , res) => {
-        connection.query(
-          `SELECT * FROM ${client_sites_table} WHERE client_site_id = ${req.params.client_site_id};`, 
-          function (err, result) {
-            if (err){
-              console.log(err);
-              res.status(400).json({ errors: err})
-              return;
-            }
-                  console.log("[ENDPOINT] GET specific client site:", result);
-                  res.json(result);
-            });  
-      })
-      .put([
-              check('name').exists().trim().notEmpty().escape(),
-              check('comments').exists().trim().escape(),
-              check('address').exists().trim().notEmpty().escape()],
-      (req , res) => {
+    res.json({ result: 'completed', client_site_id: clientSite.clientSiteId });
+  }));
 
-        const errors = validationResult(req);
-        if (!errors.isEmpty())
-          return res.status(400).json({ errors: errors.array() }); 
+router.route('/:id/client_sites/:client_site_id')
+  .get(asyncRoute(async (req, res) => {
+    const clientSiteId = parseId(req.params.client_site_id, 'client_site_id');
+    const clientSite = await prisma.clientSite.findUnique({
+      where: { clientSiteId }
+    });
 
-        var  client_site = req.body;
-        connection.query(
-        `UPDATE ${client_sites_table} SET client_id = '${client_site.client_id}', name = '${client_site.name}', \
-         address = '${client_site.address}', comments = '${client_site.comments}'\
-         WHERE client_site_id = '${req.params.client_site_id}';`,
-        function(err, result, fields) {
-          if (err){
-            console.log(err);
-            res.status(400).json({ errors: err})
-            return;
-          }
-          console.log("Update client site with id "+req.params.client_site_id);
-          res.json({"result":"completed", "client_site_id":req.params.client_site_id});
-        });
-        connection.commit();
-      })
-      .delete((req , res) => {
-        var client_site = req.body;
-        connection.query(
-        `DELETE FROM ${client_sites_table} WHERE client_site_id = '${req.params.client_site_id}';`,
-        function(err, result, fields) {
-          if (err){
-            console.log(err);
-            res.status(400).json({ errors: err})
-            return;
-          }
-          console.log("Client site deleted with id "+req.params.client_site_id);
-          res.json({"result":"completed", "client_site_id":req.params.client_site_id});
-        });
-        connection.commit();
-      });
+    res.json([mapClientSite(assertFound(clientSite, 'No ClientSite with id found'))]);
+  }))
+  .put([
+    check('name').exists().trim().notEmpty().escape(),
+    check('comments').exists().trim().escape(),
+    check('address').exists().trim().notEmpty().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
+      return;
+    }
+
+    const clientId = parseId(req.params.id, 'client_id');
+    const clientSiteId = parseId(req.params.client_site_id, 'client_site_id');
+    const result = await prisma.clientSite.updateMany({
+      where: { clientSiteId },
+      data: clientSiteData(req.body, clientId)
+    });
+
+    assertChanged(result, 'No ClientSite with id found');
+    res.json({ result: 'completed', client_site_id: clientSiteId });
+  }))
+  .delete(asyncRoute(async (req, res) => {
+    const clientSiteId = parseId(req.params.client_site_id, 'client_site_id');
+    const result = await prisma.clientSite.deleteMany({
+      where: { clientSiteId }
+    });
+
+    assertChanged(result, 'No ClientSite with id found');
+    res.json({ result: 'completed', client_site_id: clientSiteId });
+  }));
 
 router.route('/:id/poc')
-      .get((req , res) => {
-        var results = [];
-        connection.query(
-          `SELECT * FROM ${poc_table} WHERE client_id = ${req.params.id};`, function (err, rows) {
-            if (err){
-              console.log(err);
-              res.status(400).json({ errors: err})
-              return;
-            }
-            rows.forEach((element) => {
-              results.push(
-                  {
-                      "point_of_contact_id": element.point_of_contact_id,
-                      "client_id": element.client_id,
-                      "name": element.name,
-                      "email": element.email,
-                      "phone": element.phone,
-                      "job_title": element.job_title,
-                      "comments": element.comments
-                  });
-          });
-          console.log("[ENDPOINT] GET All PointOfContacts:", results);
-          res.json(results);
-        });
-      })
-      .post([ check('phone').exists().trim().escape(),
-              check('name').exists().notEmpty().trim().escape(),
-              check('email').exists().notEmpty().escape(),
-              check('comments').exists().trim().escape(),
-              ],
-      
-      (req , res) => {
+  .get(asyncRoute(async (req, res) => {
+    const clientId = parseId(req.params.id, 'client_id');
+    const pointsOfContact = await prisma.pointOfContact.findMany({
+      where: { clientId },
+      orderBy: { pointOfContactId: 'asc' }
+    });
 
-        const errors = validationResult(req);
-        if (!errors.isEmpty())
-          return res.status(400).json({ errors: errors.array() }); 
+    res.json(pointsOfContact.map(mapPointOfContact));
+  }))
+  .post([
+    check('phone').exists().trim().escape(),
+    check('name').exists().notEmpty().trim().escape(),
+    check('email').exists().notEmpty().escape(),
+    check('comments').exists().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
+      return;
+    }
 
-        var point_of_contact = req.body;
-        connection.query(
-        `INSERT INTO ${poc_table} (client_id, name, email, phone, job_title, comments)\
-        VALUES (?, ?, ?, ?, ?, ?)`,
-        [req.params.id, point_of_contact.name, point_of_contact.email, point_of_contact.phone,
-        point_of_contact.job_title,point_of_contact.comments], function(err, result, fields) {
-          if (err){
-            console.log(err);
-            res.status(400).json({ errors: err})
-            return;
-          }
-          console.log("Last point_of_contact inserted id: "+result.insertId);
-          res.json({"result":"completed", "poc_id":result.insertId});
-        });
-        connection.commit();
-      });
+    const clientId = parseId(req.params.id, 'client_id');
+    const pointOfContact = await prisma.pointOfContact.create({
+      data: pointOfContactData(req.body, clientId)
+    });
 
-      router.route('/:id/poc/:poc_id/')
-      .get((req , res) => {
-        connection.query(
-          `SELECT * FROM ${poc_table} WHERE point_of_contact_id = ${req.params.poc_id};`, 
-          function (err, result) {
-            if (err){
-              console.log(err);
-              res.status(400).json({ errors: err})
-              return;
-            }
-                  console.log("[ENDPOINT] GET specific poc:", result);
-                  res.json(result);
-            });  
-            
-      })
-      .put([  check('client_id').exists().trim().escape(),
-              check('name').exists().trim().notEmpty().escape(),
-              check('email').exists().trim().notEmpty().escape(),
-              check('comments').exists().trim().escape(),
-              check('job_title').exists().trim().escape()],
-        (req , res) => {
-        
-          const errors = validationResult(req);
-          if (!errors.isEmpty())
-            return res.status(400).json({ errors: errors.array() });
+    res.json({ result: 'completed', poc_id: pointOfContact.pointOfContactId });
+  }));
 
-          var  poc = req.body;
-          connection.query(
-          `UPDATE ${poc_table} SET client_id = '${poc.client_id}', name = '${poc.name}', \
-          email = '${poc.email}', phone = '${poc.phone}', job_title = '${poc.job_title}', comments = '${poc.comments}'
-          WHERE point_of_contact_id = '${req.params.poc_id}';`,
-          function(err, result, fields) {
-            if (err){
-              console.log(err);
-              res.status(400).json({ errors: err})
-              return;
-            }
-            console.log("Update poc with id "+req.params.poc_id);
-            res.json({"result":"completed", "point_of_contact_id":req.params.poc_id});
-          });
-          connection.commit();
-      })
-      .delete((req , res) => {
-        var poc = req.body;
-        connection.query(
-        `DELETE FROM ${poc_table} WHERE point_of_contact_id = '${req.params.poc_id}';`,
-        function(err, result, fields) {
-          if (err){
-            console.log(err);
-            res.status(400).json({ errors: err})
-            return;
-          }
-          console.log("POC deleted with id "+req.params.poc_id);
-          res.json({"result":"completed", "point_of_contact_id":req.params.poc_id});
-        });
-        connection.commit();
-      });
+router.route('/:id/poc/:poc_id/')
+  .get(asyncRoute(async (req, res) => {
+    const pointOfContactId = parseId(req.params.poc_id, 'poc_id');
+    const pointOfContact = await prisma.pointOfContact.findUnique({
+      where: { pointOfContactId }
+    });
 
+    res.json([mapPointOfContact(assertFound(pointOfContact, 'No PointOfContact with id found'))]);
+  }))
+  .put([
+    check('client_id').exists().trim().escape(),
+    check('name').exists().trim().notEmpty().escape(),
+    check('email').exists().trim().notEmpty().escape(),
+    check('comments').exists().trim().escape(),
+    check('job_title').exists().trim().escape()
+  ], asyncRoute(async (req, res) => {
+    if (!ensureValidRequest(req, res)) {
+      return;
+    }
+
+    const pointOfContactId = parseId(req.params.poc_id, 'poc_id');
+    const result = await prisma.pointOfContact.updateMany({
+      where: { pointOfContactId },
+      data: pointOfContactData(req.body, req.body.client_id)
+    });
+
+    assertChanged(result, 'No PointOfContact with id found');
+    res.json({ result: 'completed', point_of_contact_id: pointOfContactId });
+  }))
+  .delete(asyncRoute(async (req, res) => {
+    const pointOfContactId = parseId(req.params.poc_id, 'poc_id');
+    const result = await prisma.pointOfContact.deleteMany({
+      where: { pointOfContactId }
+    });
+
+    assertChanged(result, 'No PointOfContact with id found');
+    res.json({ result: 'completed', point_of_contact_id: pointOfContactId });
+  }));
 
 module.exports = router;
