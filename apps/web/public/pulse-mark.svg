@@ -1,0 +1,16 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pulse-mark-title">
+  <title id="pulse-mark-title">Pulse</title>
+  <defs>
+    <linearGradient id="pulseMarkBlue" x1="28" y1="20" x2="132" y2="140" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E6BA8"/>
+      <stop offset="1" stop-color="#0D4C83"/>
+    </linearGradient>
+    <linearGradient id="pulseMarkSilver" x1="42" y1="68" x2="118" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F9FC"/>
+      <stop offset="1" stop-color="#A9B3BE"/>
+    </linearGradient>
+  </defs>
+  <rect x="18" y="18" width="124" height="124" rx="30" fill="url(#pulseMarkBlue)"/>
+  <path d="M61 110V50H86C101 50 112 60 112 74C112 89 101 98 86 98H64" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M43 98H72L82 72L96 116L108 98H121" stroke="url(#pulseMarkSilver)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -19,9 +19,7 @@ gui/                      Angular 12 frontend
 dev-tools/                Legacy development helper scripts
 proxy/                    Proxy Dockerfile
 docker-compose.dev.yml    Local development compose stack
-PROJECT_ASSESSMENT.md     Technical assessment of the inherited project
-DEPENDENCY_MODERNIZATION_REPORT.md
-DATABASE_MIGRATION_PLAN.md
+docs/                     Project documentation, reports, ADRs, and checkpoints
 ```
 
 ## Technology Stack
@@ -201,7 +199,7 @@ npm run prisma:migrate
 
 If `backend/.env` does not exist, set `DATABASE_URL` in your shell before running Prisma commands.
 
-Read `DATABASE_MIGRATION_PLAN.md` before converting routes.
+Read `docs/architecture/DATABASE_MIGRATION_PLAN.md` before converting routes.
 
 ## Known Issues
 
@@ -224,6 +222,11 @@ Read `DATABASE_MIGRATION_PLAN.md` before converting routes.
 
 ## Project Documentation
 
-- `PROJECT_ASSESSMENT.md`: inherited project assessment and setup-readiness review.
-- `DEPENDENCY_MODERNIZATION_REPORT.md`: dependency modernization work and remaining package risks.
-- `DATABASE_MIGRATION_PLAN.md`: PostgreSQL/Prisma migration strategy.
+- `docs/README.md`: documentation index.
+- `docs/PULSE_TRANSITION_PLAN.md`: Pulse transition plan and scaffold direction.
+- `docs/adr/0001-new-pulse-monorepo.md`: decision record for the new Pulse monorepo.
+- `docs/checkpoints/RESTART_CHECKPOINT.md`: latest restart checkpoint.
+- `docs/reports/PROJECT_ASSESSMENT.md`: inherited project assessment and setup-readiness review.
+- `docs/reports/AUTH_REFACTOR_REPORT.md`: local auth refactor state and follow-up notes.
+- `docs/reports/DEPENDENCY_MODERNIZATION_REPORT.md`: dependency modernization work and remaining package risks.
+- `docs/architecture/DATABASE_MIGRATION_PLAN.md`: PostgreSQL/Prisma migration strategy.

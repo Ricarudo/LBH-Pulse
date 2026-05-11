@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Lead {
+  id                               String           @id @default(cuid())
+  leadNumber                       String           @unique
+  name                             String
+  companyName                      String?
+  contactName                      String?
+  contactTitle                     String?
+  email                            String?
+  phone                            String?
+  leadSource                       String
+  serviceInterest                  String
+  siteName                         String?
+  siteAddress                      String?
+  city                             String?
+  state                            String?
+  estimatedValue                   Decimal          @default(0) @db.Decimal(12, 2)
+  status                           String           @default("New")
+  priority                         String           @default("Normal")
+  assignedOwner                    String           @default("Unassigned")
+  nextFollowUpDate                 DateTime?
+  notes                            String?
+  qualificationContactIdentified   Boolean          @default(false)
+  qualificationSiteKnown           Boolean          @default(false)
+  qualificationBudgetKnown         Boolean          @default(false)
+  qualificationFollowUpScheduled   Boolean          @default(false)
+  converted                        Boolean          @default(false)
+  convertedOpportunityId           String?
+  convertedQuoteId                 String?
+  convertedProjectId               String?
+  archivedAt                       DateTime?
+  createdAt                        DateTime         @default(now())
+  updatedAt                        DateTime         @updatedAt
+  lastActivityAt                   DateTime?
+  activities                       LeadActivity[]
+  tasks                            LeadTask[]
+  notesList                        LeadNote[]
+  attachments                      LeadAttachment[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([leadSource])
+  @@index([assignedOwner])
+  @@index([archivedAt])
+}
+
+model LeadActivity {
+  id        String   @id @default(cuid())
+  leadId    String
+  type      String
+  title     String
+  body      String?
+  actor     String   @default("Pulse User")
+  createdAt DateTime @default(now())
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([createdAt])
+}
+
+model LeadTask {
+  id          String    @id @default(cuid())
+  leadId      String
+  title       String
+  dueAt       DateTime?
+  owner       String    @default("Unassigned")
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([completedAt])
+}
+
+model LeadNote {
+  id        String   @id @default(cuid())
+  leadId    String
+  body      String
+  actor     String   @default("Pulse User")
+  createdAt DateTime @default(now())
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([createdAt])
+}
+
+model LeadAttachment {
+  id        String   @id @default(cuid())
+  leadId    String
+  fileName  String
+  url       String?
+  createdAt DateTime @default(now())
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+model Client {
+  id                 String           @id @default(cuid())
+  clientNumber       String           @unique
+  companyName        String?
+  legalName          String?
+  displayName        String           @default("Unnamed Client")
+  clientType         String           @default("Commercial")
+  industry           String?
+  website            String?
+  status             String           @default("Active")
+  accountOwner       String           @default("Unassigned")
+  mainPhone          String?
+  mainEmail          String?
+  taxId              String?
+  paymentTerms       String?
+  billingEmail       String?
+  preferredCurrency  String           @default("USD")
+  preferredLanguage  String           @default("English")
+  brandPreferences   String?
+  technologyPreferences String?
+  generalNotes       String?
+  importantNotes     String?
+  preferredVendors   String?
+  preferredCameraBrand String?
+  preferredAccessControlBrand String?
+  preferredNetworkBrand String?
+  preferredCablingBrand String?
+  standardTechnologies String?
+  documentationRequirements String?
+  invoiceRequirements String?
+  insuranceRequirements String?
+  purchaseOrderRequired Boolean       @default(false)
+  source             String?
+  openOpportunities  Int              @default(0)
+  activeProjects     Int              @default(0)
+  lifetimeValue      Decimal          @default(0) @db.Decimal(12, 2)
+  outstandingBalance Decimal          @default(0) @db.Decimal(12, 2)
+  archivedAt         DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  lastActivityAt     DateTime?
+  contacts           ClientContact[]
+  sites              ClientSite[]
+  services           ClientService[]
+  activities         ClientActivity[]
+
+  @@index([status])
+  @@index([clientType])
+  @@index([accountOwner])
+  @@index([archivedAt])
+}
+
+model ClientContact {
+  id                     String      @id @default(cuid())
+  clientId               String
+  siteId                 String?
+  role                   String?     @default("Primary")
+  name                   String?
+  firstName              String      @default("Unknown")
+  lastName               String      @default("")
+  title                  String?
+  department             String?
+  email                  String?
+  phone                  String?
+  mobile                 String?
+  preferredContactMethod String?
+  isPrimary              Boolean     @default(false)
+  isBilling              Boolean     @default(false)
+  isPrimaryContact       Boolean     @default(false)
+  isBillingContact       Boolean     @default(false)
+  isTechnicalContact     Boolean     @default(false)
+  isDecisionMaker        Boolean     @default(false)
+  notes                  String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  client                 Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  site                   ClientSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([siteId])
+  @@index([email])
+}
+
+model ClientSite {
+  id                   String          @id @default(cuid())
+  clientId             String
+  name                 String?
+  siteName             String          @default("Unnamed Site")
+  siteType             String          @default("Main Office")
+  address              String?
+  addressLine1         String?
+  addressLine2         String?
+  city                 String?
+  state                String?
+  postalCode           String?
+  country              String          @default("Puerto Rico")
+  googleMapsUrl        String?
+  latitude             Decimal?        @db.Decimal(10, 7)
+  longitude            Decimal?        @db.Decimal(10, 7)
+  operationalHours     String?
+  accessInstructions   String?
+  parkingInstructions  String?
+  securityRequirements String?
+  siteNotes            String?
+  status               String?         @default("Active")
+  isPrimarySite        Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  client               Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contacts             ClientContact[]
+
+  @@index([clientId])
+  @@index([siteType])
+  @@index([isPrimarySite])
+}
+
+model ClientService {
+  id          String   @id @default(cuid())
+  clientId    String
+  serviceName String
+  createdAt   DateTime @default(now())
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, serviceName])
+  @@index([clientId])
+}
+
+model ClientActivity {
+  id        String   @id @default(cuid())
+  clientId  String
+  type      String
+  title     String
+  detail    String?
+  actor     String   @default("Pulse User")
+  createdAt DateTime @default(now())
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([createdAt])
+}
