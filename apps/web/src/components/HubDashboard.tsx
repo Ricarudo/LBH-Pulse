@@ -9,9 +9,7 @@ import {
   FileText,
   FolderKanban,
   Grid2X2,
-  HardHat,
   ReceiptText,
-  ShoppingCart,
   UsersRound
 } from "lucide-react";
 import Link from "next/link";
@@ -29,8 +27,6 @@ const objectIcons = [
   UsersRound,
   FileText,
   FolderKanban,
-  ShoppingCart,
-  HardHat,
   ReceiptText
 ];
 
@@ -39,8 +35,6 @@ const lifecycleIcons = [
   FileText,
   CheckCircle2,
   BriefcaseBusiness,
-  ShoppingCart,
-  HardHat,
   BadgeDollarSign
 ];
 

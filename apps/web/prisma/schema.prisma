@@ -7,101 +7,253 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Lead {
-  id                               String           @id @default(cuid())
-  leadNumber                       String           @unique
-  name                             String
-  companyName                      String?
-  contactName                      String?
-  contactTitle                     String?
-  email                            String?
-  phone                            String?
-  leadSource                       String
-  serviceInterest                  String
-  siteName                         String?
-  siteAddress                      String?
-  city                             String?
-  state                            String?
-  estimatedValue                   Decimal          @default(0) @db.Decimal(12, 2)
-  status                           String           @default("New")
-  priority                         String           @default("Normal")
-  assignedOwner                    String           @default("Unassigned")
-  nextFollowUpDate                 DateTime?
-  notes                            String?
-  qualificationContactIdentified   Boolean          @default(false)
-  qualificationSiteKnown           Boolean          @default(false)
-  qualificationBudgetKnown         Boolean          @default(false)
-  qualificationFollowUpScheduled   Boolean          @default(false)
-  converted                        Boolean          @default(false)
-  convertedOpportunityId           String?
-  convertedQuoteId                 String?
-  convertedProjectId               String?
-  archivedAt                       DateTime?
-  createdAt                        DateTime         @default(now())
-  updatedAt                        DateTime         @updatedAt
-  lastActivityAt                   DateTime?
-  activities                       LeadActivity[]
-  tasks                            LeadTask[]
-  notesList                        LeadNote[]
-  attachments                      LeadAttachment[]
+model Request {
+  id              String              @id @default(cuid())
+  requestNumber   String              @unique
+  title           String
+  requestType     String
+  source          String
+  serviceCategory String
+  status          String              @default("New")
+  priority        String              @default("Normal")
+  companyName     String?
+  contactName     String?
+  contactEmail    String?
+  contactPhone    String?
+  siteName        String?
+  siteAddress     String?
+  city            String?
+  state           String?
+  clientId        String?
+  contactId       String?
+  siteId          String?
+  assignedToId    String?
+  receivedDate    DateTime            @default(now())
+  dueDate         DateTime?
+  nextAction      String?
+  nextFollowUpAt  DateTime?
+  lastActivityAt  DateTime?
+  missingInfo     String?
+  siteVisitNeeded Boolean             @default(false)
+  siteVisitCompleted Boolean          @default(false)
+  description     String?
+  internalNotes   String?
+  relatedQuoteId  String?
+  checklistTemplateId String?
+  createdById     String?
+  archivedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  assignedTo      LocalUser?          @relation("AssignedRequests", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy       LocalUser?          @relation("CreatedRequests", fields: [createdById], references: [id], onDelete: SetNull)
+  client          Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contact         ClientContact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  site            ClientSite?         @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  relatedQuote    Quote?              @relation(fields: [relatedQuoteId], references: [id], onDelete: SetNull)
+  checklistTemplate RequestChecklistTemplate? @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
+  activities      RequestActivity[]
+  tasks           RequestTask[]
+  notesList       RequestNote[]
+  attachments     RequestAttachment[]
+  checklistItems  RequestChecklistItem[]
 
   @@index([status])
   @@index([priority])
-  @@index([leadSource])
-  @@index([assignedOwner])
+  @@index([requestType])
+  @@index([source])
+  @@index([serviceCategory])
+  @@index([assignedToId])
+  @@index([clientId])
+  @@index([contactId])
+  @@index([siteId])
+  @@index([relatedQuoteId])
+  @@index([checklistTemplateId])
   @@index([archivedAt])
 }
 
-model LeadActivity {
+model RequestChecklistTemplate {
+  id              String                         @id @default(cuid())
+  key             String                         @unique
+  name            String
+  requestType     String?
+  serviceCategory String?
+  active          Boolean                        @default(true)
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
+  items           RequestChecklistTemplateItem[]
+  requests        Request[]
+
+  @@index([requestType])
+  @@index([serviceCategory])
+  @@index([active])
+}
+
+model RequestChecklistTemplateItem {
+  id          String                   @id @default(cuid())
+  templateId  String
+  label       String
+  description String?
+  required    Boolean                  @default(true)
+  appliesWhen String?
+  sortOrder   Int                      @default(0)
+  group       String?
+  template    RequestChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  requestItems RequestChecklistItem[]
+
+  @@index([templateId])
+  @@index([sortOrder])
+}
+
+model RequestChecklistItem {
+  id             String                        @id @default(cuid())
+  requestId      String
+  templateItemId String?
+  label          String
+  description    String?
+  required       Boolean                       @default(true)
+  appliesWhen    String?
+  sortOrder      Int                           @default(0)
+  group          String?
+  completed      Boolean                       @default(false)
+  completedAt    DateTime?
+  completedById  String?
+  notes          String?
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+  request        Request                       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  templateItem   RequestChecklistTemplateItem? @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  completedBy    LocalUser?                    @relation(fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+  @@index([templateItemId])
+  @@index([completed])
+  @@index([completedById])
+}
+
+model RequestActivity {
   id        String   @id @default(cuid())
-  leadId    String
+  requestId String
   type      String
   title     String
   body      String?
   actor     String   @default("Pulse User")
   createdAt DateTime @default(now())
-  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
-  @@index([leadId])
+  @@index([requestId])
   @@index([createdAt])
 }
 
-model LeadTask {
+model RequestTask {
   id          String    @id @default(cuid())
-  leadId      String
+  requestId   String
   title       String
   dueAt       DateTime?
   owner       String    @default("Unassigned")
   completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  request     Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
-  @@index([leadId])
+  @@index([requestId])
   @@index([completedAt])
 }
 
-model LeadNote {
+model RequestNote {
   id        String   @id @default(cuid())
-  leadId    String
+  requestId String
   body      String
   actor     String   @default("Pulse User")
   createdAt DateTime @default(now())
-  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
-  @@index([leadId])
+  @@index([requestId])
   @@index([createdAt])
 }
 
-model LeadAttachment {
+model RequestAttachment {
   id        String   @id @default(cuid())
-  leadId    String
+  requestId String
   fileName  String
   url       String?
   createdAt DateTime @default(now())
-  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
-  @@index([leadId])
+  @@index([requestId])
+}
+
+model LocalUser {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  role         String
+  passwordHash String
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  activities   Activity[]
+  assignedRequests Request[] @relation("AssignedRequests")
+  createdRequests  Request[] @relation("CreatedRequests")
+  completedRequestChecklistItems RequestChecklistItem[]
+
+  @@index([role])
+  @@index([active])
+}
+
+model Activity {
+  id                String    @id @default(cuid())
+  relatedEntityType String
+  relatedEntityId   String
+  actorUserId       String?
+  actorName         String
+  actorRole         String
+  type              String
+  title             String
+  detail            String?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  actor             LocalUser? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([relatedEntityType, relatedEntityId])
+  @@index([actorUserId])
+  @@index([actorRole])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Opportunity {
+  id          String    @id @default(cuid())
+  number      String    @unique
+  name        String
+  clientName  String?
+  status      String    @default("Open")
+  owner       String    @default("Unassigned")
+  value       Decimal   @default(0) @db.Decimal(12, 2)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([owner])
+  @@index([archivedAt])
+}
+
+model Quote {
+  id          String    @id @default(cuid())
+  quoteNumber String    @unique
+  title       String
+  clientName  String?
+  status      String    @default("Draft")
+  owner       String    @default("Unassigned")
+  total       Decimal   @default(0) @db.Decimal(12, 2)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  requests    Request[]
+
+  @@index([status])
+  @@index([owner])
+  @@index([archivedAt])
 }
 
 model Client {
@@ -149,6 +301,7 @@ model Client {
   sites              ClientSite[]
   services           ClientService[]
   activities         ClientActivity[]
+  requests           Request[]
 
   @@index([status])
   @@index([clientType])
@@ -181,6 +334,7 @@ model ClientContact {
   updatedAt              DateTime    @updatedAt
   client                 Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
   site                   ClientSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  requests               Request[]
 
   @@index([clientId])
   @@index([siteId])
@@ -214,6 +368,7 @@ model ClientSite {
   updatedAt            DateTime        @updatedAt
   client               Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
   contacts             ClientContact[]
+  requests             Request[]
 
   @@index([clientId])
   @@index([siteType])

@@ -1,33 +1,200 @@
 const { PrismaClient } = require("@prisma/client");
+const { scryptSync } = require("crypto");
 
 const prisma = new PrismaClient();
 
-const sampleLeads = [
+function hashPassword(password, salt) {
+  return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+const testUsers = [
   {
-    leadNumber: "LD-2026-1001",
+    name: "Admin User",
+    email: "admin@r2.local",
+    role: "Admin",
+    password: "PulseAdmin123!"
+  },
+  {
+    name: "Sales User",
+    email: "sales@r2.local",
+    role: "Sales",
+    password: "PulseSales123!"
+  },
+  {
+    name: "Project Manager User",
+    email: "project.manager@r2.local",
+    role: "ProjectManager",
+    password: "PulsePm123!"
+  },
+  {
+    name: "Technician User",
+    email: "technician@r2.local",
+    role: "Technician",
+    password: "PulseTech123!"
+  }
+];
+
+const checklistTemplates = [
+  {
+    key: "general",
+    name: "General Request Intake",
+    items: [
+      ["Client / company identified", "Core"],
+      ["Contact information confirmed", "Core"],
+      ["Site address confirmed", "Core"],
+      ["Scope summary captured", "Scope"],
+      ["Service category selected", "Scope"],
+      ["Due date confirmed", "Schedule"],
+      ["Files received, if applicable", "Files", false],
+      ["Site visit decision made", "Site Visit"],
+      ["Site visit completed", "Site Visit", true, "siteVisitRequired"],
+      ["Internal owner assigned", "Ownership"]
+    ]
+  },
+  {
+    key: "fiber-install",
+    name: "Fiber Install Intake",
+    serviceCategory: "Fiber",
+    items: [
+      ["Client / company identified", "Core"],
+      ["Contact information confirmed", "Core"],
+      ["Site address confirmed", "Core"],
+      ["Scope summary captured", "Scope"],
+      ["MDF/IDF locations known", "Fiber Scope"],
+      ["Pathway available or unknown identified", "Fiber Scope"],
+      ["Drawings received", "Files"],
+      ["Distance estimate available", "Fiber Scope"],
+      ["Indoor/outdoor route confirmed", "Fiber Scope"],
+      ["Aerial/trench/conduit requirement known", "Fiber Scope"],
+      ["Due date confirmed", "Schedule"],
+      ["Site visit decision made", "Site Visit"],
+      ["Site visit completed", "Site Visit", true, "siteVisitRequired"],
+      ["Internal owner assigned", "Ownership"]
+    ]
+  },
+  {
+    key: "access-control",
+    name: "Access Control Intake",
+    serviceCategory: "Access Control",
+    items: [
+      ["Client / company identified", "Core"],
+      ["Contact information confirmed", "Core"],
+      ["Site address confirmed", "Core"],
+      ["Scope summary captured", "Scope"],
+      ["Door count confirmed", "Access Control"],
+      ["Door types confirmed", "Access Control"],
+      ["Floor plan received", "Files"],
+      ["Reader locations confirmed", "Access Control"],
+      ["Locking hardware type known", "Access Control"],
+      ["Fire alarm interface requirement confirmed", "Access Control"],
+      ["Existing access platform identified", "Access Control"],
+      ["Due date confirmed", "Schedule"],
+      ["Site visit decision made", "Site Visit"],
+      ["Site visit completed", "Site Visit", true, "siteVisitRequired"],
+      ["Internal owner assigned", "Ownership"]
+    ]
+  },
+  {
+    key: "cctv-surveillance",
+    name: "CCTV / Surveillance Intake",
+    serviceCategory: "CCTV / Surveillance",
+    items: [
+      ["Client / company identified", "Core"],
+      ["Contact information confirmed", "Core"],
+      ["Site address confirmed", "Core"],
+      ["Scope summary captured", "Scope"],
+      ["Camera count confirmed", "CCTV"],
+      ["Camera locations identified", "CCTV"],
+      ["Mounting conditions known", "CCTV"],
+      ["Network availability confirmed", "CCTV"],
+      ["Power/PoE availability confirmed", "CCTV"],
+      ["Recording requirement known", "CCTV"],
+      ["Retention requirement known", "CCTV"],
+      ["Drawings/photos received", "Files"],
+      ["Due date confirmed", "Schedule"],
+      ["Site visit decision made", "Site Visit"],
+      ["Site visit completed", "Site Visit", true, "siteVisitRequired"],
+      ["Internal owner assigned", "Ownership"]
+    ]
+  },
+  {
+    key: "structured-cabling",
+    name: "Structured Cabling Intake",
+    serviceCategory: "Structured Cabling",
+    items: [
+      ["Client / company identified", "Core"],
+      ["Contact information confirmed", "Core"],
+      ["Site address confirmed", "Core"],
+      ["Scope summary captured", "Scope"],
+      ["Outlet/drop count confirmed", "Cabling"],
+      ["Floor plan/drawing received", "Files"],
+      ["IDF/MDF location confirmed", "Cabling"],
+      ["Cable category confirmed", "Cabling"],
+      ["Pathway conditions known", "Cabling"],
+      ["Ceiling/access conditions known", "Cabling"],
+      ["Labeling standard confirmed", "Cabling"],
+      ["Due date confirmed", "Schedule"],
+      ["Site visit decision made", "Site Visit"],
+      ["Site visit completed", "Site Visit", true, "siteVisitRequired"],
+      ["Internal owner assigned", "Ownership"]
+    ]
+  }
+];
+
+function checklistKeyFor(serviceCategory) {
+  if (serviceCategory === "Fiber") return "fiber-install";
+  if (serviceCategory === "Access Control") return "access-control";
+  if (serviceCategory === "CCTV / Surveillance") return "cctv-surveillance";
+  if (serviceCategory === "Structured Cabling") return "structured-cabling";
+  return "general";
+}
+
+const sampleRequests = [
+  {
+    requestNumber: "RQ-2026-1001",
     name: "Surveillance system upgrade",
     companyName: "Northfield Industries",
     contactName: "Elena Cruz",
     contactTitle: "Facilities Director",
     email: "ecruz@northfield.example",
     phone: "787-555-0148",
-    leadSource: "Existing Customer",
-    serviceInterest: "CCTV / Cameras",
+    requestType: "Quote Request",
+    source: "Existing Client",
+    serviceCategory: "CCTV / Surveillance",
     siteName: "Main manufacturing campus",
     siteAddress: "Road 2 KM 17.4",
     city: "Guaynabo",
     state: "PR",
-    estimatedValue: 68500,
-    status: "Qualified",
+    status: "Ready for Quote",
     priority: "High",
-    assignedOwner: "Alex Morgan",
-    nextFollowUpDate: new Date("2026-05-12T14:00:00.000Z"),
-    notes: "Customer wants to replace aging cameras and improve remote viewing across warehouse entrances.",
-    qualificationContactIdentified: true,
-    qualificationSiteKnown: true,
-    qualificationBudgetKnown: true,
-    qualificationFollowUpScheduled: true,
+    assignedOwner: "Admin User",
+    dueDate: new Date("2026-05-13T12:00:00.000Z"),
+    nextAction: "Create quote workspace",
+    nextFollowUpAt: new Date("2026-05-12T14:00:00.000Z"),
+    missingInfo: null,
+    siteVisitNeeded: false,
+    siteVisitCompleted: false,
+    description: "Customer wants to replace aging cameras and improve remote viewing across warehouse entrances.",
+    internalNotes: "Ready for quote intake review.",
     lastActivityAt: new Date("2026-05-09T14:32:00.000Z"),
+    checklistCompleted: [
+      "Client / company identified",
+      "Contact information confirmed",
+      "Site address confirmed",
+      "Scope summary captured",
+      "Service category selected",
+      "Camera count confirmed",
+      "Camera locations identified",
+      "Mounting conditions known",
+      "Network availability confirmed",
+      "Power/PoE availability confirmed",
+      "Recording requirement known",
+      "Retention requirement known",
+      "Drawings/photos received",
+      "Due date confirmed",
+      "Site visit decision made",
+      "Internal owner assigned"
+    ],
     tasks: [
       {
         title: "Confirm camera count and recording retention target",
@@ -39,38 +206,50 @@ const sampleLeads = [
     activities: [
       {
         type: "Status",
-        title: "Lead qualified",
-        body: "Budget range and site contact confirmed.",
+        title: "Request ready for quote",
+        body: "Site contact and intake details confirmed.",
         actor: "Alex Morgan",
         createdAt: new Date("2026-05-09T14:32:00.000Z")
       }
     ]
   },
   {
-    leadNumber: "LD-2026-1002",
+    requestNumber: "RQ-2026-1002",
     name: "Access control expansion",
     companyName: "San Juan Medical Center",
     contactName: "Mariela Torres",
     contactTitle: "Security Manager",
     email: "mtorres@sjmc.example",
     phone: "787-555-0199",
-    leadSource: "Referral",
-    serviceInterest: "Access Control",
+    requestType: "Site Visit Request",
+    source: "Existing Client",
+    serviceCategory: "Access Control",
     siteName: "North tower",
     siteAddress: "Avenida Ponce de Leon 1510",
     city: "San Juan",
     state: "PR",
-    estimatedValue: 42850,
-    status: "Site Visit Needed",
+    status: "Site Visit Required",
     priority: "High",
-    assignedOwner: "Project Manager User",
-    nextFollowUpDate: new Date("2026-05-14T15:00:00.000Z"),
-    notes: "Badge reader expansion and door monitoring for two floors. Needs site walk before estimating.",
-    qualificationContactIdentified: true,
-    qualificationSiteKnown: true,
-    qualificationBudgetKnown: false,
-    qualificationFollowUpScheduled: true,
+    assignedOwner: "Sales User",
+    dueDate: new Date("2026-05-14T15:00:00.000Z"),
+    nextAction: "Schedule north tower site walk",
+    nextFollowUpAt: new Date("2026-05-14T15:00:00.000Z"),
+    missingInfo: "Door count and access-control panel details",
+    siteVisitNeeded: true,
+    siteVisitCompleted: false,
+    description: "Badge reader expansion and door monitoring for two floors. Needs site walk before estimating.",
+    internalNotes: "Coordinate visit windows with hospital facilities.",
     lastActivityAt: new Date("2026-05-08T13:58:00.000Z"),
+    checklistCompleted: [
+      "Client / company identified",
+      "Contact information confirmed",
+      "Site address confirmed",
+      "Scope summary captured",
+      "Service category selected",
+      "Due date confirmed",
+      "Site visit decision made",
+      "Internal owner assigned"
+    ],
     tasks: [
       {
         title: "Schedule north tower site walk",
@@ -90,30 +269,37 @@ const sampleLeads = [
     ]
   },
   {
-    leadNumber: "LD-2026-1003",
+    requestNumber: "RQ-2026-1003",
     name: "Structured cabling project",
     companyName: "Municipality Facilities Office",
     contactName: "Rafael Ortiz",
     contactTitle: "Procurement Lead",
     email: "rortiz@municipality.example",
     phone: "787-555-0188",
-    leadSource: "Public Bid",
-    serviceInterest: "Structured Cabling",
+    requestType: "RFP / Bid",
+    source: "RFP",
+    serviceCategory: "Structured Cabling",
     siteName: "Municipal services building",
     siteAddress: "Calle Munoz Rivera 44",
     city: "Caguas",
     state: "PR",
-    estimatedValue: 96500,
-    status: "New",
+    status: "Received",
     priority: "Urgent",
     assignedOwner: "Unassigned",
-    nextFollowUpDate: new Date("2026-05-10T12:00:00.000Z"),
-    notes: "Bid docs need review. Deadline is tight and scope may include fiber risers.",
-    qualificationContactIdentified: true,
-    qualificationSiteKnown: true,
-    qualificationBudgetKnown: false,
-    qualificationFollowUpScheduled: true,
+    dueDate: new Date("2026-05-10T12:00:00.000Z"),
+    nextAction: "Assign owner and review bid package",
+    nextFollowUpAt: new Date("2026-05-10T12:00:00.000Z"),
+    missingInfo: "Bid addenda and fiber riser drawings",
+    siteVisitNeeded: false,
+    siteVisitCompleted: false,
+    description: "Bid docs need review. Deadline is tight and scope may include fiber risers.",
+    internalNotes: "Needs qualification before estimating team spends time.",
     lastActivityAt: new Date("2026-05-09T12:30:00.000Z"),
+    checklistCompleted: [
+      "Client / company identified",
+      "Contact information confirmed",
+      "Service category selected"
+    ],
     tasks: [
       {
         title: "Assign owner and review bid package",
@@ -133,30 +319,41 @@ const sampleLeads = [
     ]
   },
   {
-    leadNumber: "LD-2026-1004",
+    requestNumber: "RQ-2026-1004",
     name: "AV conference room upgrade",
     companyName: "Banco Popular Tower",
     contactName: "Daniela Perez",
     contactTitle: "Workplace Technology Manager",
     email: "dperez@bancopopular.example",
     phone: "787-555-0172",
-    leadSource: "Website",
-    serviceInterest: "AV",
+    requestType: "General Inquiry",
+    source: "Website",
+    serviceCategory: "AV",
     siteName: "Executive conference center",
     siteAddress: "209 Munoz Rivera Avenue",
     city: "San Juan",
     state: "PR",
-    estimatedValue: 38400,
-    status: "Contacted",
+    status: "Missing Info",
     priority: "Normal",
     assignedOwner: "Sales User",
-    nextFollowUpDate: new Date("2026-05-16T14:00:00.000Z"),
-    notes: "Customer wants a modern conferencing room with camera, display, microphones, and simple controls.",
-    qualificationContactIdentified: true,
-    qualificationSiteKnown: true,
-    qualificationBudgetKnown: false,
-    qualificationFollowUpScheduled: true,
+    dueDate: new Date("2026-05-16T14:00:00.000Z"),
+    nextAction: "Send discovery checklist",
+    nextFollowUpAt: new Date("2026-05-16T14:00:00.000Z"),
+    missingInfo: "Room dimensions and preferred meeting platform",
+    siteVisitNeeded: false,
+    siteVisitCompleted: false,
+    description: "Customer wants a modern conferencing room with camera, display, microphones, and simple controls.",
+    internalNotes: "Customer prefers a phased design if budget is constrained.",
     lastActivityAt: new Date("2026-05-08T20:45:00.000Z"),
+    checklistCompleted: [
+      "Client / company identified",
+      "Contact information confirmed",
+      "Site address confirmed",
+      "Service category selected",
+      "Due date confirmed",
+      "Site visit decision made",
+      "Internal owner assigned"
+    ],
     tasks: [
       {
         title: "Send discovery checklist",
@@ -176,30 +373,45 @@ const sampleLeads = [
     ]
   },
   {
-    leadNumber: "LD-2026-1005",
+    requestNumber: "RQ-2026-1005",
     name: "Fiber backbone installation",
     companyName: "Caribbean Logistics",
     contactName: "Hector Rivera",
     contactTitle: "Operations Manager",
     email: "hrivera@cariblog.example",
     phone: "787-555-0112",
-    leadSource: "Partner",
-    serviceInterest: "Fiber",
+    requestType: "Drawing Review",
+    source: "Drawing Package",
+    serviceCategory: "Fiber",
     siteName: "Bayamon warehouse",
     siteAddress: "Industrial Park Lot 5",
     city: "Bayamon",
     state: "PR",
-    estimatedValue: 61200,
-    status: "Estimating",
+    status: "Reviewing",
     priority: "Normal",
-    assignedOwner: "Project Manager User",
-    nextFollowUpDate: new Date("2026-05-15T16:00:00.000Z"),
-    notes: "Warehouse needs fiber backbone between MDF and two IDFs. Site walk complete.",
-    qualificationContactIdentified: true,
-    qualificationSiteKnown: true,
-    qualificationBudgetKnown: true,
-    qualificationFollowUpScheduled: true,
+    assignedOwner: "Admin User",
+    dueDate: new Date("2026-05-15T16:00:00.000Z"),
+    nextAction: "Complete fiber material takeoff",
+    nextFollowUpAt: new Date("2026-05-15T16:00:00.000Z"),
+    missingInfo: null,
+    siteVisitNeeded: false,
+    siteVisitCompleted: false,
+    description: "Warehouse needs fiber backbone between MDF and two IDFs. Site walk complete.",
+    internalNotes: "Site walk notes are ready for quote intake review.",
     lastActivityAt: new Date("2026-05-09T16:10:00.000Z"),
+    checklistCompleted: [
+      "Client / company identified",
+      "Contact information confirmed",
+      "Site address confirmed",
+      "Scope summary captured",
+      "MDF/IDF locations known",
+      "Pathway available or unknown identified",
+      "Drawings received",
+      "Distance estimate available",
+      "Due date confirmed",
+      "Site visit decision made",
+      "Internal owner assigned"
+    ],
     tasks: [
       {
         title: "Complete fiber material takeoff",
@@ -211,38 +423,51 @@ const sampleLeads = [
     activities: [
       {
         type: "Status",
-        title: "Moved to estimating",
-        body: "Site walk notes are ready for material takeoff.",
+        title: "Moved to review",
+        body: "Site walk notes are ready for quote intake review.",
         actor: "Project Manager User",
         createdAt: new Date("2026-05-09T16:10:00.000Z")
       }
     ]
   },
   {
-    leadNumber: "LD-2026-1006",
+    requestNumber: "RQ-2026-1006",
     name: "Network refresh",
     companyName: "Coastal Hospitality Group",
     contactName: "Sofia Morales",
     contactTitle: "IT Coordinator",
     email: "smorales@coastalhospitality.example",
     phone: "787-555-0166",
-    leadSource: "Phone",
-    serviceInterest: "Network",
+    requestType: "Quote Request",
+    source: "Call",
+    serviceCategory: "Networking",
     siteName: "Condado hotel",
     siteAddress: "Ashford Avenue 1102",
     city: "San Juan",
     state: "PR",
-    estimatedValue: 52400,
-    status: "Proposal Needed",
+    status: "Converted to Quote",
     priority: "High",
-    assignedOwner: "Alex Morgan",
-    nextFollowUpDate: new Date("2026-05-13T13:30:00.000Z"),
-    notes: "Replace access switches and clean up rack power. Customer requested proposal this week.",
-    qualificationContactIdentified: true,
-    qualificationSiteKnown: true,
-    qualificationBudgetKnown: true,
-    qualificationFollowUpScheduled: true,
+    assignedOwner: "Sales User",
+    dueDate: new Date("2026-05-13T13:30:00.000Z"),
+    nextAction: "Create quote workspace for network refresh",
+    nextFollowUpAt: new Date("2026-05-13T13:30:00.000Z"),
+    missingInfo: null,
+    siteVisitNeeded: false,
+    siteVisitCompleted: false,
+    description: "Replace access switches and clean up rack power. Customer requested proposal this week.",
+    internalNotes: "Customer asked for a proposal by Friday.",
     lastActivityAt: new Date("2026-05-09T18:05:00.000Z"),
+    checklistCompleted: [
+      "Client / company identified",
+      "Contact information confirmed",
+      "Site address confirmed",
+      "Scope summary captured",
+      "Service category selected",
+      "Due date confirmed",
+      "Files received, if applicable",
+      "Site visit decision made",
+      "Internal owner assigned"
+    ],
     tasks: [
       {
         title: "Create quote placeholder for network refresh",
@@ -254,10 +479,59 @@ const sampleLeads = [
     activities: [
       {
         type: "Status",
-        title: "Proposal needed",
+        title: "Ready for quote workspace",
         body: "Customer asked for a proposal by Friday.",
         actor: "Alex Morgan",
         createdAt: new Date("2026-05-09T18:05:00.000Z")
+      }
+    ]
+  },
+  {
+    requestNumber: "RQ-2026-1007",
+    name: "Small residential camera repair",
+    companyName: "Private Residence",
+    contactName: "Luis Santiago",
+    contactTitle: "Owner",
+    email: "lsantiago@example.test",
+    phone: "787-555-0107",
+    requestType: "Service-Related Quote",
+    source: "Call",
+    serviceCategory: "Service / Support",
+    siteName: "Residence",
+    siteAddress: "Calle Luna 12",
+    city: "San Juan",
+    state: "PR",
+    status: "No Bid",
+    priority: "Low",
+    assignedOwner: "Sales User",
+    dueDate: new Date("2026-05-17T12:00:00.000Z"),
+    nextAction: "No bid - outside current service profile",
+    nextFollowUpAt: null,
+    missingInfo: null,
+    siteVisitNeeded: false,
+    siteVisitCompleted: false,
+    description: "One-off residential troubleshooting request. R2 is not pursuing this scope.",
+    internalNotes: "No bid because this is outside current commercial service focus.",
+    lastActivityAt: new Date("2026-05-09T19:05:00.000Z"),
+    checklistCompleted: [
+      "Client / company identified",
+      "Contact information confirmed",
+      "Site address confirmed",
+      "Scope summary captured",
+      "Service category selected",
+      "Due date confirmed",
+      "Site visit decision made",
+      "Internal owner assigned"
+    ],
+    tasks: [],
+    attachments: [],
+    activities: [
+      {
+        type: "Status",
+        title: "No bid decision",
+        body: "Request closed without quote because the scope is outside target work.",
+        actor: "Sales User",
+        createdAt: new Date("2026-05-09T19:05:00.000Z")
       }
     ]
   }
@@ -317,7 +591,7 @@ const sampleClients = [
     services: ["Access Control", "CCTV / Cameras", "Structured Cabling"],
     activities: [
       {
-        type: "Lead",
+        type: "Request",
         title: "Access control expansion qualified",
         detail: "Door count review requested for two floors.",
         actor: "Alex Morgan",
@@ -432,7 +706,7 @@ const sampleClients = [
     services: ["CCTV / Cameras", "Security"],
     activities: [
       {
-        type: "Lead",
+        type: "Request",
         title: "Camera walk-through captured",
         detail: "Customer wants replacement options and better remote viewing.",
         actor: "Sales User",
@@ -540,8 +814,8 @@ const sampleClients = [
     services: ["Network", "Structured Cabling"],
     activities: [
       {
-        type: "Lead",
-        title: "Network refresh moved to proposal needed",
+        type: "Request",
+        title: "Network refresh ready for quote",
         detail: "Customer requested proposal this week.",
         actor: "Alex Morgan",
         createdAt: new Date("2026-05-09T18:05:00.000Z")
@@ -551,20 +825,100 @@ const sampleClients = [
 ];
 
 async function main() {
+  await prisma.activity.deleteMany();
+  await prisma.requestChecklistItem.deleteMany();
+  await prisma.requestAttachment.deleteMany();
+  await prisma.requestNote.deleteMany();
+  await prisma.requestTask.deleteMany();
+  await prisma.requestActivity.deleteMany();
+  await prisma.request.deleteMany();
+  await prisma.requestChecklistTemplateItem.deleteMany();
+  await prisma.requestChecklistTemplate.deleteMany();
+  await prisma.quote.deleteMany();
+  await prisma.opportunity.deleteMany();
+  await prisma.localUser.deleteMany();
+
   await prisma.clientActivity.deleteMany();
   await prisma.clientService.deleteMany();
   await prisma.clientSite.deleteMany();
   await prisma.clientContact.deleteMany();
   await prisma.client.deleteMany();
 
-  await prisma.leadAttachment.deleteMany();
-  await prisma.leadNote.deleteMany();
-  await prisma.leadTask.deleteMany();
-  await prisma.leadActivity.deleteMany();
-  await prisma.lead.deleteMany();
+  const seededUsers = await Promise.all(
+    testUsers.map((user) =>
+      prisma.localUser.create({
+        data: {
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          passwordHash: hashPassword(user.password, user.email)
+        }
+      })
+    )
+  );
+
+  const usersByName = new Map(seededUsers.map((user) => [user.name, user]));
+  const fallbackActor = usersByName.get("Admin User") || seededUsers[0];
+
+  function actorFor(name) {
+    return usersByName.get(name) || fallbackActor;
+  }
+
+  const seededTemplates = new Map();
+  for (const template of checklistTemplates) {
+    const createdTemplate = await prisma.requestChecklistTemplate.create({
+      data: {
+        key: template.key,
+        name: template.name,
+        requestType: template.requestType ?? null,
+        serviceCategory: template.serviceCategory ?? null,
+        items: {
+          create: template.items.map(([label, group, required = true, appliesWhen], index) => ({
+            label,
+            group,
+            required,
+            appliesWhen: appliesWhen ?? null,
+            sortOrder: index + 1
+          }))
+        }
+      },
+      include: {
+        items: true
+      }
+    });
+    seededTemplates.set(template.key, createdTemplate);
+  }
+
+  async function createActivity({
+    relatedEntityType,
+    relatedEntityId,
+    actorName,
+    type,
+    title,
+    detail,
+    createdAt,
+    metadata
+  }) {
+    const actor = actorFor(actorName);
+
+    await prisma.activity.create({
+      data: {
+        relatedEntityType,
+        relatedEntityId,
+        actorUserId: actor.id,
+        actorName: actor.name,
+        actorRole: actor.role,
+        type,
+        title,
+        detail: detail ?? null,
+        metadata: metadata ?? undefined,
+        createdAt: createdAt ?? new Date()
+      }
+    });
+  }
 
   for (const client of sampleClients) {
-    await prisma.client.create({
+    const createdClient = await prisma.client.create({
       data: {
         clientNumber: client.clientNumber,
         legalName: client.legalName ?? client.companyName,
@@ -646,61 +1000,160 @@ async function main() {
         }
       }
     });
+
+    await createActivity({
+      relatedEntityType: "Client",
+      relatedEntityId: createdClient.id,
+      actorName: client.activities[0]?.actor || client.accountOwner,
+      type: "Created",
+      title: `${createdClient.displayName} seeded`,
+      detail: "Starter client record created for workstation CRM testing.",
+      createdAt: client.lastActivityAt,
+      metadata: { clientNumber: createdClient.clientNumber }
+    });
   }
 
-  for (const lead of sampleLeads) {
-    await prisma.lead.create({
+  for (const request of sampleRequests) {
+    const assignedUser =
+      request.assignedOwner === "Unassigned"
+        ? null
+        : usersByName.get(request.assignedOwner) || null;
+    const template = seededTemplates.get(checklistKeyFor(request.serviceCategory)) || seededTemplates.get("general");
+    const completedItems = new Set(request.checklistCompleted ?? []);
+
+    const createdRequest = await prisma.request.create({
       data: {
-        leadNumber: lead.leadNumber,
-        name: lead.name,
-        companyName: lead.companyName,
-        contactName: lead.contactName,
-        contactTitle: lead.contactTitle,
-        email: lead.email,
-        phone: lead.phone,
-        leadSource: lead.leadSource,
-        serviceInterest: lead.serviceInterest,
-        siteName: lead.siteName,
-        siteAddress: lead.siteAddress,
-        city: lead.city,
-        state: lead.state,
-        estimatedValue: lead.estimatedValue,
-        status: lead.status,
-        priority: lead.priority,
-        assignedOwner: lead.assignedOwner,
-        nextFollowUpDate: lead.nextFollowUpDate,
-        notes: lead.notes,
-        qualificationContactIdentified: lead.qualificationContactIdentified,
-        qualificationSiteKnown: lead.qualificationSiteKnown,
-        qualificationBudgetKnown: lead.qualificationBudgetKnown,
-        qualificationFollowUpScheduled: lead.qualificationFollowUpScheduled,
-        lastActivityAt: lead.lastActivityAt,
+        requestNumber: request.requestNumber,
+        title: request.name,
+        requestType: request.requestType,
+        source: request.source,
+        serviceCategory: request.serviceCategory,
+        status: request.status,
+        priority: request.priority,
+        companyName: request.companyName,
+        contactName: request.contactName,
+        contactEmail: request.email,
+        contactPhone: request.phone,
+        siteName: request.siteName,
+        siteAddress: request.siteAddress,
+        city: request.city,
+        state: request.state,
+        assignedToId: assignedUser?.id ?? null,
+        createdById: actorFor(request.activities[0]?.actor).id,
+        receivedDate: request.lastActivityAt,
+        dueDate: request.dueDate,
+        nextAction: request.nextAction,
+        nextFollowUpAt: request.nextFollowUpAt,
+        missingInfo: request.missingInfo,
+        siteVisitNeeded: request.siteVisitNeeded,
+        siteVisitCompleted: request.siteVisitCompleted,
+        description: request.description,
+        internalNotes: request.internalNotes,
+        checklistTemplateId: template?.id,
+        lastActivityAt: request.lastActivityAt,
+        checklistItems: {
+          create: template.items.map((item) => {
+            const completed = completedItems.has(item.label);
+            return {
+              templateItemId: item.id,
+              label: item.label,
+              description: item.description,
+              required: item.required,
+              appliesWhen: item.appliesWhen,
+              sortOrder: item.sortOrder,
+              group: item.group,
+              completed,
+              completedAt: completed ? request.lastActivityAt : null,
+              completedById: completed ? actorFor(request.activities[0]?.actor).id : null
+            };
+          })
+        },
         tasks: {
-          create: lead.tasks
+          create: request.tasks
         },
         attachments: {
-          create: lead.attachments.map((fileName) => ({ fileName }))
+          create: request.attachments.map((fileName) => ({ fileName }))
         },
         activities: {
-          create: lead.activities
+          create: request.activities
         },
         notesList: {
           create: {
-            body: lead.notes,
-            actor: lead.activities[0]?.actor ?? "Pulse User",
-            createdAt: lead.lastActivityAt
+            body: request.internalNotes || request.description,
+            actor: request.activities[0]?.actor ?? "Pulse User",
+            createdAt: request.lastActivityAt
           }
         }
       }
     });
+
+    await createActivity({
+      relatedEntityType: "Request",
+      relatedEntityId: createdRequest.id,
+      actorName: request.activities[0]?.actor || request.assignedOwner,
+      type: "Created",
+      title: `${createdRequest.requestNumber} seeded`,
+      detail: createdRequest.title,
+      createdAt: request.lastActivityAt,
+      metadata: {
+        requestNumber: createdRequest.requestNumber,
+        status: createdRequest.status
+      }
+    });
   }
+
+  const opportunity = await prisma.opportunity.create({
+    data: {
+      number: "OPP-2026-1001",
+      name: "San Juan Medical Center access control expansion",
+      clientName: "San Juan Medical Center",
+      status: "Site Visit",
+      owner: "Project Manager User",
+      value: 42850,
+      createdAt: new Date("2026-05-09T15:00:00.000Z")
+    }
+  });
+
+  await createActivity({
+    relatedEntityType: "Opportunity",
+    relatedEntityId: opportunity.id,
+    actorName: "Project Manager User",
+    type: "Created",
+    title: `${opportunity.number} created`,
+    detail: opportunity.name,
+    createdAt: new Date("2026-05-09T15:00:00.000Z"),
+    metadata: { status: opportunity.status, value: Number(opportunity.value) }
+  });
+
+  const quote = await prisma.quote.create({
+    data: {
+      quoteNumber: "QT-2026-1001",
+      title: "Coastal Hospitality network refresh",
+      clientName: "Coastal Hospitality Group",
+      status: "Draft",
+      owner: "Sales User",
+      total: 52400,
+      createdAt: new Date("2026-05-09T18:30:00.000Z")
+    }
+  });
+
+  await createActivity({
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    actorName: "Sales User",
+    type: "Quote Created",
+    title: `${quote.quoteNumber} drafted`,
+    detail: quote.title,
+    createdAt: new Date("2026-05-09T18:30:00.000Z"),
+    metadata: { status: quote.status, total: Number(quote.total) }
+  });
 }
 
 main()
   .then(async () => {
     await prisma.$disconnect();
     console.log(
-      `Seeded ${sampleClients.length} Pulse clients and ${sampleLeads.length} Pulse leads.`
+      `Seeded ${testUsers.length} local users, ${sampleClients.length} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, and starter activity.`
     );
   })
   .catch(async (error) => {

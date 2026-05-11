@@ -1,5 +1,5 @@
 import { PulseShell } from "@/components/PulseShell";
-import { activity, leads, quotes } from "@/lib/starterData";
+import { activity, quotes, requests } from "@/lib/starterData";
 
 export default function StatisticsPage() {
   const approvedQuotes = quotes.filter(
@@ -17,8 +17,8 @@ export default function StatisticsPage() {
     >
       <section className="metric-grid" aria-label="Statistics metrics">
         <article className="metric-card">
-          <p className="metric-label">Lead Pipeline</p>
-          <p className="metric-value">{leads.length}</p>
+          <p className="metric-label">Request Pipeline</p>
+          <p className="metric-value">{requests.length}</p>
         </article>
         <article className="metric-card">
           <p className="metric-label">Quote Pipeline</p>
@@ -38,11 +38,11 @@ export default function StatisticsPage() {
           <div className="list">
             <div className="list-item">
               <div>
-                <strong>Qualified leads</strong>
+                <strong>Requests ready for quote</strong>
                 <span>Ready to become opportunities</span>
               </div>
               <span className="status-pill">
-                {leads.filter((lead) => lead.status === "Qualified").length}
+                {requests.filter((request) => request.status === "Ready for Quote").length}
               </span>
             </div>
             <div className="list-item">

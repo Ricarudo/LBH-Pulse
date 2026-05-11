@@ -1,14 +1,6 @@
-import { LeadsModule } from "@/modules/leads/LeadsModule";
-import { PulseShell } from "@/components/PulseShell";
+import { redirect } from "next/navigation";
 
 export default function LeadsPage() {
-  return (
-    <PulseShell
-      activePage="leads"
-      title="CRM"
-      subtitle="Leads and customer-facing opportunities."
-    >
-      <LeadsModule />
-    </PulseShell>
-  );
+  // Legacy route while users/bookmarks catch up to the Pulse Request domain.
+  redirect("/requests");
 }

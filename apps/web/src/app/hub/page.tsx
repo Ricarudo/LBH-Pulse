@@ -6,7 +6,7 @@ export default function HubPage() {
     <PulseShell
       activePage="hub"
       title="Operations Hub"
-      subtitle="R2's connected view across CRM, quotes, projects, procurement, field work, and billing."
+      subtitle="R2's connected view across requests, quotes, projects, directory records, and billing."
     >
       <HubDashboard />
     </PulseShell>

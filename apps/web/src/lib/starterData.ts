@@ -1,10 +1,10 @@
-export type LeadRow = {
+export type RequestRow = {
   id: string;
   title: string;
   customer: string;
   site: string;
   owner: string;
-  status: "New" | "Qualified" | "Follow Up";
+  status: "Received" | "Reviewing" | "Missing Info" | "Ready for Quote";
   due: string;
 };
 
@@ -17,32 +17,32 @@ export type QuoteRow = {
   validUntil: string;
 };
 
-export const leads: LeadRow[] = [
+export const requests: RequestRow[] = [
   {
-    id: "LD-1001",
+    id: "RQ-1001",
     title: "Access control expansion",
     customer: "San Juan Medical Center",
     site: "North tower",
     owner: "Sales User",
-    status: "Qualified",
+    status: "Ready for Quote",
     due: "2026-05-12"
   },
   {
-    id: "LD-1002",
+    id: "RQ-1002",
     title: "Fiber backbone assessment",
     customer: "Caribbean Logistics",
     site: "Bayamon warehouse",
     owner: "Project Manager User",
-    status: "Follow Up",
+    status: "Reviewing",
     due: "2026-05-14"
   },
   {
-    id: "LD-1003",
+    id: "RQ-1003",
     title: "Camera replacement walk-through",
     customer: "Metro Retail Group",
     site: "Plaza location",
     owner: "Technician User",
-    status: "New",
+    status: "Received",
     due: "2026-05-16"
   }
 ];
@@ -80,7 +80,7 @@ export const activity = [
     detail: "Access control expansion for San Juan Medical Center"
   },
   {
-    title: "Lead LD-1002 needs follow-up",
+    title: "Request RQ-1002 needs follow-up",
     detail: "Caribbean Logistics requested a revised site walk date"
   },
   {
@@ -133,19 +133,19 @@ export const kpis = [
 
 export const businessObjects = [
   {
-    label: "Clients",
-    detail: "Accounts, sites, contacts",
+    label: "Directory",
+    detail: "Clients, sites, contacts, vendors",
     count: "312",
-    action: "View clients",
-    href: "/clients",
+    action: "View directory",
+    href: "/directory",
     tone: "blue"
   },
   {
-    label: "Leads",
-    detail: "Prospects and opportunities",
+    label: "Requests",
+    detail: "Inbound calls, emails, RFPs, site visits",
     count: "214",
-    action: "View leads",
-    href: "/leads",
+    action: "View requests",
+    href: "/requests",
     tone: "green"
   },
   {
@@ -165,22 +165,6 @@ export const businessObjects = [
     tone: "green"
   },
   {
-    label: "Procurement",
-    detail: "POs and vendor management",
-    count: "37",
-    action: "View POs",
-    href: "/procurement",
-    tone: "orange"
-  },
-  {
-    label: "Field Ops",
-    detail: "Labor tracking and field hours",
-    count: "186",
-    action: "View field ops",
-    href: "/field",
-    tone: "cyan"
-  },
-  {
     label: "Billing",
     detail: "Billing and collections",
     count: "64",
@@ -191,12 +175,10 @@ export const businessObjects = [
 ];
 
 export const lifecycle = [
-  "Lead",
+  "Request",
   "Quote",
-  "Approved",
+  "Proposal",
   "Project",
-  "Procurement",
-  "Field Work",
   "Billing"
 ];
 
@@ -272,7 +254,7 @@ export const projectRows: WorkspaceRow[] = [
     id: "PRJ-120",
     title: "Metro Retail Camera Refresh",
     customer: "Metro Retail Group",
-    detail: "Procurement complete",
+    detail: "Materials ready",
     owner: "Maria S.",
     status: "Ready",
     due: "2026-06-05",
