@@ -46,6 +46,21 @@ font-family: "Manrope", "Helvetica Neue", Arial, sans-serif;
 - Legacy Angular app: Manrope is loaded in `gui/src/index.html`, applied globally in `gui/src/styles.css`, and configured for Angular Material in `gui/src/theme.scss`.
 - New Pulse web app: Manrope is loaded in `apps/web/src/app/layout.tsx` and applied globally in `apps/web/src/app/globals.css`.
 
+## Responsive And Mobile Implementation
+
+Pulse should use modular, resolution-aware layouts instead of fixed desktop widths. Shells, workspaces, tables, panels, and command bars should use `minmax()`, `clamp()`, and controlled breakpoints so the interface compresses cleanly across ultrawide, laptop, tablet, and phone screens.
+
+On narrower desktop and tablet displays, the top action bar should remain a single controlled toolbar: search keeps the flexible space, secondary actions compress into fixed-size icon buttons, and optional labels/profile text are hidden before controls wrap or leak.
+
+On mobile, Pulse should prioritize task completion over desktop density:
+
+- The main shell stacks vertically with compact navigation.
+- Search remains available at the top of the page.
+- Filters and create actions appear as icon-sized controls or dedicated stacked rows.
+- Detail panels move below lists instead of sitting beside them.
+- Tables either become horizontally scrollable work grids or collapse into readable stacked rows.
+- Wizard steps become a single-column progression with full-width navigation buttons.
+
 ## Guardrails
 
 - Do not introduce a new primary UI font without updating this document.
@@ -53,4 +68,5 @@ font-family: "Manrope", "Helvetica Neue", Arial, sans-serif;
 - Use stronger font weights for hierarchy, not decorative effects.
 - Avoid negative letter spacing.
 - Avoid viewport-scaled font sizes for application UI.
+- Avoid topbar or command-bar wrapping that creates accidental second lines on narrow desktop displays.
 
