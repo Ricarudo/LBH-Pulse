@@ -3,6 +3,8 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, Plus } from "lucide-react";
+import { canRole } from "@/lib/auth/permissions";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
   clientOwners,
   clientStatuses,
@@ -227,6 +229,7 @@ async function requestJson<T>(url: string, init?: RequestInit) {
 
 export function ClientCreateForm() {
   const router = useRouter();
+  const { user, isLoading: isUserLoading } = useCurrentUser();
   const [overview, setOverview] = useState<ClientOverviewState>(initialOverview);
   const [sites, setSites] = useState<ClientSiteInput[]>([createBlankSite(true)]);
   const [contacts, setContacts] = useState<ClientContactInput[]>([
@@ -243,6 +246,7 @@ export function ClientCreateForm() {
     () => contacts.filter(hasContactContent),
     [contacts]
   );
+  const canCreateClient = canRole(user?.role, "crm:write");
 
   function updateSite(index: number, site: ClientSiteInput) {
     setSites((current) =>
@@ -440,6 +444,11 @@ export function ClientCreateForm() {
   async function saveClient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+
+    if (!canCreateClient) {
+      setError("Your role does not allow creating clients.");
+      return;
+    }
 
     const validation = validateBeforeSubmit();
     if (validation.message) {
@@ -1087,7 +1096,7 @@ export function ClientCreateForm() {
     <form className="client-create-module" onSubmit={saveClient}>
       <section className="clients-hero">
         <div>
-          <p className="eyebrow">CRM / New Client</p>
+          <p className="eyebrow">Directory / New Client</p>
           <h2>Create a client account in guided steps.</h2>
           <p>
             Pulse will save one core account record with the sites, contacts,
@@ -1095,6 +1104,12 @@ export function ClientCreateForm() {
           </p>
         </div>
       </section>
+
+      {!isUserLoading && !canCreateClient ? (
+        <div className="form-alert error">
+          Your role can view Directory records but cannot create clients.
+        </div>
+      ) : null}
 
       <WizardProgress
         steps={wizardSteps}
@@ -1112,7 +1127,7 @@ export function ClientCreateForm() {
           <WizardNavigation
             activeStep={activeStep}
             totalSteps={wizardSteps.length}
-            isSaving={isSaving}
+            isSaving={isSaving || !canCreateClient}
             onBack={goBack}
             onCancel={() => router.push("/clients")}
             onNext={goNext}

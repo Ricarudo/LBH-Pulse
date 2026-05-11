@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { findLocalUser, localUsers, type LocalUser } from "@/lib/localUsers";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { canRole, type AuthenticatedUser } from "@/lib/auth/permissions";
 import { PageTransition } from "@/components/PageTransition";
 import {
   BarChart3,
@@ -20,20 +20,19 @@ import {
   ReceiptText,
   Search,
   Settings,
-  ShoppingCart,
   SlidersHorizontal,
   Sun,
-  UserRound,
-  UsersRound
+  UserRound
 } from "lucide-react";
 
-const storageKey = "pulse.localUserId";
 const themeStorageKey = "pulse.theme";
 type PulseTheme = "light" | "dark";
 
 type PulseShellProps = {
   activePage:
     | "hub"
+    | "requests"
+    | "directory"
     | "leads"
     | "clients"
     | "quotes"
@@ -42,6 +41,7 @@ type PulseShellProps = {
     | "field"
     | "billing"
     | "statistics"
+    | "activity"
     | "settings";
   title: string;
   subtitle: string;
@@ -49,10 +49,10 @@ type PulseShellProps = {
 };
 
 const navItems = [
+  { href: "/requests", label: "Requests", key: "requests", icon: UserRound },
   { href: "/quotes", label: "Quotes", key: "quotes", icon: FileText },
   { href: "/projects", label: "Projects", key: "projects", icon: FolderKanban },
-  { href: "/procurement", label: "Procurement", key: "procurement", icon: ShoppingCart },
-  { href: "/field", label: "Field Ops", key: "field", icon: UsersRound },
+  { href: "/directory", label: "Directory", key: "directory", icon: Building2 },
   { href: "/billing", label: "Billing", key: "billing", icon: ReceiptText },
   { href: "/statistics", label: "Analytics", key: "statistics", icon: BarChart3 },
   { href: "/settings", label: "Settings", key: "settings", icon: Settings }
@@ -144,11 +144,14 @@ export function PulseShell({
   subtitle,
   children
 }: PulseShellProps) {
-  const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState(localUsers[0].id);
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
+  const [loginEmail, setLoginEmail] = useState("admin@r2.local");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -161,7 +164,6 @@ export function PulseShell({
   const router = useRouter();
 
   useEffect(() => {
-    const user = findLocalUser(window.localStorage.getItem(storageKey));
     const savedTheme = window.localStorage.getItem(themeStorageKey);
 
     if (savedTheme === "dark" || savedTheme === "light") {
@@ -169,12 +171,19 @@ export function PulseShell({
       document.documentElement.dataset.theme = savedTheme;
     }
 
-    if (user) {
-      setCurrentUser(user);
-      setSelectedUserId(user.id);
+    async function loadSession() {
+      try {
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        const data = (await response.json()) as { user: AuthenticatedUser | null };
+        setCurrentUser(data.user);
+      } catch {
+        setCurrentUser(null);
+      } finally {
+        setLoaded(true);
+      }
     }
 
-    setLoaded(true);
+    void loadSession();
   }, []);
 
   function toggleTheme() {
@@ -184,29 +193,55 @@ export function PulseShell({
     document.documentElement.dataset.theme = nextTheme;
   }
 
-  const selectedUser = useMemo(
-    () => findLocalUser(selectedUserId) ?? localUsers[0],
-    [selectedUserId]
-  );
   const dateRangeLabel = useMemo(() => formatDateRange(dateRange), [dateRange]);
+  const canCreateCrm = canRole(currentUser?.role, "crm:write");
+  const canOpenSettings = canRole(currentUser?.role, "settings:read");
   const dateRangeIsIncomplete = !draftDateRange.start || !draftDateRange.end;
   const dateRangeIsInvalid =
     !dateRangeIsIncomplete &&
     draftDateRange.start > draftDateRange.end;
 
-  function login() {
-    window.localStorage.setItem(storageKey, selectedUser.id);
-    setCurrentUser(selectedUser);
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoginError("");
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword
+        })
+      });
+      const data = (await response.json()) as {
+        user?: AuthenticatedUser;
+        error?: string;
+      };
+
+      if (!response.ok || !data.user) {
+        setLoginError(data.error || "Unable to sign in.");
+        return;
+      }
+
+      setCurrentUser(data.user);
+      setLoginPassword("");
+    } catch {
+      setLoginError("Unable to reach the local auth service.");
+    }
   }
 
-  function logout() {
-    window.localStorage.removeItem(storageKey);
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setCurrentUser(null);
   }
 
   function toggleDatePicker() {
     setDraftDateRange(dateRange);
     setDatePickerOpen((value) => !value);
+    setSearchOpen(false);
     setFilterOpen(false);
     setNewOpen(false);
     setNotificationsOpen(false);
@@ -229,6 +264,7 @@ export function PulseShell({
   }
 
   function goToCreate(path: string) {
+    setSearchOpen(false);
     setNewOpen(false);
     router.push(path);
   }
@@ -240,33 +276,41 @@ export function PulseShell({
   if (!currentUser) {
     return (
       <main className="login-page">
-        <section className="login-card" aria-labelledby="login-title">
+        <form className="login-card" aria-labelledby="login-title" onSubmit={login}>
           <div className="brand-mark">
             <img src="/pulse-mark.svg" alt="" />
           </div>
           <h1 id="login-title">Pulse</h1>
-          <p>Local development login for the Pulse workspace.</p>
+          <p>Local development login for the Pulse workstation.</p>
 
-          <label className="field-label" htmlFor="local-user">
-            User
+          <label className="field-label" htmlFor="local-email">
+            Email
           </label>
-          <select
-            id="local-user"
+          <input
+            id="local-email"
             className="select-field"
-            value={selectedUserId}
-            onChange={(event) => setSelectedUserId(event.target.value)}
-          >
-            {localUsers.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name} - {user.roleLabel}
-              </option>
-            ))}
-          </select>
+            type="email"
+            value={loginEmail}
+            onChange={(event) => setLoginEmail(event.target.value)}
+          />
 
-          <button className="primary-button" type="button" onClick={login}>
+          <label className="field-label login-password-label" htmlFor="local-password">
+            Password
+          </label>
+          <input
+            id="local-password"
+            className="select-field"
+            type="password"
+            value={loginPassword}
+            onChange={(event) => setLoginPassword(event.target.value)}
+          />
+
+          {loginError ? <div className="form-alert error">{loginError}</div> : null}
+
+          <button className="primary-button" type="submit">
             Sign In
           </button>
-        </section>
+        </form>
       </main>
     );
   }
@@ -292,62 +336,25 @@ export function PulseShell({
             <span>Hub</span>
           </Link>
 
-          <div
-            className={
-              activePage === "leads" || activePage === "clients"
-                ? "nav-group nav-group-active"
-                : "nav-group"
-            }
-          >
-            <Link
-              className={
-                activePage === "leads" || activePage === "clients"
-                  ? "nav-link nav-link-active nav-parent"
-                  : "nav-link nav-parent"
-              }
-              href="/leads"
-            >
-              <UserRound size={20} strokeWidth={1.9} />
-              <span>CRM</span>
-            </Link>
-            <div className="nav-sublist">
+          {navItems
+            .filter((item) => item.key !== "settings" || canOpenSettings)
+            .map((item) => (
               <Link
+                key={item.key}
                 className={
-                  activePage === "leads" || pathname === "/leads"
-                    ? "nav-sublink nav-sublink-active"
-                    : "nav-sublink"
+                  activePage === item.key ||
+                  pathname === item.href ||
+                  (item.key === "requests" && pathname === "/leads") ||
+                  (item.key === "directory" && pathname.startsWith("/clients"))
+                    ? "nav-link nav-link-active"
+                    : "nav-link"
                 }
-                href="/leads"
+                href={item.href}
               >
-                Leads
+                <item.icon size={20} strokeWidth={1.9} />
+                <span>{item.label}</span>
               </Link>
-              <Link
-                className={
-                  activePage === "clients" || pathname === "/clients"
-                    ? "nav-sublink nav-sublink-active"
-                    : "nav-sublink"
-                }
-                href="/clients"
-              >
-                Clients
-              </Link>
-            </div>
-          </div>
-
-          {navItems.map((item) => (
-            <Link
-              key={item.key}
-              className={
-                activePage === item.key || pathname === item.href
-                  ? "nav-link nav-link-active"
-                  : "nav-link"
-              }
-              href={item.href}
-            >
-              <item.icon size={20} strokeWidth={1.9} />
-              <span>{item.label}</span>
-            </Link>
-          ))}
+            ))}
         </nav>
 
         <div className="sidebar-user">
@@ -370,34 +377,69 @@ export function PulseShell({
 
       <main className="main">
         <header className="topbar">
-          <div>
+          <div className="topbar-title">
             <h1 className="page-title">{title}</h1>
             <p className="page-subtitle">{subtitle}</p>
           </div>
           <div className="top-actions">
-            <label className="search-wrap">
-              <Search size={20} />
-              <input
-                aria-label="Global search"
-                placeholder="Search clients, quotes, projects, POs, invoices..."
-                type="search"
-                value={searchValue}
-                onChange={(event) => setSearchValue(event.target.value)}
-              />
-            </label>
+            <div className="topbar-popover-anchor search-anchor">
+              <button
+                className="toolbar-button icon-only"
+                type="button"
+                aria-label="Search"
+                aria-expanded={searchOpen}
+                aria-haspopup="dialog"
+                title="Search"
+                onClick={() => {
+                  setSearchOpen((value) => !value);
+                  setFilterOpen(false);
+                  setDatePickerOpen(false);
+                  setNewOpen(false);
+                  setNotificationsOpen(false);
+                  setProfileOpen(false);
+                }}
+              >
+                <Search size={18} />
+              </button>
+              {searchOpen ? (
+                <div className="mini-popover search-popover" role="dialog" aria-label="Global search">
+                  <label className="search-wrap">
+                    <Search size={18} />
+                    <input
+                      aria-label="Global search"
+                      autoFocus
+                      placeholder="Search clients, quotes, projects, POs, invoices..."
+                      type="search"
+                      value={searchValue}
+                      onChange={(event) => setSearchValue(event.target.value)}
+                    />
+                  </label>
+                  {searchValue ? (
+                    <p>
+                      Searching static mockup for <strong>{searchValue}</strong>. Backend search will connect later.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             <div className="topbar-popover-anchor">
               <button
-                className="toolbar-button"
+                className="toolbar-button icon-only"
                 type="button"
+                aria-label="Filters"
                 aria-expanded={filterOpen}
                 aria-haspopup="menu"
+                title="Filters"
                 onClick={() => {
                   setFilterOpen((value) => !value);
+                  setSearchOpen(false);
                   setDatePickerOpen(false);
+                  setNewOpen(false);
+                  setNotificationsOpen(false);
+                  setProfileOpen(false);
                 }}
               >
                 <SlidersHorizontal size={18} />
-                Filters
               </button>
               {filterOpen ? (
                 <div className="mini-popover filter-popover">
@@ -420,16 +462,24 @@ export function PulseShell({
               <ChevronDown size={16} />
             </button>
             <button
-              className="new-button"
+              className="new-button icon-only"
               type="button"
+              aria-label="Create new"
+              title="New"
+              disabled={!canCreateCrm}
               onClick={() => {
+                if (!canCreateCrm) {
+                  return;
+                }
                 setNewOpen((value) => !value);
+                setSearchOpen(false);
                 setDatePickerOpen(false);
+                setFilterOpen(false);
+                setNotificationsOpen(false);
+                setProfileOpen(false);
               }}
             >
               <Plus size={20} />
-              New
-              <ChevronDown size={16} />
             </button>
             <button
               className="toolbar-button icon-only"
@@ -446,7 +496,11 @@ export function PulseShell({
               aria-label="Notifications"
               onClick={() => {
                 setNotificationsOpen((value) => !value);
+                setSearchOpen(false);
                 setDatePickerOpen(false);
+                setFilterOpen(false);
+                setNewOpen(false);
+                setProfileOpen(false);
               }}
             >
               <Bell size={22} />
@@ -457,13 +511,24 @@ export function PulseShell({
               type="button"
               onClick={() => {
                 setProfileOpen((value) => !value);
+                setSearchOpen(false);
                 setDatePickerOpen(false);
+                setFilterOpen(false);
+                setNewOpen(false);
+                setNotificationsOpen(false);
               }}
             >
-              <div className="avatar">AM</div>
+              <div className="avatar">
+                {currentUser.name
+                  .split(" ")
+                  .map((part) => part[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </div>
               <div>
-                <strong>Alex Morgan</strong>
-                <span>Sales Manager</span>
+                <strong>{currentUser.name}</strong>
+                <span>{currentUser.roleLabel}</span>
               </div>
               <ChevronDown size={16} />
             </button>
@@ -471,12 +536,6 @@ export function PulseShell({
         </header>
 
         <div className="action-popovers">
-          {searchValue ? (
-            <div className="mini-popover search-popover">
-              Searching static mockup for <strong>{searchValue}</strong>. Backend search will connect later.
-            </div>
-          ) : null}
-
           {datePickerOpen ? (
             <div className="mini-popover date-range-popover" role="dialog" aria-label="Select date range">
               <strong>Date Range</strong>
@@ -541,11 +600,10 @@ export function PulseShell({
           {newOpen ? (
             <div className="mini-popover quick-create-popover">
               <strong>Create</strong>
-              <button type="button" onClick={() => goToCreate("/leads")}>Lead</button>
-              <button type="button" onClick={() => goToCreate("/clients/new")}>Client</button>
+              <button type="button" disabled={!canCreateCrm} onClick={() => goToCreate("/requests")}>Request</button>
+              <button type="button" disabled={!canCreateCrm} onClick={() => goToCreate("/clients/new")}>Directory client</button>
               <button type="button" onClick={() => goToCreate("/quotes")}>Quote / Proposal output</button>
               <button type="button" onClick={() => goToCreate("/projects")}>Project</button>
-              <button type="button" onClick={() => goToCreate("/procurement")}>Purchase order</button>
             </div>
           ) : null}
 
@@ -562,7 +620,8 @@ export function PulseShell({
             <div className="mini-popover profile-popover">
               <strong>{currentUser.name}</strong>
               <p>{currentUser.roleLabel}</p>
-              <button type="button" onClick={logout}>Logout</button>
+              <p>{currentUser.email}</p>
+              <button type="button" onClick={() => void logout()}>Logout</button>
             </div>
           ) : null}
         </div>

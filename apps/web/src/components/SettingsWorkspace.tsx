@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { CheckCircle2, RotateCcw } from "lucide-react";
+import { canRole } from "@/lib/auth/permissions";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 
 const defaultSettings = {
   localLogin: true,
@@ -12,8 +14,25 @@ const defaultSettings = {
 };
 
 export function SettingsWorkspace() {
+  const { user, isLoading } = useCurrentUser();
   const [settings, setSettings] = useState(defaultSettings);
   const [message, setMessage] = useState("Local settings are ready for review.");
+  const canReadSettings = canRole(user?.role, "settings:read");
+
+  if (!isLoading && !canReadSettings) {
+    return (
+      <section className="panel settings-panel" aria-labelledby="settings-title">
+        <div className="panel-header">
+          <div>
+            <h2 id="settings-title">Workspace Settings</h2>
+            <p className="panel-note">
+              Your role does not allow access to workspace settings.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   function toggleSetting(key: keyof typeof defaultSettings) {
     setSettings((current) => ({

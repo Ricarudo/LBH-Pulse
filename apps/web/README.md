@@ -58,6 +58,17 @@ npm run db:push
 npm run db:seed
 ```
 
+## Local Test Accounts
+
+These accounts are for workstation/local CRM testing only. Passwords are hashed in the local database with Node `scrypt`.
+
+```text
+Admin: admin@r2.local / PulseAdmin123!
+Sales: sales@r2.local / PulseSales123!
+Project Manager: project.manager@r2.local / PulsePm123!
+Technician: technician@r2.local / PulseTech123!
+```
+
 ## Current Versions
 
 - Next.js 16.2.6

@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import { recordActivity } from "@/lib/services/activityService";
 import type { ClientContact, ClientRecord, ClientSite } from "@/types/client";
 import type {
   ClientContactInput,
@@ -331,7 +333,7 @@ export async function getClientById(id: string) {
   return toClientRecord(await getClientOrThrow(id));
 }
 
-export async function createClient(input: CreateClientInput) {
+export async function createClient(input: CreateClientInput, user?: AuthenticatedUser) {
   const client = await prisma.$transaction(async (tx) => {
     const now = new Date();
     const clientNumber = await generateClientNumber(tx);
@@ -424,7 +426,7 @@ export async function createClient(input: CreateClientInput) {
         type: "Client",
         title: "Client created",
         detail: "Client account, sites, contacts, and preferences were created in Pulse.",
-        actor: "Alex Morgan",
+        actor: user?.name ?? "Pulse System",
         createdAt: now
       }
     });
@@ -435,10 +437,20 @@ export async function createClient(input: CreateClientInput) {
     });
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Created",
+    title: `${client.displayName} created`,
+    detail: "Client account, sites, contacts, and preferences were created in Pulse.",
+    metadata: { clientNumber: client.clientNumber, status: client.status }
+  });
+
   return toClientRecord(client);
 }
 
-export async function updateClient(id: string, input: UpdateClientInput) {
+export async function updateClient(id: string, input: UpdateClientInput, user?: AuthenticatedUser) {
   await getClientOrThrow(id);
 
   const now = new Date();
@@ -523,7 +535,7 @@ export async function updateClient(id: string, input: UpdateClientInput) {
           type: "Client",
           title: "Client updated",
           detail: "Client account fields were updated.",
-          actor: "Alex Morgan",
+          actor: user?.name ?? "Pulse System",
           createdAt: now
         }
       }
@@ -531,10 +543,20 @@ export async function updateClient(id: string, input: UpdateClientInput) {
     include: clientInclude
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Updated",
+    title: `${client.displayName} updated`,
+    detail: "Client account fields were updated.",
+    metadata: { clientNumber: client.clientNumber, status: client.status }
+  });
+
   return toClientRecord(client);
 }
 
-export async function archiveClient(id: string) {
+export async function archiveClient(id: string, user?: AuthenticatedUser) {
   await getClientOrThrow(id);
 
   const now = new Date();
@@ -547,7 +569,7 @@ export async function archiveClient(id: string) {
         create: {
           type: "Client",
           title: "Client archived",
-          actor: "Alex Morgan",
+          actor: user?.name ?? "Pulse System",
           createdAt: now
         }
       }
@@ -555,10 +577,19 @@ export async function archiveClient(id: string) {
     include: clientInclude
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Status Changed",
+    title: `${client.displayName} archived`,
+    detail: client.clientNumber
+  });
+
   return toClientRecord(client);
 }
 
-export async function addClientSite(id: string, input: ClientSiteInput) {
+export async function addClientSite(id: string, input: ClientSiteInput, user?: AuthenticatedUser) {
   await getClientOrThrow(id);
 
   const now = new Date();
@@ -583,7 +614,7 @@ export async function addClientSite(id: string, input: ClientSiteInput) {
             type: "Site",
             title: "Client site added",
             detail: input.siteName,
-            actor: "Alex Morgan",
+            actor: user?.name ?? "Pulse System",
             createdAt: now
           }
         }
@@ -596,13 +627,23 @@ export async function addClientSite(id: string, input: ClientSiteInput) {
     });
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Updated",
+    title: `Site added to ${client.displayName}`,
+    detail: input.siteName
+  });
+
   return toClientRecord(client);
 }
 
 export async function updateClientSite(
   id: string,
   siteId: string,
-  input: UpdateClientSiteInput
+  input: UpdateClientSiteInput,
+  user?: AuthenticatedUser
 ) {
   await getClientOrThrow(id);
 
@@ -674,7 +715,7 @@ export async function updateClientSite(
           create: {
             type: "Site",
             title: "Client site updated",
-            actor: "Alex Morgan",
+            actor: user?.name ?? "Pulse System",
             createdAt: now
           }
         }
@@ -687,10 +728,19 @@ export async function updateClientSite(
     });
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Updated",
+    title: `Site updated for ${client.displayName}`,
+    detail: input.siteName || "Client site fields were updated."
+  });
+
   return toClientRecord(client);
 }
 
-export async function removeClientSite(id: string, siteId: string) {
+export async function removeClientSite(id: string, siteId: string, user?: AuthenticatedUser) {
   await getClientOrThrow(id);
 
   const now = new Date();
@@ -716,7 +766,7 @@ export async function removeClientSite(id: string, siteId: string) {
           create: {
             type: "Site",
             title: "Client site removed",
-            actor: "Alex Morgan",
+            actor: user?.name ?? "Pulse System",
             createdAt: now
           }
         }
@@ -729,10 +779,19 @@ export async function removeClientSite(id: string, siteId: string) {
     });
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Updated",
+    title: `Site removed from ${client.displayName}`,
+    detail: siteId
+  });
+
   return toClientRecord(client);
 }
 
-export async function addClientContact(id: string, input: ClientContactInput) {
+export async function addClientContact(id: string, input: ClientContactInput, user?: AuthenticatedUser) {
   await getClientOrThrow(id);
 
   const now = new Date();
@@ -757,7 +816,7 @@ export async function addClientContact(id: string, input: ClientContactInput) {
             type: "Contact",
             title: "Client contact added",
             detail: fullName(input.firstName, input.lastName),
-            actor: "Alex Morgan",
+            actor: user?.name ?? "Pulse System",
             createdAt: now
           }
         }
@@ -770,13 +829,23 @@ export async function addClientContact(id: string, input: ClientContactInput) {
     });
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Updated",
+    title: `Contact added to ${client.displayName}`,
+    detail: fullName(input.firstName, input.lastName)
+  });
+
   return toClientRecord(client);
 }
 
 export async function updateClientContact(
   id: string,
   contactId: string,
-  input: UpdateClientContactInput
+  input: UpdateClientContactInput,
+  user?: AuthenticatedUser
 ) {
   await getClientOrThrow(id);
 
@@ -835,7 +904,7 @@ export async function updateClientContact(
           create: {
             type: "Contact",
             title: "Client contact updated",
-            actor: "Alex Morgan",
+            actor: user?.name ?? "Pulse System",
             createdAt: now
           }
         }
@@ -848,10 +917,19 @@ export async function updateClientContact(
     });
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Updated",
+    title: `Contact updated for ${client.displayName}`,
+    detail: contactId
+  });
+
   return toClientRecord(client);
 }
 
-export async function removeClientContact(id: string, contactId: string) {
+export async function removeClientContact(id: string, contactId: string, user?: AuthenticatedUser) {
   await getClientOrThrow(id);
 
   const now = new Date();
@@ -872,7 +950,7 @@ export async function removeClientContact(id: string, contactId: string) {
           create: {
             type: "Contact",
             title: "Client contact removed",
-            actor: "Alex Morgan",
+            actor: user?.name ?? "Pulse System",
             createdAt: now
           }
         }
@@ -885,12 +963,22 @@ export async function removeClientContact(id: string, contactId: string) {
     });
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: "Updated",
+    title: `Contact removed from ${client.displayName}`,
+    detail: contactId
+  });
+
   return toClientRecord(client);
 }
 
 export async function addClientActivity(
   id: string,
-  input: CreateClientActivityInput
+  input: CreateClientActivityInput,
+  user?: AuthenticatedUser
 ) {
   await getClientOrThrow(id);
 
@@ -904,7 +992,7 @@ export async function addClientActivity(
           type: input.type || "Note",
           title: input.title,
           detail: input.detail || null,
-          actor: input.actor || "Alex Morgan",
+          actor: user?.name ?? input.actor ?? "Pulse System",
           createdAt: now
         }
       }
@@ -912,18 +1000,29 @@ export async function addClientActivity(
     include: clientInclude
   });
 
+  await recordActivity({
+    user,
+    relatedEntityType: "Client",
+    relatedEntityId: client.id,
+    type: input.type === "Note" ? "Note Added" : input.type || "Updated",
+    title: input.title,
+    detail: input.detail,
+    metadata: { clientNumber: client.clientNumber }
+  });
+
   return toClientRecord(client);
 }
 
 export async function importClientInfo(
   id: string,
-  input: ImportClientInfoInput
+  input: ImportClientInfoInput,
+  user?: AuthenticatedUser
 ) {
   return addClientActivity(id, {
     type: "Import",
     title: "Client info imported",
     detail: `${input.source || "Manual import"} applied to the client profile.`,
-    actor: input.actor || "Alex Morgan"
-  });
+    actor: user?.name ?? input.actor ?? "Pulse System"
+  }, user);
 }
 

@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { canRole } from "@/lib/auth/permissions";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
   Building2,
   CreditCard,
@@ -17,6 +20,7 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { ActivityRecord } from "@/types/activity";
 import {
   clientOwners,
   clientStatuses,
@@ -33,6 +37,10 @@ type ClientListResponse = {
 
 type ClientResponse = {
   client: ClientRecord;
+};
+
+type ActivityListResponse = {
+  activities: ActivityRecord[];
 };
 
 function statusClass(status: ClientStatus) {
@@ -99,6 +107,7 @@ async function requestJson<T>(url: string, init?: RequestInit) {
 }
 
 export function ClientsModule() {
+  const { user } = useCurrentUser();
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [selectedClientId, setSelectedClientId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -108,6 +117,10 @@ export function ClientsModule() {
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [recordActivities, setRecordActivities] = useState<ActivityRecord[]>([]);
+
+  const canWriteCrm = canRole(user?.role, "crm:write");
+  const canWriteActivity = canRole(user?.role, "crm:activity:write");
 
   const selectedClient =
     clients.find((client) => client.id === selectedClientId) ?? null;
@@ -150,6 +163,34 @@ export function ClientsModule() {
       setSelectedClientId("");
     }
   }, [clients, selectedClientId]);
+
+  useEffect(() => {
+    const clientId = selectedClient?.id ?? "";
+
+    if (!clientId) {
+      setRecordActivities([]);
+      return;
+    }
+
+    async function loadActivity() {
+      try {
+        const params = new URLSearchParams({
+          relatedEntityType: "Client",
+          relatedEntityId: clientId,
+          take: "25"
+        });
+        const data = await requestJson<ActivityListResponse>(
+          `/api/activity?${params.toString()}`,
+          { cache: "no-store" }
+        );
+        setRecordActivities(data.activities);
+      } catch {
+        setRecordActivities([]);
+      }
+    }
+
+    void loadActivity();
+  }, [selectedClient?.id]);
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -206,6 +247,11 @@ export function ClientsModule() {
   }
 
   async function importClientInfo() {
+    if (!canWriteActivity) {
+      setNotice("Your role does not allow recording client activity.");
+      return;
+    }
+
     if (!selectedClient) {
       return;
     }
@@ -233,6 +279,11 @@ export function ClientsModule() {
   }
 
   function startEditClient() {
+    if (!canWriteCrm) {
+      setNotice("Your role does not allow editing clients.");
+      return;
+    }
+
     if (!selectedClient) {
       return;
     }
@@ -246,17 +297,19 @@ export function ClientsModule() {
     <div className="clients-module">
       <section className="clients-command-bar">
         <div>
-          <p className="eyebrow">CRM / Clients</p>
+          <p className="eyebrow">Directory / Clients</p>
           <h2>Clients</h2>
         </div>
         <div className="clients-hero-actions">
-          <Link className="primary-button" href="/clients/new">
-            New Client
-          </Link>
+          {canWriteCrm ? (
+            <Link className="primary-button" href="/clients/new">
+              New Client
+            </Link>
+          ) : null}
           <button
             className="toolbar-button compact"
             type="button"
-            disabled={!selectedClient}
+            disabled={!selectedClient || !canWriteActivity}
             onClick={importClientInfo}
           >
             <Upload size={17} />
@@ -425,7 +478,7 @@ export function ClientsModule() {
               </strong>
               <span>
                 {clients.length === 0
-                  ? "Create the first client account to start building CRM history."
+                  ? "Create the first client account to start building Directory history."
                   : "Clear filters or adjust the search phrase to widen the list."}
               </span>
               <div className="client-empty-actions">
@@ -438,9 +491,11 @@ export function ClientsModule() {
                     Clear filters
                   </button>
                 ) : null}
-                <Link className="primary-button" href="/clients/new">
-                  Create new client
-                </Link>
+                {canWriteCrm ? (
+                  <Link className="primary-button" href="/clients/new">
+                    Create new client
+                  </Link>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -461,6 +516,7 @@ export function ClientsModule() {
                   className="toolbar-button compact"
                   type="button"
                   onClick={startEditClient}
+                  disabled={!canWriteCrm}
                 >
                   <Edit3 size={16} />
                   Edit Client
@@ -608,21 +664,10 @@ export function ClientsModule() {
 
             <section className="client-section">
               <h3>Recent Activity</h3>
-              <div className="client-activity-list">
-                {selectedClient.recentActivity.length ? (
-                  selectedClient.recentActivity.slice(0, 5).map((activity) => (
-                    <article key={activity.id || `${selectedClient.id}-${activity.title}`}>
-                      <strong>{activity.title}</strong>
-                      {activity.detail ? <p>{activity.detail}</p> : null}
-                      <span>
-                        {displayDate(activity.date)} by {activity.actor}
-                      </span>
-                    </article>
-                  ))
-                ) : (
-                  <p className="client-muted-line">No activity recorded yet.</p>
-                )}
-              </div>
+              <ActivityTimeline
+                activities={recordActivities}
+                emptyMessage="No shared activity has been recorded for this client yet."
+              />
             </section>
 
             <section className="client-section">
