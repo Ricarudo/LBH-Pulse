@@ -21,6 +21,8 @@
   <rect x="18" y="20" width="130" height="130" rx="31" fill="url(#pulseLogoBlue)"/>
   <path d="M63 114V54H90C105 54 117 64 117 79C117 94 105 103 90 103H66" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M45 103H74L84 77L98 121L110 103H124" stroke="url(#pulseLogoSilver)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="188" y="118" fill="url(#pulseWordBlue)" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="94" font-weight="300" letter-spacing="0">Pul</text>
-  <text x="423" y="118" fill="url(#pulseWordGray)" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="94" font-weight="300" letter-spacing="0">se</text>
+  <text x="188" y="118" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="94" font-weight="300" letter-spacing="0">
+    <tspan fill="url(#pulseWordBlue)">Pul</tspan>
+    <tspan fill="url(#pulseWordGray)" dx="-22">se</tspan>
+  </text>
 </svg>

@@ -78,9 +78,18 @@ The CRM Clients area and Add Client workflow have been implemented and refined a
 
 - PostgreSQL Docker service is running and healthy on port `5432`.
 - Backend dev server is running on `http://localhost:3000`.
-- Frontend dev server is running on `http://localhost:4200`.
+- Frontend dev server is running on `http://localhost:4300` from `apps/web`.
 - Backend `GET /health` returns `{"status":"ok"}`.
 - Backend `GET /health/database` returns `{"status":"ok","database":"postgres"}`.
+
+### Local Network Access
+
+- Pulse dev server is also running from the modern Pulse app at `apps/web`.
+- The current Pulse dev server is bound to all interfaces at `http://0.0.0.0:4300`.
+- Workstation LAN access is available at `http://192.168.1.12:4300`.
+- Next.js remote development resources were enabled for the LAN host by adding `allowedDevOrigins: ["192.168.1.12"]` to `apps/web/next.config.ts`.
+- PostgreSQL container `postgres-container` is confirmed running and healthy.
+- No Windows Firewall rule changes were required for port `4300`.
 
 ## Database Path
 
