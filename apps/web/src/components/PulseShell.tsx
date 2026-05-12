@@ -149,7 +149,7 @@ export function PulseShell({
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loaded, setLoaded] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
@@ -186,11 +186,29 @@ export function PulseShell({
     void loadSession();
   }, []);
 
+  useEffect(() => {
+    function handleResize() {
+      setCollapsed(window.innerWidth < 980);
+    }
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   function toggleTheme() {
     const nextTheme = theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
     window.localStorage.setItem(themeStorageKey, nextTheme);
     document.documentElement.dataset.theme = nextTheme;
+  }
+
+  function handleCollapsedToggle() {
+    // On mobile, keep it collapsed
+    if (window.innerWidth < 980) {
+      return;
+    }
+    setCollapsed((value) => !value);
   }
 
   const dateRangeLabel = useMemo(() => formatDateRange(dateRange), [dateRange]);
@@ -321,6 +339,15 @@ export function PulseShell({
         <div className="sidebar-brand">
           <img className="pulse-logo pulse-logo-full" src="/pulse-logo.svg" alt="Pulse" />
           <img className="pulse-logo pulse-logo-mark" src="/pulse-mark.svg" alt="Pulse" />
+          <button 
+            className="collapse-button" 
+            type="button" 
+            onClick={() => handleCollapsedToggle()}
+            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+          >
+            <ChevronsLeft size={19} />
+            <span>{collapsed ? "Expand" : "Collapse"}</span>
+          </button>
         </div>
 
         <nav className="nav-list">
@@ -358,10 +385,6 @@ export function PulseShell({
         </nav>
 
         <div className="sidebar-user">
-          <button className="collapse-button" type="button" onClick={() => setCollapsed((value) => !value)}>
-            <ChevronsLeft size={19} />
-            <span>{collapsed ? "Expand" : "Collapse"}</span>
-          </button>
           <div className="user-card">
             <div className="org-icon">
               <Building2 size={24} />

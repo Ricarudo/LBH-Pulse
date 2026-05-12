@@ -4,6 +4,22 @@ Date: 2026-05-09
 
 Purpose: Save the current repository/startup state after moving the app to a PostgreSQL and Prisma-only runtime path and starting the UI modernization work.
 
+## Mobile Navigation Optimization Pass - 2026-05-12
+
+Pulse web app navigation was optimized for mobile and responsive design.
+
+- Desktop: Sidebar now starts in collapsed state (icon-only, 104px width) by default. Users can expand with toggle button at top of sidebar.
+- Mobile (< 980px): Sidebar remains permanently collapsed (icon-only, 104px) and cannot be expanded to preserve screen space for content.
+- Mobile: Collapse/expand toggle button is hidden on viewports below 980px.
+- Topbar (page title, search, actions) now uses `position: sticky` to remain visible while scrolling through page content.
+- Collapse toggle button moved from sidebar bottom to top-right of sidebar brand area.
+- `handleCollapsedToggle()` function added to prevent sidebar expansion on mobile viewports.
+- Sidebar brand layout updated to flex with space-between for proper button positioning.
+- All existing navigation functionality preserved; no routes or features removed.
+- Visual hierarchy simplified: icons always visible, labels revealed on demand (desktop) or hidden permanently (mobile).
+- Improved mobile content visibility by preventing sidebar from taking full viewport width.
+- Verification: Layout tested across desktop (1540px, 1260px, 980px+) and mobile (620px, < 980px) breakpoints.
+
 ## Latest Pulse CRM Checkpoint - 2026-05-11
 
 This update captures the current Pulse work built beside the legacy KuoteSuite Angular/Express prototype. The legacy `gui/` and `backend/` paths remain historical reference and should not be treated as the final Pulse architecture.

@@ -299,12 +299,15 @@ a {
 .sidebar-brand {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-height: 58px;
   margin-bottom: 26px;
 }
 
 .sidebar-collapsed .sidebar-brand {
   justify-content: center;
+  min-height: 58px;
 }
 
 .sidebar-collapsed .nav-link span,
@@ -422,10 +425,21 @@ a {
   width: fit-content;
   align-items: center;
   gap: 14px;
+  padding: 8px 12px;
   border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--pulse-sidebar-text);
   font-weight: 700;
+  transition: background-color 160ms ease;
+}
+
+.collapse-button:hover {
+  background: var(--pulse-nav-active-bg);
+}
+
+.sidebar-collapsed .collapse-button {
+  padding: 0;
 }
 
 .user-card {
@@ -476,13 +490,16 @@ a {
 }
 
 .topbar {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 300;
   display: grid;
   grid-template-columns: minmax(220px, 1fr) max-content;
   align-items: center;
   gap: clamp(14px, 1.4vw, 24px);
   margin-bottom: 24px;
+  background: var(--pulse-bg);
+  padding-bottom: 16px;
 }
 
 .topbar-title {
@@ -1829,6 +1846,10 @@ a {
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
+  }
+
+  .collapse-button {
+    display: none;
   }
 
   .sidebar {
