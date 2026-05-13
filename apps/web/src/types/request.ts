@@ -50,6 +50,7 @@ export const serviceCategories = [
   "Fiber",
   "AV",
   "Wireless / Wi-Fi",
+  "Power / UPS",
   "Service / Support",
   "Other"
 ] as const;

@@ -124,6 +124,28 @@ export const requestChecklistTemplates: RequestChecklistTemplateDefinition[] = [
       { label: "Site visit completed", appliesWhen: "siteVisitRequired", group: "Site Visit" },
       { label: "Internal owner assigned", group: "Ownership" }
     ]
+  },
+  {
+    key: "power-ups",
+    name: "Power / UPS Intake",
+    serviceCategory: "Power / UPS",
+    items: [
+      { label: "Client / company identified", group: "Core" },
+      { label: "Contact information confirmed", group: "Core" },
+      { label: "Site address confirmed", group: "Core" },
+      { label: "Scope summary captured", group: "Scope" },
+      { label: "UPS/battery model identified", group: "Power / UPS" },
+      { label: "Current load confirmed", group: "Power / UPS" },
+      { label: "Existing battery capacity confirmed", group: "Power / UPS" },
+      { label: "Target runtime confirmed", group: "Power / UPS" },
+      { label: "Electrical constraints confirmed", group: "Power / UPS" },
+      { label: "Installation location confirmed", group: "Power / UPS" },
+      { label: "Photos or equipment label received", group: "Files" },
+      { label: "Due date confirmed", group: "Schedule" },
+      { label: "Site visit decision made", group: "Site Visit" },
+      { label: "Site visit completed", appliesWhen: "siteVisitRequired", group: "Site Visit" },
+      { label: "Internal owner assigned", group: "Ownership" }
+    ]
   }
 ];
 

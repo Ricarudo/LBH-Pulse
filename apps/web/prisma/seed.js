@@ -138,6 +138,28 @@ const checklistTemplates = [
       ["Site visit completed", "Site Visit", true, "siteVisitRequired"],
       ["Internal owner assigned", "Ownership"]
     ]
+  },
+  {
+    key: "power-ups",
+    name: "Power / UPS Intake",
+    serviceCategory: "Power / UPS",
+    items: [
+      ["Client / company identified", "Core"],
+      ["Contact information confirmed", "Core"],
+      ["Site address confirmed", "Core"],
+      ["Scope summary captured", "Scope"],
+      ["UPS/battery model identified", "Power / UPS"],
+      ["Current load confirmed", "Power / UPS"],
+      ["Existing battery capacity confirmed", "Power / UPS"],
+      ["Target runtime confirmed", "Power / UPS"],
+      ["Electrical constraints confirmed", "Power / UPS"],
+      ["Installation location confirmed", "Power / UPS"],
+      ["Photos or equipment label received", "Files"],
+      ["Due date confirmed", "Schedule"],
+      ["Site visit decision made", "Site Visit"],
+      ["Site visit completed", "Site Visit", true, "siteVisitRequired"],
+      ["Internal owner assigned", "Ownership"]
+    ]
   }
 ];
 
@@ -146,6 +168,7 @@ function checklistKeyFor(serviceCategory) {
   if (serviceCategory === "Access Control") return "access-control";
   if (serviceCategory === "CCTV / Surveillance") return "cctv-surveillance";
   if (serviceCategory === "Structured Cabling") return "structured-cabling";
+  if (serviceCategory === "Power / UPS") return "power-ups";
   return "general";
 }
 
