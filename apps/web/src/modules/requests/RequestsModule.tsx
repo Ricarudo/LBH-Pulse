@@ -17,11 +17,13 @@ import {
   UserCheck,
   X
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ActivityRecord } from "@/types/activity";
+import { RequestsMobileView } from "./RequestsMobileView";
 import {
   requestPriorities,
   requestSources,
@@ -95,27 +97,6 @@ const requestViews: RequestView[] = [
   "Site Visits",
   "Ready for Quote",
   "Converted / Closed"
-];
-
-const lifecycleStages: Array<{
-  key: RequestStatus | "Converted / Closed";
-  label: string;
-  statuses: RequestStatus[];
-}> = [
-  { key: "Received", label: "Received", statuses: ["Received"] },
-  { key: "Reviewing", label: "Reviewing", statuses: ["Reviewing"] },
-  { key: "Missing Info", label: "Missing Info", statuses: ["Missing Info"] },
-  {
-    key: "Site Visit Required",
-    label: "Site Visit Required",
-    statuses: ["Site Visit Required"]
-  },
-  { key: "Ready for Quote", label: "Ready for Quote", statuses: ["Ready for Quote"] },
-  {
-    key: "Converted / Closed",
-    label: "Converted / Closed",
-    statuses: ["Converted to Quote", "No Bid", "Cancelled", "Duplicate"]
-  }
 ];
 
 const today = new Date().toISOString().slice(0, 10);
@@ -386,18 +367,34 @@ export function RequestsModule() {
     };
   }, [requests]);
 
-  const lifecycleCounts = useMemo(() => {
-    return lifecycleStages.map((stage) => ({
-      ...stage,
-      count: requests.filter((request) => stage.statuses.includes(request.status)).length
-    }));
-  }, [requests]);
-
-  const bottleneckCount = Math.max(
-    0,
-    ...lifecycleCounts
-      .filter((stage) => stage.key !== "Converted / Closed")
-      .map((stage) => stage.count)
+  const desktopSummaryCards = useMemo(
+    () => [
+      {
+        label: "New",
+        value: requests.filter((request) => request.status === "Received").length,
+        hint: "Received"
+      },
+      {
+        label: "Needs Info",
+        value: requests.filter(
+          (request) =>
+            request.status === "Missing Info" ||
+            request.checklistSummary.missingRequired.length > 0
+        ).length,
+        hint: "Missing intake"
+      },
+      {
+        label: "Ready for Quote",
+        value: metrics.readyForQuote,
+        hint: "Qualified"
+      },
+      {
+        label: "Overdue",
+        value: metrics.needsFollowUp,
+        hint: "Follow-ups"
+      }
+    ],
+    [metrics.needsFollowUp, metrics.readyForQuote, requests]
   );
 
   const filteredRequests = useMemo(() => {
@@ -559,16 +556,26 @@ export function RequestsModule() {
       return;
     }
 
+    await updateRequestStatusFor(selectedRequest, status);
+  }
+
+  async function updateRequestStatusFor(request: RequestRecord, status: RequestStatus) {
+    if (!canWriteCrm) {
+      return;
+    }
+
     try {
       const data = await requestJson<RequestResponse>(
-        `/api/requests/${selectedRequest.id}/status`,
+        `/api/requests/${request.id}/status`,
         {
           method: "PATCH",
           body: JSON.stringify({ status })
         }
       );
       replaceRequest(data.request);
-      await refreshSelectedRequestActivity();
+      if (selectedRequest?.id === data.request.id || request.id === selectedRequestId) {
+        await loadRecordActivity(data.request.id);
+      }
       setToast(`${data.request.requestNumber} moved to ${status}.`);
     } catch (error) {
       setToast(
@@ -694,16 +701,29 @@ export function RequestsModule() {
       return;
     }
 
+    await toggleChecklistItemFor(selectedRequest, item);
+  }
+
+  async function toggleChecklistItemFor(
+    request: RequestRecord,
+    item: RequestChecklistItem
+  ) {
+    if (!canWriteActivity) {
+      return;
+    }
+
     try {
       const data = await requestJson<RequestResponse>(
-        `/api/requests/${selectedRequest.id}/checklist/${item.id}`,
+        `/api/requests/${request.id}/checklist/${item.id}`,
         {
           method: "PATCH",
           body: JSON.stringify({ completed: !item.completed, notes: item.notes })
         }
       );
       replaceRequest(data.request);
-      await refreshSelectedRequestActivity();
+      if (selectedRequest?.id === data.request.id || request.id === selectedRequestId) {
+        await loadRecordActivity(data.request.id);
+      }
       setToast(
         !item.completed
           ? `Completed ${item.label}.`
@@ -723,9 +743,17 @@ export function RequestsModule() {
       return;
     }
 
+    await convertRequestFor(selectedRequest);
+  }
+
+  async function convertRequestFor(request: RequestRecord) {
+    if (!canWriteCrm) {
+      return;
+    }
+
     try {
       const data = await requestJson<RequestResponse>(
-        `/api/requests/${selectedRequest.id}/convert`,
+        `/api/requests/${request.id}/convert`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -734,7 +762,9 @@ export function RequestsModule() {
         }
       );
       replaceRequest(data.request);
-      await refreshSelectedRequestActivity();
+      if (selectedRequest?.id === data.request.id || request.id === selectedRequestId) {
+        await loadRecordActivity(data.request.id);
+      }
       setConversionOpen(false);
       setToast(
         data.request.relatedQuoteNumber
@@ -750,66 +780,79 @@ export function RequestsModule() {
 
   return (
     <div className="leads-module">
-      <section className="request-lifecycle-panel" aria-label="Request intake lifecycle">
-        <div className="request-lifecycle-heading">
-          <div>
-            <p>Intake Readiness</p>
-            <h2>Received to quote-ready</h2>
-          </div>
-          <button className="primary-button" type="button" onClick={openCreateForm}>
-            <Plus size={18} />
+      <RequestsMobileView
+        requests={requests}
+        filteredRequests={filteredRequests}
+        selectedRequest={selectedRequest}
+        selectedRequestId={selectedRequestId}
+        assignees={assignees}
+        isLoading={isLoading}
+        loadError={loadError}
+        searchTerm={searchTerm}
+        statusFilter={statusFilter}
+        sourceFilter={sourceFilter}
+        assigneeFilter={assigneeFilter}
+        priorityFilter={priorityFilter}
+        capabilities={{
+          canCreate: canWriteCrm,
+          canUpdateStatus: canWriteCrm,
+          canUpdateChecklist: canWriteActivity,
+          canConvert: canWriteCrm
+        }}
+        getNextAction={getNextAction}
+        onSearchChange={setSearchTerm}
+        onStatusFilterChange={setStatusFilter}
+        onSourceFilterChange={setSourceFilter}
+        onAssigneeFilterChange={setAssigneeFilter}
+        onPriorityFilterChange={setPriorityFilter}
+        onSelectRequest={setSelectedRequestId}
+        onCreateRequest={openCreateForm}
+        onRequestMoreInfo={(request) => {
+          setSelectedRequestId(request.id);
+          void updateRequestStatusFor(request, "Missing Info");
+        }}
+        onSendToQuote={(request) => {
+          setSelectedRequestId(request.id);
+          void convertRequestFor(request);
+        }}
+        onToggleChecklistItem={(request, item) => {
+          setSelectedRequestId(request.id);
+          void toggleChecklistItemFor(request, item);
+        }}
+      />
+
+      <section className="requests-desktop-summary" aria-label="Request intake summary">
+        <div className="requests-context-label">
+          <span>Requests / Intake Queue</span>
+          <Link className="primary-button compact" href="/requests/new">
+            <Plus size={17} />
             New Request
-          </button>
+          </Link>
         </div>
-
-        <div className="request-lifecycle-grid">
-          {lifecycleCounts.map((stage) => {
-            const isBottleneck =
-              stage.count > 0 &&
-              stage.count === bottleneckCount &&
-              stage.key !== "Converted / Closed";
-
-            return (
-              <button
-                key={stage.key}
-                className={isBottleneck ? "request-stage-card bottleneck" : "request-stage-card"}
-                type="button"
-                onClick={() =>
-                  setStatusFilter(
-                    stage.statuses.length === 1 ? stage.statuses[0] : "All"
-                  )
+        <div className="requests-summary-grid">
+          {desktopSummaryCards.map((card) => (
+            <button
+              key={card.label}
+              className="requests-summary-card"
+              type="button"
+              onClick={() => {
+                if (card.label === "New") {
+                  setStatusFilter("Received");
+                } else if (card.label === "Needs Info") {
+                  setActiveView("Missing Info");
+                } else if (card.label === "Ready for Quote") {
+                  setActiveView("Ready for Quote");
+                } else {
+                  setActiveView("All Open");
                 }
-              >
-                <span>{stage.label}</span>
-                <strong>{stage.count}</strong>
-                {isBottleneck ? <em>Bottleneck</em> : null}
-              </button>
-            );
-          })}
+              }}
+            >
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+              <em>{card.hint}</em>
+            </button>
+          ))}
         </div>
-      </section>
-
-      <section className="lead-metric-grid" aria-label="Request metrics">
-        <article>
-          <span>Missing Required Items</span>
-          <strong>{metrics.missingRequired}</strong>
-        </article>
-        <article>
-          <span>Site Visits Pending</span>
-          <strong>{metrics.siteVisits}</strong>
-        </article>
-        <article>
-          <span>Ready for Quote</span>
-          <strong>{metrics.readyForQuote}</strong>
-        </article>
-        <article>
-          <span>Unassigned</span>
-          <strong>{metrics.unassigned}</strong>
-        </article>
-        <article>
-          <span>Overdue Follow-Ups</span>
-          <strong>{metrics.needsFollowUp}</strong>
-        </article>
       </section>
 
       <div className="lead-view-tabs" role="tablist" aria-label="Request views">
@@ -871,21 +914,17 @@ export function RequestsModule() {
             <thead>
               <tr>
                 <th>Request</th>
-                <th>Client / Contact</th>
-                <th>Service</th>
-                <th>Status</th>
+                <th>Client / Site</th>
+                <th>Category</th>
+                <th>Status / Priority</th>
                 <th>Checklist</th>
-                <th>Missing</th>
-                <th>Site Visit</th>
-                <th>Assigned</th>
+                <th>Owner</th>
                 <th>Next Action</th>
-                <th>Due</th>
-                <th>Last Activity</th>
+                <th>Due / Follow-up</th>
               </tr>
             </thead>
             <tbody>
               {filteredRequests.map((request) => {
-                const missingInfoItems = request.checklistSummary.missingRequired;
                 const checklistLabel = `${request.checklistSummary.completed}/${request.checklistSummary.total}`;
 
                 return (
@@ -894,47 +933,32 @@ export function RequestsModule() {
                     className={request.id === selectedRequest?.id ? "selected" : ""}
                     onClick={() => setSelectedRequestId(request.id)}
                   >
-                    <td>
+                    <td data-label="Request">
                       <strong>{request.title}</strong>
                       <span>{request.requestNumber}</span>
                     </td>
-                    <td>
+                    <td data-label="Client / Site">
                       <strong>{request.companyName || "Unknown / new prospect"}</strong>
-                      <span>{request.contactName || "No contact yet"}</span>
+                      <span>{request.siteName || request.siteAddress || request.contactName || "Site not captured"}</span>
                     </td>
-                    <td>
+                    <td data-label="Category">
                       {request.serviceCategory}
-                      <span>{request.siteName || request.siteAddress || "Site not captured"}</span>
+                      <span>{request.requestType}</span>
                     </td>
-                    <td>
+                    <td data-label="Status / Priority">
                       <span className={getStatusClass(request.status)}>{request.status}</span>
-                      {request.priority === "Urgent" || request.priority === "High" ? (
-                        <span className="request-inline-flags">
-                          {request.priority}
-                        </span>
-                      ) : null}
+                      <span className={getPriorityClass(request.priority)}>{request.priority}</span>
                     </td>
-                    <td>
+                    <td data-label="Checklist">
                       <strong>{checklistLabel}</strong>
                       <span>{request.checklistSummary.requiredCompleted}/{request.checklistSummary.requiredTotal} required</span>
                     </td>
-                    <td>
-                      <strong>{missingInfoItems.length}</strong>
-                      <span>{missingInfoItems[0] || "None"}</span>
+                    <td data-label="Owner">{request.assignedToName || "Unassigned"}</td>
+                    <td data-label="Next Action"><strong>{getNextAction(request)}</strong></td>
+                    <td data-label="Due / Follow-up">
+                      <strong>{request.dueDate || "No due date"}</strong>
+                      <span>{request.nextFollowUpAt ? `Follow-up ${request.nextFollowUpAt}` : "No follow-up"}</span>
                     </td>
-                    <td>
-                      {request.siteVisitNeeded ? (
-                        <span className={request.siteVisitCompleted ? "status-pill" : "status-pill warning"}>
-                          {request.siteVisitCompleted ? "Completed" : "Required"}
-                        </span>
-                      ) : (
-                        <span>Not required</span>
-                      )}
-                    </td>
-                    <td>{request.assignedToName || "Unassigned"}</td>
-                    <td><strong>{getNextAction(request)}</strong></td>
-                    <td>{request.dueDate || request.nextFollowUpAt || "Not set"}</td>
-                    <td>{request.lastActivityAt || "No activity"}</td>
                   </tr>
                 );
               })}

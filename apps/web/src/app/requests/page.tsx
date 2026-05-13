@@ -7,6 +7,7 @@ export default function RequestsPage() {
       activePage="requests"
       title="Requests"
       subtitle="Incoming calls, emails, RFPs, site visits, and quote requests."
+      compactHeader
     >
       <RequestsModule />
     </PulseShell>
