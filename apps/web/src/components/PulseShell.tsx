@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { canRole, type AuthenticatedUser } from "@/lib/auth/permissions";
+import { MobileBottomNav } from "@/components/mobile/MobilePrimitives";
 import { PageTransition } from "@/components/PageTransition";
 import {
   BarChart3,
@@ -12,9 +13,11 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronsLeft,
+  ChevronsRight,
   FileText,
   FolderKanban,
   Home,
+  Menu,
   Moon,
   Plus,
   ReceiptText,
@@ -45,6 +48,7 @@ type PulseShellProps = {
     | "settings";
   title: string;
   subtitle: string;
+  compactHeader?: boolean;
   children: React.ReactNode;
 };
 
@@ -56,6 +60,15 @@ const navItems = [
   { href: "/billing", label: "Billing", key: "billing", icon: ReceiptText },
   { href: "/statistics", label: "Analytics", key: "statistics", icon: BarChart3 },
   { href: "/settings", label: "Settings", key: "settings", icon: Settings }
+] as const;
+
+const mobileNavItems = [
+  { href: "/hub", label: "Dashboard", key: "hub", icon: Home },
+  { href: "/requests", label: "Requests", key: "requests", icon: UserRound },
+  { href: "/clients", label: "Clients", key: "clients", icon: Building2 },
+  { href: "/quotes", label: "Quotes", key: "quotes", icon: FileText },
+  { href: "/projects", label: "Projects", key: "projects", icon: FolderKanban },
+  { href: "/directory", label: "More", key: "more", icon: Menu }
 ] as const;
 
 type DateRange = {
@@ -142,6 +155,7 @@ export function PulseShell({
   activePage,
   title,
   subtitle,
+  compactHeader = false,
   children
 }: PulseShellProps) {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
@@ -162,6 +176,17 @@ export function PulseShell({
   const [theme, setTheme] = useState<PulseTheme>("light");
   const pathname = usePathname();
   const router = useRouter();
+  const mobileActiveKey = pathname.startsWith("/clients")
+    ? "clients"
+    : activePage === "directory" ||
+        activePage === "billing" ||
+        activePage === "statistics" ||
+        activePage === "settings" ||
+        activePage === "procurement" ||
+        activePage === "field" ||
+        activePage === "activity"
+      ? "more"
+      : activePage;
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem(themeStorageKey);
@@ -188,7 +213,9 @@ export function PulseShell({
 
   useEffect(() => {
     function handleResize() {
-      setCollapsed(window.innerWidth < 980);
+      if (window.innerWidth < 980) {
+        setCollapsed(true);
+      }
     }
 
     handleResize();
@@ -339,13 +366,17 @@ export function PulseShell({
         <div className="sidebar-brand">
           <img className="pulse-logo pulse-logo-full" src="/pulse-logo.svg" alt="Pulse" />
           <img className="pulse-logo pulse-logo-mark" src="/pulse-mark.svg" alt="Pulse" />
+        </div>
+
+        <div className="sidebar-toggle-row">
           <button 
             className="collapse-button" 
             type="button" 
             onClick={() => handleCollapsedToggle()}
             aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            title={collapsed ? "Expand navigation" : "Collapse navigation"}
           >
-            <ChevronsLeft size={19} />
+            {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
             <span>{collapsed ? "Expand" : "Collapse"}</span>
           </button>
         </div>
@@ -399,11 +430,13 @@ export function PulseShell({
       </aside>
 
       <main className="main">
-        <header className="topbar">
-          <div className="topbar-title">
-            <h1 className="page-title">{title}</h1>
-            <p className="page-subtitle">{subtitle}</p>
-          </div>
+        <header className={compactHeader ? "topbar topbar-command" : "topbar"}>
+          {compactHeader ? null : (
+            <div className="topbar-title">
+              <h1 className="page-title">{title}</h1>
+              <p className="page-subtitle">{subtitle}</p>
+            </div>
+          )}
           <div className="top-actions">
             <div className="topbar-popover-anchor search-anchor">
               <button
@@ -651,6 +684,11 @@ export function PulseShell({
 
         <PageTransition>{children}</PageTransition>
       </main>
+      <MobileBottomNav
+        activeKey={mobileActiveKey}
+        items={mobileNavItems}
+        pathname={pathname}
+      />
     </div>
   );
 }

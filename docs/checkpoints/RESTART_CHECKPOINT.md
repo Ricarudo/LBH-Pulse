@@ -4,13 +4,38 @@ Date: 2026-05-09
 
 Purpose: Save the current repository/startup state after moving the app to a PostgreSQL and Prisma-only runtime path and starting the UI modernization work.
 
+## Global Mobile Foundation Planning - 2026-05-12
+
+Global mobile UI planning and first-pass implementation are continuing from the Pulse workstation environment, with Requests as the first proof point. The active target remains `apps/web` on port `4300`; the local frontend responded successfully at `http://localhost:4300`, and PostgreSQL is healthy on port `5432`. Use Windows PowerShell-compatible commands from the correct package folders. The sandbox runner may still fail with `windows sandbox: timed out after 15000ms connecting runner pipe-in`, so targeted non-sandbox verification may be required and should be documented.
+
+- Added shared mobile primitives under `apps/web/src/components/mobile`.
+- Replaced mobile top navigation with a fixed global bottom navigation rendered by `PulseShell`.
+- Added `RequestsMobileView` as the first workflow proof point using real Request data and capability-based permissions.
+- Stabilized mobile shell sizing so the collapsed desktop sidebar does not squeeze mobile content.
+- Added Hub-specific mobile scaling fixes so dashboard cards and command tables do not preserve desktop ratios on phones.
+- Added `docs/architecture/PULSE_GLOBAL_MOBILE_FOUNDATION.md` to guide future module adoption.
+- Known limitation: Clients, Quotes, Projects, and other modules currently inherit the global mobile shell first; their module-specific mobile workflows should be added in later passes. Quotes and Projects remain starter-data modules and are not the current focus.
+
+## Desktop Requests Simplification Pass - 2026-05-12
+
+Requests is now also the first desktop workbench simplification proof point. The sidebar starts collapsed, `/requests` uses a compact command-bar shell with no large page title/subtitle block, and the landing view is focused on intake summary cards, a reduced queue, and a lightweight selected-request preview. Deeper intake work has route-backed entry points at `/requests/new`, `/requests/[id]`, and `/requests/[id]/edit`. Verification from `apps/web`: `npm run typecheck` passed, `npm run build` passed, and `http://localhost:4300/requests` plus `http://localhost:4300/requests/new` returned `200 OK`. The Windows sandbox runner pipe issue still applies, so targeted non-sandbox verification was used and documented.
+
+## End-of-Day Pulse UI / Requests Pass - 2026-05-12
+
+Today's workstation pass added the global mobile foundation, Requests as the first mobile proof point, the desktop Requests simplification pattern, route-backed request create/view/edit pages, softer route transitions, a global loading skeleton, collapsed desktop navigation behavior, and a subtle global background gradient for light/dark themes. A real CCCPR Spanish email thread was used as a workflow smoke test and produced four local Request records: Forward Center antenna service, CID-Hospital-Forward Center star connection, 30K/40K battery backup capacity review, and CID security system verification. The battery backup request exposed a category gap, so `Power / UPS` was added as a first-class request category with a dedicated intake checklist template and applied to `RQ-2026-1010` in the local database. Future pass: add a Requests filter by service category so users can quickly isolate Fiber, CCTV, Access Control, Network, AV, Service, Power / UPS, and other intake types.
+
 ## Mobile Navigation Optimization Pass - 2026-05-12
 
 Pulse web app navigation was optimized for mobile and responsive design.
 
+- Follow-up mobile nav pass added a true top navigation strip below 980px in `PulseShell`.
+- Mobile now hides the desktop sidebar entirely, giving Requests and other modules the full viewport width.
+- Mobile topbar keeps global actions icon-first and keeps primary module navigation horizontally scrollable.
+- Requests queue rows now render as labeled mobile cards below 760px instead of relying on horizontal table scrolling.
+- Added `docs/architecture/PULSE_REQUESTS_MOBILE_UX_ANALYSIS.md` with a focused mobile refactor analysis for the Requests page.
 - Desktop: Sidebar now starts in collapsed state (icon-only, 104px width) by default. Users can expand with toggle button at top of sidebar.
-- Mobile (< 980px): Sidebar remains permanently collapsed (icon-only, 104px) and cannot be expanded to preserve screen space for content.
-- Mobile: Collapse/expand toggle button is hidden on viewports below 980px.
+- Mobile (< 980px): Sidebar is hidden and replaced by the top navigation strip to preserve screen space for content.
+- Mobile: Collapse/expand toggle button remains hidden on viewports below 980px.
 - Topbar (page title, search, actions) now uses `position: sticky` to remain visible while scrolling through page content.
 - Collapse toggle button moved from sidebar bottom to top-right of sidebar brand area.
 - `handleCollapsedToggle()` function added to prevent sidebar expansion on mobile viewports.
