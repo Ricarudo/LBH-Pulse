@@ -2,18 +2,14 @@
 
 import {
   ArrowRight,
-  CheckCircle2,
-  ClipboardList,
   MapPin,
   Plus,
   UserRound
 } from "lucide-react";
 import { useState } from "react";
 import {
-  MobileActionButton,
   MobileBadge,
   MobileEmptyState,
-  MobileExpandedPanel,
   MobileLoadingState,
   MobilePageHeader,
   MobileProgressBar,
@@ -27,13 +23,11 @@ import {
   requestSources,
   requestStatuses,
   type RequestAssignee,
-  type RequestChecklistItem,
   type RequestPriority,
   type RequestRecord,
   type RequestSource,
   type RequestStatus
 } from "./requestData";
-import { RequestChecklistSignature } from "./RequestChecklistSignature";
 
 type RequestsMobileCapabilities = {
   canCreate: boolean;
@@ -62,11 +56,7 @@ type RequestsMobileViewProps = {
   onSourceFilterChange: (value: "All" | RequestSource) => void;
   onAssigneeFilterChange: (value: string) => void;
   onPriorityFilterChange: (value: "All" | RequestPriority) => void;
-  onSelectRequest: (requestId: string) => void;
   onCreateRequest: () => void;
-  onRequestMoreInfo: (request: RequestRecord) => void;
-  onSendToQuote: (request: RequestRecord) => void;
-  onToggleChecklistItem: (request: RequestRecord, item: RequestChecklistItem) => void;
 };
 
 function isReadyForQuote(request: RequestRecord) {
@@ -146,45 +136,10 @@ function activeFilterCount(
   ).length;
 }
 
-function groupedChecklistItems(request: RequestRecord) {
-  return Object.entries(
-    request.checklistItems.reduce<Record<string, RequestChecklistItem[]>>(
-      (groups, item) => {
-        const key = item.group || "Intake";
-        groups[key] = [...(groups[key] ?? []), item];
-        return groups;
-      },
-      {}
-    )
-  );
-}
-
-function conversionDisabledReason(
-  request: RequestRecord,
-  capabilities: RequestsMobileCapabilities
-) {
-  if (!capabilities.canConvert) {
-    return "Your role cannot send requests to quote.";
-  }
-
-  if (request.relatedQuoteId) {
-    return request.relatedQuoteNumber
-      ? `Already converted to ${request.relatedQuoteNumber}.`
-      : "Already converted to a quote.";
-  }
-
-  if (!request.checklistSummary.readyForQuote) {
-    return "Complete required intake items before sending to quote.";
-  }
-
-  return "";
-}
-
 export function RequestsMobileView({
   requests,
   filteredRequests,
   selectedRequest,
-  selectedRequestId,
   assignees,
   isLoading,
   loadError,
@@ -200,11 +155,7 @@ export function RequestsMobileView({
   onSourceFilterChange,
   onAssigneeFilterChange,
   onPriorityFilterChange,
-  onSelectRequest,
-  onCreateRequest,
-  onRequestMoreInfo,
-  onSendToQuote,
-  onToggleChecklistItem
+  onCreateRequest
 }: RequestsMobileViewProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const newCount = requests.filter((request) => request.status === "Received").length;
@@ -215,125 +166,6 @@ export function RequestsMobileView({
         request.checklistSummary.missingRequired.length > 0)
   ).length;
   const readyCount = requests.filter(isReadyForQuote).length;
-
-  function renderExpandedRequest(request: RequestRecord) {
-    const missingItems = request.checklistSummary.missingRequired;
-    const disabledReason = conversionDisabledReason(request, capabilities);
-
-    return (
-      <MobileExpandedPanel>
-        <div className="requests-mobile-expanded-heading">
-          <div>
-            <span>{request.requestNumber}</span>
-            <h3>{request.title}</h3>
-          </div>
-          <MobileBadge tone={statusTone(request.status)}>
-            {request.status}
-          </MobileBadge>
-        </div>
-
-        {request.relatedQuoteId ? (
-          <div className="requests-mobile-state converted">
-            <CheckCircle2 size={17} />
-            <span>{request.relatedQuoteNumber || "Converted to Quote"}</span>
-          </div>
-        ) : request.checklistSummary.readyForQuote ? (
-          <div className="requests-mobile-state ready">
-            <CheckCircle2 size={17} />
-            <span>Ready for quote handoff</span>
-          </div>
-        ) : null}
-
-        <div className="requests-mobile-detail-grid">
-          <div>
-            <span>Client</span>
-            <strong>{request.companyName || "Not captured"}</strong>
-          </div>
-          <div>
-            <span>Owner</span>
-            <strong>{request.assignedToName || "Unassigned"}</strong>
-          </div>
-          <div>
-            <span>Due</span>
-            <strong>{request.dueDate || request.nextFollowUpAt || "Not set"}</strong>
-          </div>
-          <div>
-            <span>Last activity</span>
-            <strong>{request.lastActivityAt || "No activity"}</strong>
-          </div>
-        </div>
-
-        <MobileProgressBar
-          label="Intake checklist"
-          value={request.checklistSummary.completed}
-          max={request.checklistSummary.total}
-        />
-
-        {missingItems.length ? (
-          <div className="requests-mobile-missing">
-            <span>Missing information</span>
-            <div>
-              {missingItems.slice(0, 5).map((item) => (
-                <MobileBadge key={item} tone="amber">{item}</MobileBadge>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="requests-mobile-checklist">
-          {groupedChecklistItems(request).map(([group, items]) => (
-            <div key={group}>
-              <h4>{group}</h4>
-              {items.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  disabled={!capabilities.canUpdateChecklist || !item.applicable}
-                  className={item.completed ? "complete" : ""}
-                  onClick={() => onToggleChecklistItem(request, item)}
-                >
-                  {item.completed ? <CheckCircle2 size={16} /> : <ClipboardList size={16} />}
-                  <span>
-                    <strong>{item.label}</strong>
-                    <small>
-                      {item.required ? "Required" : "Optional"}
-                      {!item.applicable ? " / not applicable" : ""}
-                    </small>
-                    <RequestChecklistSignature item={item} compact />
-                  </span>
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-
-        <div className="requests-mobile-action-grid">
-          <MobileActionButton
-            variant="primary"
-            onClick={() => onSelectRequest(request.id)}
-          >
-            Review Intake
-          </MobileActionButton>
-          <MobileActionButton
-            disabled={!capabilities.canUpdateStatus || Boolean(request.relatedQuoteId)}
-            onClick={() => onRequestMoreInfo(request)}
-          >
-            Request More Info
-          </MobileActionButton>
-          <MobileActionButton
-            disabled={Boolean(disabledReason)}
-            onClick={() => onSendToQuote(request)}
-          >
-            Send to Quote
-          </MobileActionButton>
-        </div>
-
-        {disabledReason ? (
-          <p className="requests-mobile-disabled-note">{disabledReason}</p>
-        ) : null}
-      </MobileExpandedPanel>
-    );
-  }
 
   return (
     <section className="requests-mobile-view" aria-label="Mobile requests intake queue">
@@ -463,13 +295,11 @@ export function RequestsMobileView({
         {filteredRequests.map((request) => {
           const missingCount = request.checklistSummary.missingRequired.length;
           const checklist = request.checklistSummary;
-          const selected = request.id === selectedRequestId;
 
           return (
             <div className="requests-mobile-record-stack" key={request.id}>
               <MobileRecordCard
-                selected={selected}
-                onClick={() => onSelectRequest(request.id)}
+                href={`/requests/${request.id}`}
               >
                 <div className="requests-mobile-card-heading">
                   <span>{request.requestNumber}</span>
@@ -508,7 +338,6 @@ export function RequestsMobileView({
                   <ArrowRight size={15} />
                 </div>
               </MobileRecordCard>
-              {selected ? renderExpandedRequest(request) : null}
               </div>
           );
         })}

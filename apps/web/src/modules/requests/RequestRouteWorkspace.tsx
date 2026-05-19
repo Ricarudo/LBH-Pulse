@@ -2,17 +2,24 @@
 
 import {
   ArrowLeft,
+  CalendarClock,
   CheckCircle2,
   ClipboardList,
   Edit3,
+  Mail,
+  MapPin,
+  Phone,
   Save,
+  StickyNote,
   UserCheck
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import type { ActivityRecord } from "@/types/activity";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import {
   requestPriorities,
@@ -66,6 +73,10 @@ type RequestListResponse = {
 
 type RequestResponse = {
   request: RequestRecord;
+};
+
+type ActivityListResponse = {
+  activities: ActivityRecord[];
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -140,6 +151,28 @@ function getStatusClass(status: RequestStatus) {
   return "status-pill";
 }
 
+function getMissingInfoItems(request: RequestRecord) {
+  const items = [];
+
+  if (!request.companyName && !request.contactName) {
+    items.push("client or contact");
+  }
+
+  if (!request.contactPhone && !request.contactEmail) {
+    items.push("contact method");
+  }
+
+  if (!request.siteName && !request.siteAddress && !request.siteId) {
+    items.push("site/location");
+  }
+
+  if (request.missingInfo) {
+    items.push(request.missingInfo);
+  }
+
+  return Array.from(new Set(items));
+}
+
 async function requestJson<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -194,8 +227,23 @@ export function RequestRouteWorkspace({
   const [isLoading, setIsLoading] = useState(mode !== "new");
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [recordActivities, setRecordActivities] = useState<ActivityRecord[]>([]);
 
   const isForm = mode === "new" || mode === "edit";
+
+  const loadRecordActivity = useCallback(async (currentRequestId: string) => {
+    try {
+      const data = await requestJson<ActivityListResponse>(
+        `/api/activity?relatedEntityType=Request&relatedEntityId=${currentRequestId}&take=25`,
+        { cache: "no-store" }
+      );
+      setRecordActivities(data.activities);
+    } catch {
+      setRecordActivities([]);
+    }
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -212,8 +260,10 @@ export function RequestRouteWorkspace({
           });
           setRequest(data.request);
           setFormState(formFromRequest(data.request));
+          void loadRecordActivity(requestId);
         } else {
           setFormState(emptyForm(user?.id ?? ""));
+          setRecordActivities([]);
         }
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to load request.");
@@ -223,7 +273,7 @@ export function RequestRouteWorkspace({
     }
 
     void load();
-  }, [requestId, user?.id]);
+  }, [loadRecordActivity, requestId, user?.id]);
 
   const checklistGroups = useMemo(() => {
     return (request?.checklistItems ?? []).reduce<Record<string, RequestChecklistItem[]>>(
@@ -280,6 +330,7 @@ export function RequestRouteWorkspace({
         }
       );
       setRequest(data.request);
+      await loadRecordActivity(data.request.id);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to update checklist.");
     }
@@ -292,10 +343,11 @@ export function RequestRouteWorkspace({
 
     try {
       const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status })
+      method: "PATCH",
+      body: JSON.stringify({ status })
       });
       setRequest(data.request);
+      await loadRecordActivity(data.request.id);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to update status.");
     }
@@ -312,6 +364,7 @@ export function RequestRouteWorkspace({
         body: JSON.stringify({ createQuote: true })
       });
       setRequest(data.request);
+      await loadRecordActivity(data.request.id);
       setMessage(
         data.request.relatedQuoteNumber
           ? `Converted to ${data.request.relatedQuoteNumber}.`
@@ -319,6 +372,71 @@ export function RequestRouteWorkspace({
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to convert request.");
+    }
+  }
+
+  async function addNote() {
+    if (!request || !canWriteActivity || !noteText.trim()) {
+      return;
+    }
+
+    try {
+      const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/activities`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: "Note",
+          title: "Note added",
+          body: noteText,
+          actor: user?.name ?? "Pulse User"
+        })
+      });
+      setRequest(data.request);
+      setNoteText("");
+      await loadRecordActivity(data.request.id);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to add note.");
+    }
+  }
+
+  async function addTask() {
+    if (!request || !canWriteActivity || !taskTitle.trim()) {
+      return;
+    }
+
+    try {
+      const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/tasks`, {
+        method: "POST",
+        body: JSON.stringify({
+          title: taskTitle,
+          dueAt: request.nextFollowUpAt || request.dueDate || today,
+          owner: request.assignedToName || "Unassigned"
+        })
+      });
+      setRequest(data.request);
+      setTaskTitle("");
+      await loadRecordActivity(data.request.id);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to add follow-up.");
+    }
+  }
+
+  async function toggleTask(taskId: string, completed: boolean) {
+    if (!request || !canWriteActivity) {
+      return;
+    }
+
+    try {
+      const data = await requestJson<RequestResponse>(
+        `/api/requests/${request.id}/tasks/${taskId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ completed: !completed })
+        }
+      );
+      setRequest(data.request);
+      await loadRecordActivity(data.request.id);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to update follow-up.");
     }
   }
 
@@ -515,6 +633,18 @@ export function RequestRouteWorkspace({
             <div><span>Type</span><strong>{request.requestType}</strong></div>
           </div>
 
+          <div className="lead-contact-card">
+            <p><Mail size={15} /> {request.contactEmail || "No email captured"}</p>
+            <p><Phone size={15} /> {request.contactPhone || "No phone captured"}</p>
+            <p>
+              <MapPin size={15} />{" "}
+              {[request.siteName, request.siteAddress, request.city, request.state]
+                .filter(Boolean)
+                .join(", ") || "No site captured"}
+            </p>
+            <p><CalendarClock size={15} /> Received: {request.receivedDate || "Not captured"}</p>
+          </div>
+
           <section className="lead-section">
             <h3>Next Action</h3>
             <div className="request-next-action-card">
@@ -527,6 +657,62 @@ export function RequestRouteWorkspace({
             <h3>Intake Details</h3>
             <p className="lead-notes">{request.description || "No request description yet."}</p>
           </section>
+
+          <section className="lead-section">
+            <h3>Missing Information</h3>
+            {getMissingInfoItems(request).length ? (
+              <div className="request-tag-list">
+                {getMissingInfoItems(request).map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            ) : (
+              <p className="lead-notes">No missing intake information is flagged.</p>
+            )}
+          </section>
+
+          <section className="lead-section">
+            <h3>Internal Notes</h3>
+            <p className="lead-notes">{request.internalNotes || "No internal notes yet."}</p>
+            <textarea
+              placeholder="Add a note to the timeline..."
+              value={noteText}
+              onChange={(event) => setNoteText(event.target.value)}
+              disabled={!canWriteActivity}
+            />
+            <button className="toolbar-button compact" type="button" onClick={addNote} disabled={!canWriteActivity || !noteText.trim()}>
+              <StickyNote size={16} />
+              Add Note
+            </button>
+          </section>
+
+          <section className="lead-section">
+            <h3>Follow-Ups</h3>
+            <div className="task-composer">
+              <input
+                placeholder="Add follow-up task..."
+                value={taskTitle}
+                onChange={(event) => setTaskTitle(event.target.value)}
+                disabled={!canWriteActivity}
+              />
+              <button type="button" onClick={addTask} disabled={!canWriteActivity || !taskTitle.trim()}>Add</button>
+            </div>
+            <div className="task-list">
+              {request.tasks.length ? (
+                request.tasks.map((task) => (
+                  <button key={task.id} className="task-row" type="button" onClick={() => toggleTask(task.id, task.completed)} disabled={!canWriteActivity}>
+                    {task.completed ? <CheckCircle2 size={17} /> : <ClipboardList size={17} />}
+                    <span>
+                      <strong>{task.title}</strong>
+                      <small>{task.owner} - {task.dueAt || "No due date"}</small>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <p className="lead-notes">No follow-ups are assigned yet.</p>
+              )}
+            </div>
+          </section>
         </section>
 
         <section className="lead-detail-panel always-visible">
@@ -536,6 +722,13 @@ export function RequestRouteWorkspace({
               <strong>{request.checklistSummary.readyForQuote ? "Ready for Quote" : `${request.checklistSummary.missingRequired.length} required item(s) missing`}</strong>
               <span>{request.checklistSummary.completed}/{request.checklistSummary.total} complete from {request.checklistSummary.templateName}</span>
             </div>
+            {request.checklistSummary.missingRequired.length ? (
+              <div className="request-tag-list">
+                {request.checklistSummary.missingRequired.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            ) : null}
             <div className="request-checklist">
               {Object.entries(checklistGroups).map(([group, items]) => (
                 <div className="request-checklist-group" key={group}>
@@ -570,6 +763,32 @@ export function RequestRouteWorkspace({
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="lead-section">
+            <h3>Files / Drawings</h3>
+            {request.files.length ? (
+              <div className="request-tag-list">
+                {request.files.map((file) => <span key={file}>{file}</span>)}
+              </div>
+            ) : (
+              <p className="lead-notes">No files are indexed yet. Upload and drawing package handling are planned for a later file model.</p>
+            )}
+          </section>
+
+          <section className="lead-section">
+            <h3>Related Quote</h3>
+            <div className="request-next-action-card">
+              <strong>{request.relatedQuoteNumber || "No quote workspace linked yet"}</strong>
+              <button className="toolbar-button compact" type="button" disabled={Boolean(request.relatedQuoteId) || !canWriteCrm || !request.checklistSummary.readyForQuote} onClick={convertRequest}>
+                Create Quote Workspace
+              </button>
+            </div>
+          </section>
+
+          <section className="lead-section">
+            <h3>Activity Timeline</h3>
+            <ActivityTimeline activities={recordActivities} emptyMessage="No shared activity has been recorded for this request yet." />
           </section>
         </section>
       </div>

@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Edit3,
+  Eye,
   Mail,
   MapPin,
   Phone,
@@ -18,7 +19,8 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
@@ -267,6 +269,7 @@ function assigneeLabel(assignee: RequestAssignee) {
 }
 
 export function RequestsModule() {
+  const router = useRouter();
   const { user } = useCurrentUser();
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
@@ -294,6 +297,23 @@ export function RequestsModule() {
     requests.find((request) => request.id === selectedRequestId) ?? null;
   const canWriteCrm = canRole(user?.role, "crm:write");
   const canWriteActivity = canRole(user?.role, "crm:activity:write");
+
+  function openRequestDetail(requestId: string) {
+    router.push(`/requests/${requestId}`);
+  }
+
+  function previewRequest(requestId: string) {
+    setSelectedRequestId(requestId);
+  }
+
+  function handleRequestRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, requestId: string) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    openRequestDetail(requestId);
+  }
 
   const loadRecordActivity = useCallback(async (requestId: string) => {
     try {
@@ -806,20 +826,7 @@ export function RequestsModule() {
         onSourceFilterChange={setSourceFilter}
         onAssigneeFilterChange={setAssigneeFilter}
         onPriorityFilterChange={setPriorityFilter}
-        onSelectRequest={setSelectedRequestId}
         onCreateRequest={openCreateForm}
-        onRequestMoreInfo={(request) => {
-          setSelectedRequestId(request.id);
-          void updateRequestStatusFor(request, "Missing Info");
-        }}
-        onSendToQuote={(request) => {
-          setSelectedRequestId(request.id);
-          void convertRequestFor(request);
-        }}
-        onToggleChecklistItem={(request, item) => {
-          setSelectedRequestId(request.id);
-          void toggleChecklistItemFor(request, item);
-        }}
       />
 
       <section className="requests-desktop-summary" aria-label="Request intake summary">
@@ -922,6 +929,7 @@ export function RequestsModule() {
                 <th>Owner</th>
                 <th>Next Action</th>
                 <th>Due / Follow-up</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -932,7 +940,11 @@ export function RequestsModule() {
                   <tr
                     key={request.id}
                     className={request.id === selectedRequest?.id ? "selected" : ""}
-                    onClick={() => setSelectedRequestId(request.id)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${request.requestNumber}`}
+                    onClick={() => openRequestDetail(request.id)}
+                    onKeyDown={(event) => handleRequestRowKeyDown(event, request.id)}
                   >
                     <td data-label="Request">
                       <strong>{request.title}</strong>
@@ -959,6 +971,21 @@ export function RequestsModule() {
                     <td data-label="Due / Follow-up">
                       <strong>{request.dueDate || "No due date"}</strong>
                       <span>{request.nextFollowUpAt ? `Follow-up ${request.nextFollowUpAt}` : "No follow-up"}</span>
+                    </td>
+                    <td data-label="Actions">
+                      <button
+                        className="toolbar-button compact"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          previewRequest(request.id);
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        aria-label={`Preview ${request.requestNumber}`}
+                      >
+                        <Eye size={16} />
+                        Preview
+                      </button>
                     </td>
                   </tr>
                 );
@@ -988,6 +1015,10 @@ export function RequestsModule() {
                   <span className={getStatusClass(selectedRequest.status)}>{selectedRequest.status}</span>
                 </div>
                 <div className="lead-detail-actions">
+                  <Link className="toolbar-button compact" href={`/requests/${selectedRequest.id}`}>
+                    <ArrowRight size={16} />
+                    Open Full Request
+                  </Link>
                   <button className="toolbar-button compact" type="button" onClick={() => openEditForm(selectedRequest)} disabled={!canWriteCrm}>
                     <Edit3 size={16} />
                     Edit

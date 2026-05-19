@@ -194,12 +194,22 @@ export function MobileProgressBar({
 export function MobileRecordCard({
   selected,
   children,
+  href,
   onClick
 }: {
   selected?: boolean;
   children: ReactNode;
+  href?: string;
   onClick?: () => void;
 }) {
+  if (href) {
+    return (
+      <Link className={selected ? "mobile-record-card selected" : "mobile-record-card"} href={href}>
+        {children}
+      </Link>
+    );
+  }
+
   return (
     <button
       className={selected ? "mobile-record-card selected" : "mobile-record-card"}
