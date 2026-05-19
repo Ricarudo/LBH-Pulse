@@ -4,6 +4,73 @@ Date: 2026-05-09
 
 Purpose: Save the current repository/startup state after moving the app to a PostgreSQL and Prisma-only runtime path and starting the UI modernization work.
 
+## Pulse Shell, Request Detail, And Local Accounts Checkpoint - 2026-05-19
+
+Three new local commits were prepared after the Pulse shell, Request navigation, and local account-management work:
+
+- `b9df2e6` - `feat: make request detail the primary workflow`
+- `01cb1dd` - `feat: add local account management`
+- `c2211b0` - `fix: keep Pulse shell mounted during navigation`
+
+Request navigation / detail access:
+
+- `/requests/[id]` is now the canonical Request workspace.
+- Desktop Request rows navigate to the full detail route.
+- Desktop queue rows have a separate Preview action that opens the existing side panel.
+- The side panel now includes an `Open Full Request` action.
+- Mobile Request cards navigate directly to the full detail route instead of using the old inline expanded panel.
+- The Request detail page now has more parity with the old panel: contact methods, missing info, internal notes, follow-ups, files/drawings, related quote action, checklist summary, and global activity timeline.
+
+Local account management MVP:
+
+- `LocalUser` remains the single local account model.
+- Added account lifecycle/future-SSO fields: `mustChangePassword`, `authProvider`, `entraObjectId`, `lastLoginAt`, and `deactivatedAt`.
+- `entraObjectId` is indexed but not unique in this checkpoint because `prisma db push` warned about adding a new unique constraint; uniqueness can be added with the real Entra migration.
+- Added Admin-only account APIs under `/api/settings/accounts`.
+- Added `/api/auth/change-password`.
+- Settings now includes an Admin-only Accounts section for creating users, editing name/email/role/status, deactivating/reactivating users, and setting temporary passwords.
+- Admin password reset stores only a new hash and sets `mustChangePassword = true`.
+- Users with `mustChangePassword` are held on a focused password-change screen before entering Pulse.
+- Permission-gated APIs now reject normal app access while `mustChangePassword` is true.
+- Password hashes are not serialized to frontend account responses.
+- Activity logging was added for user creation, role changes, activation/deactivation, password resets, and user password changes.
+- The destructive `npm run db:seed` command was not run. Existing local/demo accounts were preserved.
+
+Shell / route stability:
+
+- The root layout now mounts a persistent `PulseShell`.
+- Nested page-level `PulseShell` usage is safely ignored when a parent shell is already mounted.
+- Route loading is content-only so the shell/sidebar/topbar do not flash away during normal navigation.
+- Desktop shell scrolling is viewport-owned: sidebar stays locked, and main content owns vertical scrolling.
+- Mobile bottom navigation and mobile shell behavior were preserved.
+
+Verification from `apps/web`:
+
+```text
+npm run prisma:generate  # passed
+npm run db:push          # passed, non-destructive; no seed run
+npm run typecheck        # passed
+npm run build            # passed
+```
+
+Runtime / smoke checks:
+
+```text
+Invoke-WebRequest http://localhost:4300              # 200 OK
+Invoke-WebRequest http://192.168.1.12:4300           # 200 OK
+Admin login + GET /api/settings/accounts             # 200 OK, response did not contain passwordHash
+Sales login + GET /api/settings/accounts             # 403 Forbidden
+```
+
+Operational notes:
+
+- The Pulse dev server is running from `apps/web` on port `4300` and is reachable from the workstation LAN at `http://192.168.1.12:4300`.
+- `npm run db:push` synced the local PostgreSQL `pulse` schema for the new account fields.
+- `next-env.d.ts` was restored after `next build` flipped its generated route-types import.
+- Manual UI checks still recommended: Settings Accounts create/edit/deactivate/reset flows, forced password-change screen, Request row Preview vs full navigation, mobile Request tap-to-detail, and sidebar collapse persistence.
+- Existing stateless sessions are not force-revoked by password reset until the client reloads or checks session again.
+- Do not run the current destructive seed script on data that must be preserved.
+
 ## Angular Framework Removal / Pulse Stack Cleanup - 2026-05-14
 
 The legacy Angular `gui/` application has been removed from the active repository structure. Angular dependencies, Angular CLI/build scripts, Angular routing, Angular Material UI code, legacy browser PDF packages, Angular Dockerfile/config files, and the root-only empty `package-lock.json` were removed with it.
