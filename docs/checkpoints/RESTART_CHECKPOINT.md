@@ -4,6 +4,103 @@ Date: 2026-05-09
 
 Purpose: Save the current repository/startup state after moving the app to a PostgreSQL and Prisma-only runtime path and starting the UI modernization work.
 
+## Angular Framework Removal / Pulse Stack Cleanup - 2026-05-14
+
+The legacy Angular `gui/` application has been removed from the active repository structure. Angular dependencies, Angular CLI/build scripts, Angular routing, Angular Material UI code, legacy browser PDF packages, Angular Dockerfile/config files, and the root-only empty `package-lock.json` were removed with it.
+
+Useful business concepts from the removed Angular prototype were preserved in `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`, including Request/Lead intake fields, Directory client/site/contact ideas, lead-to-quote handoff, QM-style quote numbering, quote approval/revision states, BOM/quote-line fields, labor/material cost formula ideas, and early proposal/PDF field concepts.
+
+The active Pulse stack is now:
+
+- `apps/web`: Next.js 16, React 19, TypeScript, route-handler APIs, Prisma, Zod, local development auth, Requests, Directory/Clients, activity, and starter operational workspaces.
+- PostgreSQL 16 with Pulse data in the `pulse` schema for `apps/web`.
+- `backend/`: compatibility/reference Express API using Prisma/PostgreSQL; do not remove until useful logic is migrated or explicitly retired.
+- `apps/api`, `apps/worker`, and `packages/*`: planned placeholders.
+
+Cleanup completed:
+
+- Removed `gui/` and its Angular package files, source, assets, test config, Dockerfile, and lockfile.
+- Removed the obsolete root `package-lock.json` that had no root package entries.
+- Updated root/app/backend documentation to point to `apps/web` and port `4300`.
+- Updated Docker Compose files to remove the Angular `gui` service and add a `web` service for the Pulse Next app on port `4300`.
+- Updated backend CORS/default frontend wording from Angular/4200 to Pulse web/4300.
+- Updated reports, ADR, transition notes, brand docs, sandbox notes, and architecture notes for the new boundary.
+
+Safe commands run:
+
+```text
+rg targeted Angular/reference searches with generated-folder exclusions
+Resolve-Path .; Resolve-Path gui
+Remove-Item -LiteralPath <verified repo>\gui -Recurse -Force
+npm run typecheck            # from apps/web, passed
+npm run build                # from apps/web, passed
+docker compose -f docker-compose.dev.yml config       # passed
+docker compose -f docker-compose.override.yml config  # passed
+docker compose -f docker-compose.ci.yml config        # passed
+Start-Process npm.cmd run dev # from apps/web
+Invoke-WebRequest http://localhost:4300               # returned 200 OK
+```
+
+Command limitations encountered:
+
+- The Windows sandbox runner again failed before command startup, so targeted non-sandbox commands were used and documented.
+- The first verified `Remove-Item` for `gui/` timed out while deleting the old `node_modules` tree; the same verified target was retried with a longer timeout and completed.
+- Docker Desktop was not running, so Docker API/container status checks failed. Compose config validation still succeeded because it does not require the daemon.
+- Backend `npm test` was attempted once and failed because `DATABASE_URL` was not set in the current shell/environment. Do not repeatedly retry backend DB tests until PostgreSQL/Docker and `DATABASE_URL` are available.
+
+Follow-up cleanup still needed:
+
+- Decide when to migrate or retire remaining compatibility Express backend routes and old Prisma compatibility tables.
+- Build the real database-backed Quote Workspace and proposal/PDF flow using the preserved pricing and proposal concepts.
+- Revisit Compose web service ergonomics after Docker Desktop is available, because the updated dev service uses `node:24-alpine` with `npm ci` at container startup.
+- Some historical docs intentionally still mention Angular and `gui/` as removed reference context.
+
+## Desktop Enterprise App Shell Pass - 2026-05-14
+
+Pulse now has a stronger desktop-focused enterprise shell in the active Next.js app. This pass did not reintroduce Angular patterns and did not touch backend, Prisma, or database workflows.
+
+New shell structure:
+
+- `PulseShell` renders a global dark top bar, a dark collapsible left sidebar, and a light content canvas by default.
+- The Pulse mark and full Pulse name moved from the sidebar into the global top bar.
+- The top bar now contains app-wide search, a visible `Local Dev` environment badge, visual-only notifications, profile menu, and active role indicator.
+- The sidebar is a flat primary-module list: Hub, Requests, Quotes, Projects, Directory, Billing, Analytics, Settings.
+- Expanded sidebar shows icon + label. Collapsed sidebar uses icon-only navigation with native hover tooltips and the same active route highlighting.
+- Page-level controls remain in page content. The old global filter/date/create controls were removed from the shell.
+- Each shell page now gets a compact page header below the top bar with a short title and breadcrumb pattern such as `Home / Requests`.
+- Full dark mode support remains available through the profile menu theme toggle.
+- Follow-up transition fix replaced the old route loading skeleton (`104px sidebar + content`) with a loading shell that matches the new dark topbar, dark collapsed sidebar, compact page header, and light content canvas.
+
+Files modified in this pass:
+
+- `apps/web/src/components/PulseShell.tsx`
+- `apps/web/src/app/globals.css`
+- `apps/web/src/app/loading.tsx`
+- `docs/checkpoints/RESTART_CHECKPOINT.md`
+
+Safe commands run:
+
+```text
+npm run typecheck  # from apps/web, passed
+npm run build      # from apps/web, passed
+Invoke-WebRequest http://localhost:4300/requests  # returned 200 OK
+Get-NetTCPConnection targeted to 4300/3000/5432
+rg targeted shell cleanup/class searches
+rg targeted route-loading class searches
+```
+
+Command limitations observed:
+
+- Continued using targeted non-sandbox PowerShell because the Windows sandbox runner is documented as unreliable on this workstation.
+- Did not retry Docker Compose for this UI pass. The previous attempt reached Docker Desktop but public image pulls were blocked by a Docker credential helper/session error.
+- Did not run backend tests because this shell pass does not modify backend code and the previous backend test attempt lacked `DATABASE_URL`.
+
+Remaining UI follow-up:
+
+- Add browser-level interaction checks with Playwright or another approved local browser workflow for sidebar collapse, profile menu opening, and active route visual states.
+- Tune module-specific page headers where nested routes need richer breadcrumbs, for example Request detail/edit pages.
+- Decide whether to add a real global search command palette or backend-backed search API in a later pass.
+
 ## Global Mobile Foundation Planning - 2026-05-12
 
 Global mobile UI planning and first-pass implementation are continuing from the Pulse workstation environment, with Requests as the first proof point. The active target remains `apps/web` on port `4300`; the local frontend responded successfully at `http://localhost:4300`, and PostgreSQL is healthy on port `5432`. Use Windows PowerShell-compatible commands from the correct package folders. The sandbox runner may still fail with `windows sandbox: timed out after 15000ms connecting runner pipe-in`, so targeted non-sandbox verification may be required and should be documented.
@@ -354,7 +451,7 @@ Result: Compose config validation passed.
 - Recurring sandbox failures showed `windows sandbox: timed out after 15000ms connecting runner pipe-in`.
 - The failing commands included simple non-piped probes: `pwd`, `Get-Location`, `Get-Date`, and `rg --version`.
 - Because those commands do not search the repo, wait for stdin, or use shell pipes, the likely cause is the Windows sandbox runner failing during process/pipe startup rather than `rg`, large CSS output, or pipe behavior such as `rg ... | head`.
-- The repo does contain large generated/vendor folders (`apps/web/node_modules`, `apps/web/.next`, `backend/node_modules`, and `gui/node_modules`), so broad recursive PowerShell commands can still be noisy and slow when the sandbox is healthy.
+- The repo does contain large generated/vendor folders such as `apps/web/node_modules`, `apps/web/.next`, and `backend/node_modules`, so broad recursive PowerShell commands can still be noisy and slow when the sandbox is healthy. The old `gui/node_modules` tree was removed with the Angular cleanup on 2026-05-14.
 - Safer pattern going forward: target the relevant source directory and exclude generated folders, for example `rg "pattern" apps/web/src -n --glob '!node_modules' --glob '!dist' --glob '!build' --glob '!.angular' --glob '!coverage' --glob '!.next'`. Avoid `grep ... | head`, `cat ... | grep`, `find ... | xargs ...`, and broad repo-root recursion.
 - See `docs/sandbox-command-guidelines.md` for the short command guide.
 
