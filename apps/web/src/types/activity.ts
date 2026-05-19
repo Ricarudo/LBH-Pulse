@@ -1,4 +1,11 @@
-export const activityEntityTypes = ["Request", "Client", "Opportunity", "Quote", "User"] as const;
+export const activityEntityTypes = [
+  "Request",
+  "RequestChecklistTemplate",
+  "Client",
+  "Opportunity",
+  "Quote",
+  "User"
+] as const;
 export type ActivityEntityType = (typeof activityEntityTypes)[number];
 
 export const activityTypes = [

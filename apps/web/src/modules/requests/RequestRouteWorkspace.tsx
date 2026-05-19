@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import {
   requestPriorities,
   requestSources,
@@ -551,6 +552,7 @@ export function RequestRouteWorkspace({
                       <span>
                         <strong>{item.label}</strong>
                         <small>{item.required ? "Required" : "Optional"}</small>
+                        <RequestChecklistSignature item={item} />
                       </span>
                     </button>
                   ))}

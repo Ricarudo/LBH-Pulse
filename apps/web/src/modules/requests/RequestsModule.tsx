@@ -24,6 +24,7 @@ import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ActivityRecord } from "@/types/activity";
 import { RequestsMobileView } from "./RequestsMobileView";
+import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import {
   requestPriorities,
   requestSources,
@@ -1111,6 +1112,7 @@ export function RequestsModule() {
                               {!item.applicable ? " - not applicable" : ""}
                               {item.notes ? ` - ${item.notes}` : ""}
                             </small>
+                            <RequestChecklistSignature item={item} />
                           </span>
                         </button>
                       ))}

@@ -33,6 +33,7 @@ import {
   type RequestSource,
   type RequestStatus
 } from "./requestData";
+import { RequestChecklistSignature } from "./RequestChecklistSignature";
 
 type RequestsMobileCapabilities = {
   canCreate: boolean;
@@ -298,6 +299,7 @@ export function RequestsMobileView({
                       {item.required ? "Required" : "Optional"}
                       {!item.applicable ? " / not applicable" : ""}
                     </small>
+                    <RequestChecklistSignature item={item} compact />
                   </span>
                 </button>
               ))}

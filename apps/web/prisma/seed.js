@@ -1043,6 +1043,7 @@ async function main() {
         : usersByName.get(request.assignedOwner) || null;
     const template = seededTemplates.get(checklistKeyFor(request.serviceCategory)) || seededTemplates.get("general");
     const completedItems = new Set(request.checklistCompleted ?? []);
+    const requestActor = actorFor(request.activities[0]?.actor);
 
     const createdRequest = await prisma.request.create({
       data: {
@@ -1062,7 +1063,7 @@ async function main() {
         city: request.city,
         state: request.state,
         assignedToId: assignedUser?.id ?? null,
-        createdById: actorFor(request.activities[0]?.actor).id,
+        createdById: requestActor.id,
         receivedDate: request.lastActivityAt,
         dueDate: request.dueDate,
         nextAction: request.nextAction,
@@ -1073,6 +1074,7 @@ async function main() {
         description: request.description,
         internalNotes: request.internalNotes,
         checklistTemplateId: template?.id,
+        checklistTemplateNameSnapshot: template?.name,
         lastActivityAt: request.lastActivityAt,
         checklistItems: {
           create: template.items.map((item) => {
@@ -1087,7 +1089,8 @@ async function main() {
               group: item.group,
               completed,
               completedAt: completed ? request.lastActivityAt : null,
-              completedById: completed ? actorFor(request.activities[0]?.actor).id : null
+              completedById: completed ? requestActor.id : null,
+              completedByNameSnapshot: completed ? requestActor.name : null
             };
           })
         },

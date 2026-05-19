@@ -2,7 +2,6 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { toAuthenticatedUser, type AuthenticatedUser } from "@/lib/auth/permissions";
 import { recordActivity } from "@/lib/services/activityService";
-import { chooseChecklistTemplateKey } from "@/lib/requestChecklistTemplates";
 import type {
   RequestActivityType,
   RequestAssignee,
@@ -136,7 +135,10 @@ function buildChecklistSummary(request: RequestWithRelations) {
   const uniqueMissing = Array.from(new Set(missingRequired));
 
   return {
-    templateName: request.checklistTemplate?.name ?? "Request Intake",
+    templateName:
+      request.checklistTemplateNameSnapshot ??
+      request.checklistTemplate?.name ??
+      "Request Intake",
     completed: applicableItems.filter((item) => item.completed).length,
     total: applicableItems.length,
     requiredCompleted: requiredItems.filter((item) => item.completed).length,
@@ -274,7 +276,7 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
       sortOrder: item.sortOrder,
       completed: item.completed,
       completedAt: formatDateTime(item.completedAt),
-      completedByName: item.completedBy?.name ?? "",
+      completedByName: item.completedByNameSnapshot ?? item.completedBy?.name ?? "",
       notes: item.notes ?? "",
       applicable: isChecklistItemApplicable(item, request)
     })),
@@ -310,16 +312,50 @@ async function findChecklistTemplate(
   serviceCategory: string,
   requestType: string
 ) {
-  const key = chooseChecklistTemplateKey(serviceCategory, requestType);
-  let template = await tx.requestChecklistTemplate.findUnique({
-    where: { key },
-    include: { items: { orderBy: { sortOrder: "asc" } } }
-  });
+  let template = serviceCategory
+    ? await tx.requestChecklistTemplate.findFirst({
+        where: {
+          active: true,
+          serviceCategory
+        },
+        include: {
+          items: {
+            where: { active: true },
+            orderBy: { sortOrder: "asc" }
+          }
+        },
+        orderBy: { updatedAt: "desc" }
+      })
+    : null;
+
+  if (!template && requestType) {
+    template = await tx.requestChecklistTemplate.findFirst({
+      where: {
+        active: true,
+        requestType
+      },
+      include: {
+        items: {
+          where: { active: true },
+          orderBy: { sortOrder: "asc" }
+        }
+      },
+      orderBy: { updatedAt: "desc" }
+    });
+  }
 
   if (!template) {
-    template = await tx.requestChecklistTemplate.findUnique({
-      where: { key: "general" },
-      include: { items: { orderBy: { sortOrder: "asc" } } }
+    template = await tx.requestChecklistTemplate.findFirst({
+      where: {
+        active: true,
+        key: "general"
+      },
+      include: {
+        items: {
+          where: { active: true },
+          orderBy: { sortOrder: "asc" }
+        }
+      }
     });
   }
 
@@ -336,10 +372,11 @@ function buildChecklistItemCreateData(
       appliesWhen: string | null;
       sortOrder: number;
       group: string | null;
+      active?: boolean;
     }>;
   } | null
 ) {
-  return template?.items.map((item) => ({
+  return template?.items.filter((item) => item.active !== false).map((item) => ({
     templateItemId: item.id,
     label: item.label,
     description: item.description,
@@ -427,6 +464,7 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
         internalNotes: input.internalNotes || null,
         relatedQuoteId: input.relatedQuoteId || null,
         checklistTemplateId: template?.id ?? null,
+        checklistTemplateNameSnapshot: template?.name ?? null,
         lastActivityAt: now,
         checklistItems: {
           create: buildChecklistItemCreateData(template)
@@ -865,7 +903,8 @@ export async function updateRequestChecklistItem(
         ? {
             completed,
             completedAt: completed ? now : null,
-            completedById: completed ? user?.id ?? null : null
+            completedById: completed ? user?.id ?? null : null,
+            completedByNameSnapshot: completed ? user?.name ?? "Pulse System" : null
           }
         : {}),
       ...(input.notes !== undefined ? { notes: input.notes || null } : {})
@@ -918,6 +957,10 @@ export async function updateRequestChecklistItem(
       : `Reopened ${existingItem.label}`,
     detail: input.notes,
     metadata: {
+      itemId,
+      itemLabel: existingItem.label,
+      completed,
+      completedAt: completed ? now.toISOString() : null,
       requestNumber: finalRequest.requestNumber,
       status: finalRequest.status,
       readyForQuote: buildChecklistSummary(finalRequest).readyForQuote

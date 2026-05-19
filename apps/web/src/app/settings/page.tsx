@@ -6,7 +6,7 @@ export default function SettingsPage() {
     <PulseShell
       activePage="settings"
       title="Settings"
-      subtitle="Starter workspace preferences and module scope controls."
+      subtitle="Workspace preferences and Admin request checklist templates."
     >
       <SettingsWorkspace />
     </PulseShell>

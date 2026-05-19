@@ -40,6 +40,7 @@ model Request {
   internalNotes   String?
   relatedQuoteId  String?
   checklistTemplateId String?
+  checklistTemplateNameSnapshot String?
   createdById     String?
   archivedAt      DateTime?
   createdAt       DateTime            @default(now())
@@ -97,11 +98,13 @@ model RequestChecklistTemplateItem {
   appliesWhen String?
   sortOrder   Int                      @default(0)
   group       String?
+  active      Boolean                  @default(true)
   template    RequestChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   requestItems RequestChecklistItem[]
 
   @@index([templateId])
   @@index([sortOrder])
+  @@index([active])
 }
 
 model RequestChecklistItem {
@@ -117,6 +120,7 @@ model RequestChecklistItem {
   completed      Boolean                       @default(false)
   completedAt    DateTime?
   completedById  String?
+  completedByNameSnapshot String?
   notes          String?
   createdAt      DateTime                      @default(now())
   updatedAt      DateTime                      @updatedAt
