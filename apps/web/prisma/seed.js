@@ -874,7 +874,10 @@ async function main() {
           name: user.name,
           email: user.email,
           role: user.role,
-          passwordHash: hashPassword(user.password, user.email)
+          passwordHash: hashPassword(user.password, user.email),
+          active: true,
+          mustChangePassword: false,
+          authProvider: "LOCAL"
         }
       })
     )

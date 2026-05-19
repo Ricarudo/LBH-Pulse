@@ -1,4 +1,5 @@
 export type LocalRole = "Admin" | "Sales" | "ProjectManager" | "Technician";
+export type AuthProvider = "LOCAL" | "ENTRA";
 
 export type AuthenticatedUser = {
   id: string;
@@ -6,6 +7,8 @@ export type AuthenticatedUser = {
   email: string;
   role: LocalRole;
   roleLabel: string;
+  mustChangePassword: boolean;
+  authProvider: AuthProvider;
 };
 
 export type Permission =
@@ -43,6 +46,10 @@ export function isLocalRole(role: string): role is LocalRole {
   return role === "Admin" || role === "Sales" || role === "ProjectManager" || role === "Technician";
 }
 
+export function isAuthProvider(provider: string): provider is AuthProvider {
+  return provider === "LOCAL" || provider === "ENTRA";
+}
+
 export function canRole(role: LocalRole | undefined, permission: Permission) {
   return role ? rolePermissions[role].includes(permission) : false;
 }
@@ -52,15 +59,21 @@ export function toAuthenticatedUser(user: {
   name: string;
   email: string;
   role: string;
+  mustChangePassword?: boolean;
+  authProvider?: string;
 }): AuthenticatedUser {
   const role = isLocalRole(user.role) ? user.role : "Technician";
+  const authProvider =
+    user.authProvider && isAuthProvider(user.authProvider) ? user.authProvider : "LOCAL";
 
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role,
-    roleLabel: roleLabels[role]
+    roleLabel: roleLabels[role],
+    mustChangePassword: Boolean(user.mustChangePassword),
+    authProvider
   };
 }
 

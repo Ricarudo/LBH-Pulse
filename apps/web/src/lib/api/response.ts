@@ -67,6 +67,35 @@ export function apiError(error: unknown) {
     );
   }
 
+  if (error instanceof Error && error.message === "LOCAL_USER_NOT_FOUND") {
+    return NextResponse.json({ error: "Pulse user not found." }, { status: 404 });
+  }
+
+  if (error instanceof Error && error.message === "LOCAL_USER_EMAIL_EXISTS") {
+    return NextResponse.json(
+      { error: "A Pulse user with this email already exists." },
+      { status: 400 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "LOCAL_USER_LAST_ADMIN") {
+    return NextResponse.json(
+      { error: "At least one active Admin account must remain available." },
+      { status: 400 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "LOCAL_USER_PASSWORD_UNAVAILABLE") {
+    return NextResponse.json(
+      { error: "Password changes are only available for local Pulse accounts." },
+      { status: 400 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "LOCAL_USER_PASSWORD_INVALID") {
+    return NextResponse.json({ error: "Current password is incorrect." }, { status: 400 });
+  }
+
   if (error instanceof Error && error.message === "CLIENT_NOT_FOUND") {
     return NextResponse.json({ error: "Client not found." }, { status: 404 });
   }

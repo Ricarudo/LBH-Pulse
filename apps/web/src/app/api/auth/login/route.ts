@@ -21,11 +21,20 @@ export async function POST(request: Request) {
       where: { email: payload.email.toLowerCase() }
     });
 
-    if (!user || !user.active || !verifyPassword(payload.password, user.passwordHash)) {
+    if (
+      !user ||
+      !user.active ||
+      user.authProvider !== "LOCAL" ||
+      !verifyPassword(payload.password, user.passwordHash)
+    ) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
-    const authUser = toAuthenticatedUser(user);
+    const updatedUser = await prisma.localUser.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() }
+    });
+    const authUser = toAuthenticatedUser(updatedUser);
     const response = NextResponse.json({ user: authUser });
     setSessionCookie(response, user.id);
 

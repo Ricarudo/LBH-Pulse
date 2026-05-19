@@ -101,6 +101,10 @@ export async function requireUser(permission?: Permission) {
     throw new AuthError("Authentication required.", 401);
   }
 
+  if (permission && user.mustChangePassword) {
+    throw new AuthError("Password change required before accessing Pulse.", 403);
+  }
+
   if (permission && !canRole(user.role, permission)) {
     throw new AuthError("You do not have permission to perform this action.", 403);
   }

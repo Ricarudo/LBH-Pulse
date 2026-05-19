@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Plus, RotateCcw } from "lucide-react";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { SettingsAccountsSection } from "@/components/SettingsAccountsSection";
 import {
   requestTypes,
   serviceCategories
@@ -69,6 +70,7 @@ export function SettingsWorkspace() {
   const [templatesSaving, setTemplatesSaving] = useState(false);
   const canReadSettings = canRole(user?.role, "settings:read");
   const canWriteSettings = canRole(user?.role, "settings:write");
+  const canManageUsers = canRole(user?.role, "users:manage");
 
   async function loadTemplates(preferredTemplateId?: string) {
     try {
@@ -290,6 +292,8 @@ export function SettingsWorkspace() {
           <span className={settings.serviceModule ? "toggle on" : "toggle"} />
         </button>
       </div>
+
+      {canManageUsers && user ? <SettingsAccountsSection currentUserId={user.id} /> : null}
 
       <section className="settings-checklist-workspace" aria-labelledby="request-checklists-title">
         <div className="settings-section-header">

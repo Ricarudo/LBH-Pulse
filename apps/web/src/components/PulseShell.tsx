@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import {
+  createContext,
+  FormEvent,
+  useContext,
+  useEffect,
+  useState
+} from "react";
 import { canRole, type AuthenticatedUser } from "@/lib/auth/permissions";
 import { MobileBottomNav } from "@/components/mobile/MobilePrimitives";
 import { PageTransition } from "@/components/PageTransition";
@@ -28,23 +34,25 @@ import {
 const themeStorageKey = "pulse.theme";
 type PulseTheme = "light" | "dark";
 
+type PulsePage =
+  | "hub"
+  | "requests"
+  | "directory"
+  | "leads"
+  | "clients"
+  | "quotes"
+  | "projects"
+  | "procurement"
+  | "field"
+  | "billing"
+  | "statistics"
+  | "activity"
+  | "settings";
+
 type PulseShellProps = {
-  activePage:
-    | "hub"
-    | "requests"
-    | "directory"
-    | "leads"
-    | "clients"
-    | "quotes"
-    | "projects"
-    | "procurement"
-    | "field"
-    | "billing"
-    | "statistics"
-    | "activity"
-    | "settings";
-  title: string;
-  subtitle: string;
+  activePage?: PulsePage;
+  title?: string;
+  subtitle?: string;
   compactHeader?: boolean;
   children: React.ReactNode;
 };
@@ -69,7 +77,7 @@ const mobileNavItems = [
   { href: "/directory", label: "More", key: "more", icon: Menu }
 ] as const;
 
-const pageLabels: Record<PulseShellProps["activePage"], string> = {
+const pageLabels: Record<PulsePage, string> = {
   hub: "Dashboard",
   requests: "Requests",
   directory: "Directory",
@@ -92,7 +100,142 @@ const devUserLabels = [
   "Technician User / Technician"
 ];
 
+type ShellRouteMeta = {
+  activePage: PulsePage;
+  title: string;
+  subtitle: string;
+  compactHeader?: boolean;
+};
+
+const defaultShellRouteMeta: ShellRouteMeta = {
+  activePage: "hub",
+  title: "Dashboard",
+  subtitle: "R2's connected view across requests, quotes, projects, directory records, and billing."
+};
+
+function getShellRouteMeta(pathname: string): ShellRouteMeta {
+  if (pathname.startsWith("/requests") || pathname === "/leads") {
+    return {
+      activePage: "requests",
+      title: "Requests",
+      subtitle: "Incoming calls, emails, RFPs, site visits, and quote requests.",
+      compactHeader: true
+    };
+  }
+
+  if (pathname.startsWith("/clients")) {
+    return {
+      activePage: "directory",
+      title: "Directory",
+      subtitle: pathname.startsWith("/clients/new")
+        ? "Create a client account with sites, contacts, and preferences."
+        : "Client accounts, contacts, sites, and relationship context."
+    };
+  }
+
+  if (pathname.startsWith("/directory")) {
+    return {
+      activePage: "directory",
+      title: "Directory",
+      subtitle: "Supporting relationship records for Requests, Quotes, and Projects."
+    };
+  }
+
+  if (pathname.startsWith("/quotes")) {
+    return {
+      activePage: "quotes",
+      title: "Quotes",
+      subtitle: "Quotes include the client-ready proposal output as a subcategory."
+    };
+  }
+
+  if (pathname.startsWith("/projects")) {
+    return {
+      activePage: "projects",
+      title: "Projects",
+      subtitle: "Project execution, tasks, closeout, and job costing live here."
+    };
+  }
+
+  if (pathname.startsWith("/procurement")) {
+    return {
+      activePage: "procurement",
+      title: "Projects",
+      subtitle: "Purchase orders, vendor coordination, and material readiness."
+    };
+  }
+
+  if (pathname.startsWith("/field")) {
+    return {
+      activePage: "field",
+      title: "Projects",
+      subtitle: "Field jobs, technician activity, labor tracking, and site status."
+    };
+  }
+
+  if (pathname.startsWith("/billing")) {
+    return {
+      activePage: "billing",
+      title: "Billing",
+      subtitle: "Invoices, collections follow-up, and project billing readiness."
+    };
+  }
+
+  if (pathname.startsWith("/statistics")) {
+    return {
+      activePage: "statistics",
+      title: "Analytics",
+      subtitle: "High-level starter metrics for Pulse operations visibility."
+    };
+  }
+
+  if (pathname.startsWith("/activity")) {
+    return {
+      activePage: "activity",
+      title: "Activity",
+      subtitle: "Recent activity across Requests, Directory records, Opportunities, and Quotes."
+    };
+  }
+
+  if (pathname.startsWith("/settings")) {
+    return {
+      activePage: "settings",
+      title: "Settings",
+      subtitle: "Workspace preferences, Admin accounts, and request checklist templates."
+    };
+  }
+
+  return defaultShellRouteMeta;
+}
+
+const PulseShellContext = createContext(false);
+
 export function PulseShell({
+  activePage,
+  title,
+  subtitle,
+  compactHeader = false,
+  children
+}: PulseShellProps) {
+  const hasParentShell = useContext(PulseShellContext);
+
+  if (hasParentShell) {
+    return <>{children}</>;
+  }
+
+  return (
+    <PulseShellFrame
+      activePage={activePage}
+      title={title}
+      subtitle={subtitle}
+      compactHeader={compactHeader}
+    >
+      {children}
+    </PulseShellFrame>
+  );
+}
+
+function PulseShellFrame({
   activePage,
   title,
   subtitle,
@@ -103,6 +246,10 @@ export function PulseShell({
   const [loginEmail, setLoginEmail] = useState("admin@r2.local");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [changePasswordError, setChangePasswordError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -110,17 +257,22 @@ export function PulseShell({
   const [searchValue, setSearchValue] = useState("");
   const [theme, setTheme] = useState<PulseTheme>("light");
   const pathname = usePathname();
+  const routeMeta = getShellRouteMeta(pathname);
+  const activeShellPage = activePage ?? routeMeta.activePage;
+  const shellTitle = title ?? routeMeta.title;
+  const shellSubtitle = subtitle ?? routeMeta.subtitle;
+  const shellCompactHeader = compactHeader || routeMeta.compactHeader === true;
   const mobileActiveKey = pathname.startsWith("/clients")
     ? "clients"
-    : activePage === "directory" ||
-        activePage === "billing" ||
-        activePage === "statistics" ||
-        activePage === "settings" ||
-        activePage === "procurement" ||
-        activePage === "field" ||
-        activePage === "activity"
+    : activeShellPage === "directory" ||
+        activeShellPage === "billing" ||
+        activeShellPage === "statistics" ||
+        activeShellPage === "settings" ||
+        activeShellPage === "procurement" ||
+        activeShellPage === "field" ||
+        activeShellPage === "activity"
       ? "more"
-      : activePage;
+      : activeShellPage;
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem(themeStorageKey);
@@ -172,9 +324,9 @@ export function PulseShell({
   }
 
   const canOpenSettings = canRole(currentUser?.role, "settings:read");
-  const pageTitle = pageLabels[activePage] || title;
+  const pageTitle = shellTitle || pageLabels[activeShellPage];
   const breadcrumbLabel = pageTitle;
-  const pageIntro = compactHeader ? "" : subtitle;
+  const pageIntro = shellCompactHeader ? "" : shellSubtitle;
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -203,6 +355,10 @@ export function PulseShell({
 
       setCurrentUser(data.user);
       setLoginPassword("");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setChangePasswordError("");
     } catch {
       setLoginError("Unable to reach the local auth service.");
     }
@@ -211,6 +367,49 @@ export function PulseShell({
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setCurrentUser(null);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setChangePasswordError("");
+  }
+
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setChangePasswordError("");
+
+    if (newPassword !== confirmNewPassword) {
+      setChangePasswordError("New passwords do not match.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword
+        })
+      });
+      const data = (await response.json()) as {
+        user?: AuthenticatedUser;
+        error?: string;
+      };
+
+      if (!response.ok || !data.user) {
+        setChangePasswordError(data.error || "Unable to change password.");
+        return;
+      }
+
+      setCurrentUser(data.user);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+    } catch {
+      setChangePasswordError("Unable to reach the local auth service.");
+    }
   }
 
   function handleGlobalSearch(event: FormEvent<HTMLFormElement>) {
@@ -263,8 +462,65 @@ export function PulseShell({
     );
   }
 
+  if (currentUser.mustChangePassword) {
+    return (
+      <main className="login-page">
+        <form className="login-card" aria-labelledby="password-change-title" onSubmit={changePassword}>
+          <div className="brand-mark">
+            <img src="/pulse-mark.svg" alt="" />
+          </div>
+          <h1 id="password-change-title">Update Password</h1>
+          <p>Set a new local Pulse password before opening the workspace.</p>
+
+          <label className="field-label" htmlFor="current-password">
+            Current password
+          </label>
+          <input
+            id="current-password"
+            className="select-field"
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+          />
+
+          <label className="field-label login-password-label" htmlFor="new-password">
+            New password
+          </label>
+          <input
+            id="new-password"
+            className="select-field"
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+          />
+
+          <label className="field-label login-password-label" htmlFor="confirm-new-password">
+            Confirm new password
+          </label>
+          <input
+            id="confirm-new-password"
+            className="select-field"
+            type="password"
+            value={confirmNewPassword}
+            onChange={(event) => setConfirmNewPassword(event.target.value)}
+          />
+
+          {changePasswordError ? <div className="form-alert error">{changePasswordError}</div> : null}
+
+          <button className="primary-button" type="submit">
+            Update Password
+          </button>
+          <button className="toolbar-button compact login-secondary-button" type="button" onClick={() => void logout()}>
+            Sign out
+          </button>
+        </form>
+      </main>
+    );
+  }
+
   return (
-    <div className={collapsed ? "app-shell sidebar-collapsed" : "app-shell"}>
+    <PulseShellContext.Provider value>
+      <div className={collapsed ? "app-shell sidebar-collapsed" : "app-shell"}>
       <header className="global-topbar">
         <Link className="global-brand" href="/hub" aria-label="Pulse dashboard">
           <img src="/pulse-mark.svg" alt="" />
@@ -384,7 +640,7 @@ export function PulseShell({
                 <Link
                   key={item.key}
                   className={
-                    activePage === item.key ||
+                    activeShellPage === item.key ||
                     pathname === item.href ||
                     (item.key === "requests" && pathname === "/leads") ||
                     (item.key === "directory" && pathname.startsWith("/clients"))
@@ -423,5 +679,6 @@ export function PulseShell({
         pathname={pathname}
       />
     </div>
+    </PulseShellContext.Provider>
   );
 }

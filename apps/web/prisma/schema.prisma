@@ -193,6 +193,11 @@ model LocalUser {
   role         String
   passwordHash String
   active       Boolean    @default(true)
+  mustChangePassword Boolean @default(false)
+  authProvider String     @default("LOCAL")
+  entraObjectId String?
+  lastLoginAt  DateTime?
+  deactivatedAt DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   activities   Activity[]
@@ -202,6 +207,9 @@ model LocalUser {
 
   @@index([role])
   @@index([active])
+  @@index([authProvider])
+  @@index([entraObjectId])
+  @@index([lastLoginAt])
 }
 
 model Activity {

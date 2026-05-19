@@ -18,6 +18,11 @@ export const activityTypes = [
   "Quote Updated",
   "Login",
   "Logout",
+  "Password Reset",
+  "Password Changed",
+  "Role Changed",
+  "Reactivated",
+  "Deactivated",
   "Permission Denied"
 ] as const;
 

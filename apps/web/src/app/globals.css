@@ -215,6 +215,13 @@ a {
   background: var(--pulse-bg);
 }
 
+.route-content-loading {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  width: 100%;
+}
+
 .route-loading-brand,
 .route-loading-search,
 .route-loading-actions span {
@@ -2347,11 +2354,32 @@ a {
   border-color: var(--pulse-blue);
 }
 
-.settings-checklist-workspace {
+.settings-checklist-workspace,
+.settings-accounts-workspace {
   display: grid;
   gap: 16px;
   padding: 20px;
   border-top: 1px solid var(--pulse-line);
+}
+
+.settings-account-create,
+.settings-password-reset {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 10px;
+  background: var(--pulse-surface-soft);
+}
+
+.settings-account-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--pulse-muted);
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .settings-section-header,
@@ -2437,7 +2465,8 @@ a {
 }
 
 .settings-form-grid label,
-.settings-item-row label {
+.settings-item-row label,
+.settings-password-reset label {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -2450,7 +2479,8 @@ a {
 .settings-form-grid input,
 .settings-form-grid select,
 .settings-item-row input,
-.settings-item-row select {
+.settings-item-row select,
+.settings-password-reset input {
   width: 100%;
   min-width: 0;
   padding: 9px 10px;
@@ -2499,13 +2529,31 @@ a {
   justify-content: flex-end;
 }
 
+.settings-password-reset {
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 320px) auto;
+  align-items: end;
+}
+
+.settings-password-reset p {
+  margin: 4px 0 0;
+  color: var(--pulse-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.login-secondary-button {
+  justify-content: center;
+  width: 100%;
+}
+
 @media (max-width: 1180px) {
   .settings-checklist-layout {
     grid-template-columns: 1fr;
   }
 
   .settings-form-grid,
-  .settings-item-row {
+  .settings-item-row,
+  .settings-password-reset {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -2513,11 +2561,13 @@ a {
 @media (max-width: 760px) {
   .settings-grid,
   .settings-form-grid,
-  .settings-item-row {
+  .settings-item-row,
+  .settings-password-reset {
     grid-template-columns: 1fr;
   }
 
-  .settings-checklist-workspace {
+  .settings-checklist-workspace,
+  .settings-accounts-workspace {
     padding: 14px;
   }
 }
@@ -5684,6 +5734,37 @@ a {
 
 .global-topbar {
   grid-row: 1;
+}
+
+@media (min-width: 981px) {
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .shell-body,
+  .app-shell.sidebar-collapsed .shell-body {
+    height: calc(100vh - 68px);
+    height: calc(100dvh - 68px);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    align-self: stretch;
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .main {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+  }
 }
 
 .global-actions .profile-chip {
