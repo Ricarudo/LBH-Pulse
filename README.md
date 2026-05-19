@@ -12,15 +12,28 @@ The old Angular frontend has been removed from the active repository structure. 
 
 The active Pulse application is the Next.js app in `apps/web`. It contains the current UI, route-handler APIs, local development auth, Prisma schema, seed data, Requests, Directory/Clients, activity timeline work, and starter operational modules.
 
-The Express backend in `backend/` is retained as compatibility/reference code while Pulse continues moving toward the modern app structure. Do not use the removed Angular app, Angular routing, Angular Material, or Angular build patterns for new work.
+The current repository still includes and may depend on the legacy Express backend in `backend/` while the modern Pulse architecture is built out. Treat `backend/` as a current compatibility dependency and reference boundary, not as dead code. NestJS is the planned future backend direction in `apps/api`, but there is no implemented NestJS backend in this checkout.
+
+Do not use the removed Angular app, Angular routing, Angular Material, or Angular build patterns for new work.
+
+## Why This README Update Matters
+
+Pulse is the current platform direction, but the working repository still has an old backend dependency. This README separates what exists today from where the platform is going so developers do not accidentally build against the wrong assumptions.
+
+- Current working runtime: `apps/web`, PostgreSQL, Prisma, and the legacy Express backend where needed.
+- Legacy backend still in use: `backend/` should be preserved until its useful runtime behavior and business logic are migrated or explicitly retired.
+- Planned backend direction: `apps/api` is a NestJS placeholder only.
+- Active frontend direction: new Pulse UI and route-handler work should continue in `apps/web`.
+
+This framing is grounded in `backend/package.json`, `backend/app.js`, `backend/prisma/schema.prisma`, `docker-compose.dev.yml`, `docs/checkpoints/RESTART_CHECKPOINT.md`, `docs/PULSE_TRANSITION_PLAN.md`, and `apps/api/README.md`.
 
 ## Project Structure
 
 ```text
 apps/web/                 Active Pulse Next.js app
-apps/api/                 Future Pulse API placeholder
+apps/api/                 Planned NestJS API placeholder; not implemented yet
 apps/worker/              Future background worker placeholder
-backend/                  Legacy Express API/reference service; do not remove during Pulse cleanup
+backend/                  Legacy Express API compatibility dependency/reference; do not remove yet
 packages/                 Future shared package placeholders
 prisma/                   Top-level future Prisma workspace placeholder
 database-azure-backup/    PostgreSQL dump helper
@@ -35,8 +48,9 @@ docker-compose.dev.yml    Local development compose stack
 | Area | Current Choice |
 | --- | --- |
 | Frontend | Next.js 16 + React 19 + TypeScript |
-| Active app APIs | Next.js route handlers in `apps/web/src/app/api` |
-| Compatibility backend | Node.js + Express 4 in `backend/` |
+| Active Pulse web APIs | Next.js route handlers in `apps/web/src/app/api` |
+| Current legacy backend | Node.js + Express 4 in `backend/`; still included and may be required for compatibility flows |
+| Planned backend direction | NestJS in `apps/api`; placeholder only, not implemented |
 | Database | PostgreSQL 16 |
 | ORM | Prisma 6.19.3 |
 | Validation | Zod in the Pulse web app |
@@ -107,7 +121,9 @@ npm run dev
 
 ## Compatibility Backend
 
-The `backend/` service still uses Prisma and PostgreSQL for the old KuoteSuite-compatible REST routes. Keep it available until its remaining useful business logic has been migrated or retired.
+The `backend/` service still uses Express, Prisma, and PostgreSQL for old KuoteSuite-compatible REST routes and current compatibility needs. Keep it available until its remaining runtime responsibilities and useful business logic have been migrated or explicitly retired.
+
+Do not assume `apps/api` is ready to replace it yet. `apps/api` documents the future NestJS direction only.
 
 Useful backend commands:
 
