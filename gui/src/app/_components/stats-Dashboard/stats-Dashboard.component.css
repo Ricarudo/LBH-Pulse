@@ -1,9 +1,0 @@
-.stats-dashboard-page {
-  min-width: 960px;
-}
-
-.charts-container {
-  display: grid;
-  grid-template-columns: minmax(520px, 760px);
-  gap: var(--ks-space-5);
-}

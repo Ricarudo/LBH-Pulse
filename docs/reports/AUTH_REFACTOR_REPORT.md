@@ -2,11 +2,11 @@
 
 ## Current State
 
-KuoteSuite no longer depends on active Microsoft MSAL, Azure, or Entra configuration for local development. The Angular frontend uses a simple local development login with four built-in users, and backend startup does not require cloud identity secrets.
+Pulse no longer depends on active Microsoft MSAL, Azure, or Entra configuration for local development. The active Pulse web app uses a local development login with seeded users, and backend startup does not require cloud identity secrets.
 
 ## Frontend Behavior
 
-The local user selection is stored in browser `localStorage` under `kuotesuite.localUserId`. This keeps the development session active across page refreshes.
+The active Pulse web app uses its local development auth/session flow for workstation testing.
 
 The frontend still treats user identity as a development convenience only. It is not production authentication.
 
@@ -16,7 +16,7 @@ Backend API routes are currently open. A future production-ready path should add
 
 ## Database Notes
 
-Application data is served through Prisma and PostgreSQL. Local development users should be seeded through `backend/prisma/seed.js` when backend-backed users are needed for assignment workflows.
+Application data is served through Prisma and PostgreSQL. Active Pulse local users are seeded through `apps/web/prisma/seed.js`.
 
 ## Follow-Up
 

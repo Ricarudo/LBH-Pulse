@@ -1,232 +1,134 @@
-# KuoteSuite
+# Pulse
 
-KuoteSuite is an unfinished CRM and quoting platform for R2 Communications Group. The existing application supports early quote, lead, client, contact, item, and dashboard workflows.
+Pulse is the modern internal operations platform for R2 Communications Group. It is replacing the inherited KuoteSuite prototype with a Next.js, React, TypeScript, Prisma, and PostgreSQL stack focused on the real operations flow:
 
-The current goal is to stabilize and modernize the downloaded codebase without rewriting it from scratch. Long term, this project should run locally on the company network in Docker and become a full CRM/quoting system.
+```text
+Request -> Quote Workspace -> Proposal -> Project
+```
+
+The old Angular frontend has been removed from the active repository structure. Any remaining KuoteSuite references are historical or compatibility notes, not active frontend architecture.
 
 ## Current Status
 
-The application currently runs as an Angular frontend, Express backend, and PostgreSQL database.
+The active Pulse application is the Next.js app in `apps/web`. It contains the current UI, route-handler APIs, local development auth, Prisma schema, seed data, Requests, Directory/Clients, activity timeline work, and starter operational modules.
 
-Backend API routes use Prisma against PostgreSQL. The legacy database runtime path has been removed from the app startup flow.
+The Express backend in `backend/` is retained as compatibility/reference code while Pulse continues moving toward the modern app structure. Do not use the removed Angular app, Angular routing, Angular Material, or Angular build patterns for new work.
 
 ## Project Structure
 
 ```text
-backend/                  Express REST API
-backend/prisma/           Prisma schema and seed data for PostgreSQL
-gui/                      Angular 12 frontend
-dev-tools/                Legacy development helper scripts
-proxy/                    Proxy Dockerfile
+apps/web/                 Active Pulse Next.js app
+apps/api/                 Future Pulse API placeholder
+apps/worker/              Future background worker placeholder
+backend/                  Legacy Express API/reference service; do not remove during Pulse cleanup
+packages/                 Future shared package placeholders
+prisma/                   Top-level future Prisma workspace placeholder
+database-azure-backup/    PostgreSQL dump helper
+dev-tools/                Legacy helper scripts
+proxy/                    Legacy proxy Dockerfile
+docs/                     Architecture notes, reports, ADRs, checkpoints, and legacy references
 docker-compose.dev.yml    Local development compose stack
-docs/                     Project documentation, reports, ADRs, and checkpoints
 ```
 
 ## Technology Stack
 
 | Area | Current Choice |
 | --- | --- |
-| Frontend | Angular 12 |
-| Backend | Node.js + Express 4 |
+| Frontend | Next.js 16 + React 19 + TypeScript |
+| Active app APIs | Next.js route handlers in `apps/web/src/app/api` |
+| Compatibility backend | Node.js + Express 4 in `backend/` |
 | Database | PostgreSQL 16 |
 | ORM | Prisma 6.19.3 |
-| Authentication | Local development login |
+| Validation | Zod in the Pulse web app |
+| Authentication | Local development cookie/session flow in `apps/web` |
 | Package manager | npm |
-| UI | Angular Material, Angular CDK, custom CSS |
-| Containerization | Docker Compose files are present but still need cleanup |
+| UI | React, custom Pulse CSS, lucide-react icons |
+| Containerization | Docker Compose for PostgreSQL and compatibility services |
 
 ## Prerequisites
 
-- Node.js 18 with npm is the recommended runtime for this phase.
-- Docker Desktop is recommended for the PostgreSQL service.
+- Node.js compatible with the active Next.js app.
+- npm.
+- Docker Desktop for PostgreSQL.
 
-Newer Node versions may work, but Angular 12 still needs `NODE_OPTIONS=--openssl-legacy-provider` in frontend scripts because its Webpack toolchain predates modern OpenSSL defaults.
+## Active Pulse Web App
 
-## Environment Setup
-
-For backend local work, copy the template:
-
-```bash
-cd backend
-copy .env.example .env
-```
-
-The backend no longer requires Microsoft/Azure auth values for local startup.
-
-Important backend variables:
-
-```bash
-PORT=3000
-
-DATABASE_URL=postgresql://kuotesuite:kuotesuite_dev_password@localhost:5432/kuotesuite?schema=public
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=kuotesuite
-POSTGRES_PASSWORD=kuotesuite_dev_password
-POSTGRES_DB=kuotesuite
-```
-
-Frontend API configuration currently lives in:
+Create `apps/web/.env` from the local template if needed:
 
 ```text
-gui/src/environments/environment.ts
-gui/src/environments/environment.prod.ts
+DATABASE_URL="postgresql://kuotesuite:kuotesuite_dev_password@localhost:5432/kuotesuite?schema=pulse"
 ```
 
-Default API URL:
-
-```text
-http://localhost:3000
-```
-
-## Local Development Login
-
-Azure/MSAL login has been removed from the active runtime path. The Angular app now provides a local development login with four built-in users:
-
-- Admin
-- Sales
-- Project Manager
-- Technician
-
-This login is frontend-only and is not secure enough for production or company-network deployment. Backend API routes are still unprotected until JWT validation and role enforcement are added.
-
-## Install Dependencies
-
-Install backend dependencies:
-
-```bash
-cd backend
-npm ci
-```
-
-Install frontend dependencies:
-
-```bash
-cd gui
-npm ci
-```
-
-## Run Locally
-
-Start PostgreSQL if you are using Docker for the database:
+Start PostgreSQL:
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d postgres
 ```
 
-Apply the Prisma schema and seed data:
+Set up the Pulse database and run the app:
 
 ```bash
-cd backend
+cd apps/web
+npm install
 npm run db:setup
+npm run dev
 ```
 
-Start the backend:
-
-```bash
-cd backend
-npm start
-```
-
-Start the frontend:
-
-```bash
-cd gui
-npm start
-```
-
-Local URLs:
+Default URL:
 
 ```text
-Frontend: http://localhost:4200
-Backend:  http://localhost:3000
+http://localhost:4300
 ```
 
-## Build
+## Local Test Accounts
 
-Build the frontend:
+These accounts are for workstation/local testing only:
+
+```text
+Admin: admin@r2.local / PulseAdmin123!
+Sales: sales@r2.local / PulseSales123!
+Project Manager: project.manager@r2.local / PulsePm123!
+Technician: technician@r2.local / PulseTech123!
+```
+
+## Useful Pulse Commands
+
+From `apps/web`:
 
 ```bash
-cd gui
+npm run prisma:generate
+npm run db:push
+npm run db:seed
+npm run db:setup
+npm run typecheck
 npm run build
+npm run dev
 ```
 
-## Tests
+## Compatibility Backend
 
-Run backend tests:
+The `backend/` service still uses Prisma and PostgreSQL for the old KuoteSuite-compatible REST routes. Keep it available until its remaining useful business logic has been migrated or retired.
 
-```bash
-cd backend
-npm test
-```
-
-The backend tests require PostgreSQL to be running and reachable through `DATABASE_URL`.
-
-## Docker Development
-
-Start the full development stack:
-
-```bash
-docker compose -f docker-compose.dev.yml up --build
-```
-
-Start only PostgreSQL for Prisma migration work:
-
-```bash
-docker compose -f docker-compose.dev.yml up -d postgres
-```
-
-Docker is usable for local development, but the compose files still need production/local-network hardening before company deployment.
-
-## PostgreSQL and Prisma
-
-Prisma 6.19.3 is installed because it supports the current Node 18 baseline. Prisma 7 currently requires Node 20.19+ and was intentionally not used in this phase.
-
-Current behavior:
-
-- Express routes use Prisma models backed by PostgreSQL.
-- PostgreSQL is the only database service in the development compose stack.
-- `backend/prisma/schema.prisma` mirrors the original application tables as a compatibility starting point.
-
-Useful Prisma commands:
+Useful backend commands:
 
 ```bash
 cd backend
 npm run prisma:validate
-npm run prisma:generate
-npm run prisma:migrate
+npm run db:setup
+npm test
 ```
 
-If `backend/.env` does not exist, set `DATABASE_URL` in your shell before running Prisma commands.
+## Documentation
 
-Read `docs/architecture/DATABASE_MIGRATION_PLAN.md` before converting routes.
+- `docs/checkpoints/RESTART_CHECKPOINT.md`: latest restart/checkpoint state.
+- `docs/sandbox-command-guidelines.md`: command patterns for this Windows runner.
+- `docs/architecture/PULSE_REQUESTS_DIRECTORY_IMPACT_NOTE.md`: Requests and Directory architecture direction.
+- `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`: preserved concepts from the removed Angular prototype.
+- `docs/brand/BRAND_STANDARDS.md`: Pulse brand standards.
 
 ## Known Issues
 
-- Backend API routes are not protected by backend authentication middleware.
-- Local development login is frontend-only and should be replaced or backed by server-side token validation before company use.
-- Frontend services reference labor/material cost endpoints that do not appear to exist in the backend.
-- The frontend remains on Angular 12 and has not been migrated to a modern Angular version.
-- Frontend builds still show CommonJS optimization warnings from legacy chart/PDF packages.
-- `jade` is deprecated and should eventually be replaced with `pug` or removed.
-- npm audit still reports vulnerabilities mostly tied to Angular 12-era tooling and legacy packages.
-- Docker Compose reports that the top-level `version` field is obsolete.
-
-## Recommended Next Steps
-
-1. Add focused backend tests around the Prisma route behavior.
-2. Add backend authentication and authorization middleware with JWT validation.
-3. Continue refining Prisma schema relations, indexes, and data types.
-4. Modernize Docker Compose for local-network hosting.
-5. Expand CRM features only after the backend/database foundation is stable.
-
-## Project Documentation
-
-- `docs/README.md`: documentation index.
-- `docs/PULSE_TRANSITION_PLAN.md`: Pulse transition plan and scaffold direction.
-- `docs/adr/0001-new-pulse-monorepo.md`: decision record for the new Pulse monorepo.
-- `docs/checkpoints/RESTART_CHECKPOINT.md`: latest restart checkpoint.
-- `docs/reports/PROJECT_ASSESSMENT.md`: inherited project assessment and setup-readiness review.
-- `docs/reports/AUTH_REFACTOR_REPORT.md`: local auth refactor state and follow-up notes.
-- `docs/reports/DEPENDENCY_MODERNIZATION_REPORT.md`: dependency modernization work and remaining package risks.
-- `docs/architecture/DATABASE_MIGRATION_PLAN.md`: PostgreSQL/Prisma migration strategy.
+- Backend API routes in `backend/` are still not production-authenticated.
+- Quotes and Projects in `apps/web` are still starter workflows and need real quote workspace/database implementation.
+- Some compatibility docs and backend code still mention legacy KuoteSuite table names because the Express backend has not been fully retired.
+- The Windows sandbox runner can fail before process startup; follow `docs/sandbox-command-guidelines.md`.

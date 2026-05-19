@@ -19,7 +19,7 @@ This note documents the impact on the current codebase before any navigation, da
 The repository contains three relevant application layers:
 
 - `apps/web`: the current Pulse target app, built with Next.js, React, TypeScript, Prisma, PostgreSQL, Zod validation, local cookie auth, and route-handler APIs.
-- `gui`: the legacy Angular 12 KuoteSuite UI, retained as workflow reference.
+- `gui`: removed legacy Angular 12 KuoteSuite UI; useful workflow concepts are preserved in `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`.
 - `backend`: the legacy Express API, retained as compatibility/reference code and using Prisma against the old mapped PostgreSQL tables.
 
 The active Pulse app currently has these user-facing routes:

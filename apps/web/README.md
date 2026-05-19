@@ -1,17 +1,16 @@
 # Pulse Web
 
-Small starter Next.js + React + TypeScript app for the Pulse transition.
-
-This app runs independently from the legacy Angular frontend so both can be compared during transition.
+Active Next.js + React + TypeScript app for Pulse.
 
 ## Current Scope
 
 - Local development login.
-- Shared Pulse shell with left navigation.
-- Leads page.
-- Quotes page.
-- Statistics page.
-- Leads API routes backed by Prisma and a local development database.
+- Shared Pulse shell with desktop and mobile navigation.
+- Requests workspace backed by Prisma and PostgreSQL.
+- Directory/Clients workflows backed by Prisma and PostgreSQL.
+- Quote and Project starter workspaces.
+- Activity timeline and local user support.
+- Route-handler APIs under `src/app/api`.
 
 ## Local Development
 
@@ -27,15 +26,9 @@ Default URL:
 http://localhost:4300
 ```
 
-Angular remains on:
+## Pulse Database
 
-```text
-http://localhost:4200
-```
-
-## Leads Database
-
-The first Pulse backend slice lives inside this Next app and uses Prisma with PostgreSQL. It can share the existing local PostgreSQL container while keeping Pulse tables isolated in the `pulse` schema.
+The active Pulse backend slice lives inside this Next app and uses Prisma with PostgreSQL. It can share the existing local PostgreSQL container while keeping Pulse tables isolated in the `pulse` schema.
 
 Create `apps/web/.env` from `.env.example`:
 

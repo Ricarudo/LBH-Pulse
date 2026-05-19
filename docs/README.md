@@ -16,6 +16,7 @@ The repository root keeps only conventional project-level files such as `README.
 ## Architecture
 
 - `architecture/DATABASE_MIGRATION_PLAN.md`: PostgreSQL and Prisma migration path for the existing KuoteSuite backend.
+- `architecture/LEGACY_KUOTESUITE_REFERENCE.md`: preserved business concepts from the removed Angular prototype.
 - `architecture/PULSE_LEADS_MODULE_DRAFT_DESIGN.md`: research-backed draft design for the Pulse Leads module.
 - `architecture/PULSE_REQUESTS_DIRECTORY_IMPACT_NOTE.md`: impact note for moving from CRM/Leads/Clients toward Requests and Directory.
 

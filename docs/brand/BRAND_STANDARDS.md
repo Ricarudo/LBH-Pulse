@@ -6,9 +6,9 @@ Status: Initial standard
 
 ## Purpose
 
-This document records the baseline visual standards for Pulse and the ongoing KuoteSuite-to-Pulse transition.
+This document records the baseline visual standards for Pulse.
 
-These standards should guide new Pulse UI work and any continued modernization of the legacy KuoteSuite prototype.
+These standards should guide new Pulse UI work in the active Next.js app.
 
 ## Typography
 
@@ -41,10 +41,9 @@ Recommended fallback stack:
 font-family: "Manrope", "Helvetica Neue", Arial, sans-serif;
 ```
 
-## Current Implementations
+## Current Implementation
 
-- Legacy Angular app: Manrope is loaded in `gui/src/index.html`, applied globally in `gui/src/styles.css`, and configured for Angular Material in `gui/src/theme.scss`.
-- New Pulse web app: Manrope is loaded in `apps/web/src/app/layout.tsx` and applied globally in `apps/web/src/app/globals.css`.
+- Pulse web app: Manrope is loaded in `apps/web/src/app/layout.tsx` and applied globally in `apps/web/src/app/globals.css`.
 
 ## Responsive And Mobile Implementation
 

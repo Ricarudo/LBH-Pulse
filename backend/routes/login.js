@@ -4,7 +4,7 @@ var router = express.Router();
 router.get('/', (req, res) => {
   res.json({
     mode: 'local-development',
-    message: 'Local login is currently handled by the Angular frontend.'
+    message: 'Local login is currently handled by the Pulse web app.'
   });
 });
 

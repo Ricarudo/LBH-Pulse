@@ -36,7 +36,7 @@ Get-Content apps\web\src\app\globals.css
 $lines = Get-Content apps\web\src\app\globals.css; $lines[2248..2268]
 ```
 
-Avoid broad recursive commands over the repo root unless generated folders are excluded. In this repo, `apps/web/node_modules`, `apps/web/.next`, `backend/node_modules`, and `gui/node_modules` dominate local size.
+Avoid broad recursive commands over the repo root unless generated folders are excluded. In this repo, `apps/web/node_modules`, `apps/web/.next`, and `backend/node_modules` can dominate local size.
 
 Avoid fragile pipe-shortening patterns such as:
 

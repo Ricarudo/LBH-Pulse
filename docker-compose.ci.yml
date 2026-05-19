@@ -1,36 +1,30 @@
 services:
-  
-  gui:
-    container_name: gui-container
-    restart: always
-    build: ./gui
-    ports:
-      - '4200:4200'
-
+  web:
+    image: node:24-alpine
+    container_name: pulse-web-ci-container
+    working_dir: /usr/src/app/apps/web
+    command: sh -c "npm ci && npm run typecheck && npm run build"
     environment:
-      NODE_ENV: prod
-      DEBUG: 'false'
+      NODE_ENV: production
+      DATABASE_URL: postgresql://kuotesuite:kuotesuite_dev_password@postgres:5432/kuotesuite?schema=pulse
     volumes:
-      - /usr/src/app/gui
-      - /usr/src/app/gui/node_modules
-    links:
-      - backend
-    command: npm start
+      - ./:/usr/src/app
+      - pulse-web-ci-node-modules:/usr/src/app/apps/web/node_modules
+      - pulse-web-ci-next:/usr/src/app/apps/web/.next
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   backend:
-    container_name: backend-container
-    restart: always
-    command: sh -c "npm run db:setup && npm start"
-    build: ./backend
-    ports:
-      - 3000:3000
-    volumes:
-      - /usr/src/app/backend
-      - /usr/src/app/backend/node_modules
-    
-    # env_file: .env
+    container_name: backend-ci-container
+    build:
+      context: ./backend
+      target: dev
+    command: sh -c "npm run db:setup && npm test"
     environment:
-      NODE_ENV: prod
+      NODE_ENV: test
+      FRONTEND: http://localhost:4300
+      FRONTEND_PORT: 4300
       DATABASE_URL: postgresql://kuotesuite:kuotesuite_dev_password@postgres:5432/kuotesuite?schema=public
     depends_on:
       postgres:
@@ -38,10 +32,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: postgres-container
-    restart: always
-    ports:
-      - 5432:5432
+    container_name: postgres-ci-container
     environment:
       POSTGRES_USER: kuotesuite
       POSTGRES_PASSWORD: kuotesuite_dev_password
@@ -51,3 +42,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+
+volumes:
+  pulse-web-ci-node-modules:
+  pulse-web-ci-next:

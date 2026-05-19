@@ -2,7 +2,7 @@
 
 ## Current State
 
-KuoteSuite has been modernized conservatively while preserving the Angular frontend and Express backend. The backend database runtime now uses Prisma with PostgreSQL.
+Pulse has moved past the inherited Angular frontend. The Angular framework dependencies and `gui/` application are no longer part of the active repository structure. The compatibility Express backend still uses Prisma with PostgreSQL while active Pulse work continues in `apps/web`.
 
 ## Backend
 
@@ -20,9 +20,9 @@ The legacy direct SQL driver has been removed from backend dependencies.
 
 ## Frontend
 
-The frontend remains on Angular 12. Build scripts still set `NODE_OPTIONS=--openssl-legacy-provider` because this toolchain predates current OpenSSL defaults.
+The active frontend is `apps/web`, built with Next.js, React, TypeScript, Prisma, Zod, and `lucide-react`.
 
-Known frontend warnings remain around CommonJS packages used by charting and PDF-related dependencies.
+The removed Angular app previously depended on Angular 12, Angular Material, Angular CDK, legacy Webpack/OpenSSL flags, charting packages, and browser PDF packages. Useful quote/pricing/proposal concepts from that code were preserved in `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`.
 
 ## Verification
 
@@ -36,13 +36,14 @@ npm test
 ```
 
 ```bash
-cd gui
+cd apps/web
+npm run typecheck
 npm run build
 ```
 
 ## Follow-Up
 
 1. Add focused backend tests for Prisma route behavior.
-2. Plan an Angular upgrade path.
+2. Continue replacing compatibility backend routes with modern Pulse APIs where appropriate.
 3. Replace deprecated view/template dependencies if backend-rendered error pages remain in use.
-4. Continue auditing dependencies after the framework upgrades are planned.
+4. Continue auditing dependencies as the Quote Workspace and proposal/PDF generation are implemented.

@@ -2,19 +2,30 @@
 
 Date: 2026-05-09
 
-Status: Initial transition scaffold
+Status: Historical transition scaffold, superseded by active Pulse implementation
+
+## 2026-05-14 Angular Removal Update
+
+The initial preserve-beside-it phase has ended for the Angular frontend. The old `gui/` Angular application has been removed from the active repository structure, and useful business concepts from that prototype were preserved in `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`.
+
+Going forward:
+
+- `apps/web` is the active Pulse application.
+- Angular dependencies, routing, Material UI, and build patterns should not be reintroduced.
+- `backend/` remains compatibility/reference code until its remaining useful logic is migrated or retired.
+- Quote, proposal, pricing, and workflow ideas from the prototype should be treated as documented reference, not implementation shape.
 
 ## Purpose
 
 This document defines the first transition step from the current KuoteSuite prototype toward Pulse, the broader internal operations platform for R2 Communications.
 
-This is intentionally not a rewrite of the existing application. The current Angular and Express application remains in place as a working prototype and reference source while the new Pulse architecture is introduced beside it.
+This was intentionally not started as a rewrite of the existing application. The original Angular and Express application was first kept in place as a working prototype and reference source while the new Pulse architecture was introduced beside it. As of 2026-05-14, the Angular app has been removed after preserving useful domain concepts.
 
-## Current Starting Point
+## Original Starting Point
 
 The repository currently contains:
 
-- `gui/`: Angular 12 frontend for the inherited KuoteSuite prototype.
+- `gui/`: removed Angular 12 frontend for the inherited KuoteSuite prototype.
 - `backend/`: Express REST API using Prisma and PostgreSQL.
 - `backend/prisma/`: Current compatibility Prisma schema and seed data.
 - `docker-compose.dev.yml`: Local development stack with PostgreSQL.
@@ -27,13 +38,13 @@ The latest checkpoint states that:
 - Active Azure/MSAL startup requirements have been removed for local development.
 - Local development login is frontend-only.
 - Backend routes are not protected yet.
-- Angular UI modernization has started, but the frontend remains Angular 12.
+- Angular UI modernization had started, but that path has been retired.
 
 ## Transition Principle
 
 Preserve first, build beside it, migrate deliberately.
 
-The existing KuoteSuite folders must not be deleted, moved, or heavily reshaped during the initial Pulse setup. They provide useful reference for:
+The existing KuoteSuite folders were not deleted, moved, or heavily reshaped during the initial Pulse setup. They provided useful reference for:
 
 - lead creation and assignment
 - lead-to-quote conversion
@@ -92,16 +103,15 @@ At this stage, these folders contain placeholder README files only. No business 
 
 ## Legacy Prototype Boundary
 
-The following folders remain untouched during this scaffold step:
+The following folders were preserved during the initial scaffold step:
 
-- `gui/`
+- `gui/` (removed on 2026-05-14 after reference preservation)
 - `backend/`
-- `database/`
 - `database-azure-backup/`
 - `dev-tools/`
 - `proxy/`
 
-Future work may archive or relocate the legacy prototype after the new Pulse foundation is usable, but that should be a separate, explicit decision.
+The Angular `gui/` folder was removed on 2026-05-14 after useful workflow concepts were documented in `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`. `backend/` remains compatibility/reference code.
 
 ## First Pulse Domain Priorities
 
@@ -202,7 +212,7 @@ The first proof of concept should generate a branded R2 Communications proposal 
 - Do not implement business features.
 - Do not migrate data.
 - Do not delete legacy files.
-- Do not move `gui/` or `backend/`.
+- Do not remove `backend/` until its remaining useful logic has been migrated or explicitly retired.
 - Do not introduce production authentication yet.
 - Do not replace Docker Compose yet.
 

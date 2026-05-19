@@ -9,7 +9,7 @@
 - `FRONTEND`
 - `DATABASE_URL`
 
-Local development login is currently handled by the Angular frontend. Azure/Entra settings are no longer required for backend startup.
+Local development login is currently handled by the Pulse web app. Azure/Entra settings are no longer required for backend startup.
 The backend uses Prisma with PostgreSQL for application data.
 ---
 

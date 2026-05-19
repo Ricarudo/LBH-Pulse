@@ -1,48 +1,46 @@
 services:
-
-  gui:
-    container_name: gui-container
-    restart: always
-    build: ./gui
+  web:
+    image: node:24-alpine
+    container_name: pulse-web-container
+    working_dir: /usr/src/app/apps/web
+    command: sh -c "npm ci && npm run dev"
     ports:
-      - '4200:4200'
-
+      - "4300:4300"
     environment:
-      NODE_ENV: dev
-      DEBUG: 'true'
+      NODE_ENV: development
+      DATABASE_URL: postgresql://kuotesuite:kuotesuite_dev_password@postgres:5432/kuotesuite?schema=pulse
     volumes:
-      - /usr/src/app/gui
-      - /usr/src/app/gui/node_modules
-    links:
-      - backend
-    command: npm run start
+      - ./:/usr/src/app
+      - pulse-web-node-modules:/usr/src/app/apps/web/node_modules
+      - pulse-web-next:/usr/src/app/apps/web/.next
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   backend:
     container_name: backend-container
     restart: always
+    build:
+      context: ./backend
+      target: dev
     command: sh -c "npm run db:setup && npm start"
-    build: ./backend
     ports:
-      - 3000:3000
-    volumes:
-      - /usr/src/app/backend
-      - /usr/src/app/backend/node_modules
-
+      - "3000:3000"
     environment:
-      NODE_ENV: dev
-      FRONTEND: http://localhost:4200
+      NODE_ENV: development
+      FRONTEND: http://localhost:4300
+      FRONTEND_PORT: 4300
       DATABASE_URL: postgresql://kuotesuite:kuotesuite_dev_password@postgres:5432/kuotesuite?schema=public
     depends_on:
       postgres:
         condition: service_healthy
-    # command: npm run debug
 
   postgres:
     image: postgres:16-alpine
     container_name: postgres-container
     restart: always
     ports:
-      - 5432:5432
+      - "5432:5432"
     environment:
       POSTGRES_USER: kuotesuite
       POSTGRES_PASSWORD: kuotesuite_dev_password
@@ -57,3 +55,5 @@ services:
 
 volumes:
   postgres-data:
+  pulse-web-node-modules:
+  pulse-web-next:

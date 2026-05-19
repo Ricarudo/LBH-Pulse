@@ -2,7 +2,9 @@
 
 Date: 2026-05-09
 
-Status: Accepted
+Status: Accepted, with 2026-05-14 update
+
+Update: the initial side-by-side period for the Angular frontend has ended. The old `gui/` app has been removed from the active repository structure, and preserved business concepts now live in `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`. The compatibility Express backend remains available as reference while Pulse continues in `apps/web`.
 
 ## Context
 
@@ -29,7 +31,7 @@ The new structure will use:
 - `prisma` for the future Pulse domain schema.
 - `docs` for transition plans, ADRs, and architecture notes.
 
-The existing `gui/` and `backend/` folders will remain untouched during the initial scaffold. They are treated as a legacy prototype and reference implementation, not the final architecture.
+During the initial scaffold, the existing `gui/` and `backend/` folders were left untouched. As of 2026-05-14, `gui/` has been removed from the active repository structure. `backend/` remains compatibility/reference code, not the final Pulse API architecture.
 
 ## Consequences
 
@@ -43,7 +45,7 @@ Positive consequences:
 
 Tradeoffs:
 
-- Two application structures will exist in the repository during transition.
+- The repository no longer carries the Angular frontend, reducing framework ambiguity.
 - The team must be clear about which app is prototype reference and which app is the Pulse target.
 - Data migration will need a later, explicit plan.
 - Build tooling and Docker Compose will need follow-up work after the scaffold.
@@ -68,7 +70,7 @@ Accepted because it gives Pulse a clean architecture while preserving the existi
 
 ## Guardrails
 
-- Do not delete or move legacy prototype folders during scaffold setup.
+- Do not reintroduce Angular dependencies, Angular routing, or Angular build patterns.
 - Do not copy the split BOM/material/labor quote design into the final Pulse quote model.
 - Keep local development auth separate from future Microsoft Entra ID integration.
 - Prefer backend-enforced permissions over frontend-only role checks.

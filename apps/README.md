@@ -1,14 +1,14 @@
 # Pulse Apps
 
-Application entry points for the future Pulse platform.
+Application entry points for the Pulse platform.
 
-This folder is scaffold-only for now. No business features are implemented here yet.
+`web` is the active Pulse app. `api` and `worker` remain planned placeholders.
 
 ## Planned Apps
 
-- `web`: Next.js frontend.
+- `web`: active Next.js frontend and route-handler API.
 - `api`: NestJS backend API.
 - `worker`: background worker for PDFs, reminders, reporting, and sync jobs.
 
-The current KuoteSuite prototype remains in `gui/` and `backend/` during the transition.
+The old Angular `gui/` prototype has been removed from the active repository structure. The compatibility Express backend remains in `backend/` until its useful logic is migrated or retired.
 

@@ -7,7 +7,7 @@ var logger = require('morgan');
 require('dotenv').config(); // handles our .env variables
 const prisma = require('./config/prisma');
 
-const FRONTEND_PORT = Number(process.env.FRONTEND_PORT || 4200);
+const FRONTEND_PORT = Number(process.env.FRONTEND_PORT || 4300);
 const FRONTEND_HOST = process.env.FRONTEND_HOST || 'localhost';
 const FRONTEND_API = process.env.FRONTEND || `http://${FRONTEND_HOST}:${FRONTEND_PORT}`;
 
@@ -37,7 +37,7 @@ app.get('/auth/status', (req, res) => {
     res.json({
         mode: 'local-development',
         authenticated: false,
-        message: 'Local development login is handled by the Angular frontend. API routes are not protected yet.'
+        message: 'Local development login is handled by the Pulse web app. API routes are not protected yet.'
     });
 });
 
