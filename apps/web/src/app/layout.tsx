@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PulseShell } from "@/components/PulseShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -38,7 +39,9 @@ export default function RootLayout({
         />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <PulseShell>{children}</PulseShell>
+      </body>
     </html>
   );
 }
