@@ -6,17 +6,16 @@ Active Next.js + React + TypeScript app for Pulse.
 
 - Local development login.
 - Shared Pulse shell with desktop and mobile navigation.
-- Requests workspace backed by Prisma and PostgreSQL.
-- Directory/Clients workflows backed by Prisma and PostgreSQL.
+- Requests workspace backed by the Pulse NestJS API, Prisma, and PostgreSQL.
+- Directory/Clients workflows backed by the Pulse NestJS API, Prisma, and PostgreSQL.
 - Quote and Project starter workspaces.
 - Activity timeline and local user support.
-- Route-handler APIs under `src/app/api`.
+- Runtime `/api/...` proxy to `apps/api`; route-handler files remain as a transitional fallback during migration.
 
 ## Local Development
 
 ```bash
 npm install
-npm run db:setup
 npm run dev
 ```
 
@@ -26,21 +25,22 @@ Default URL:
 http://localhost:4300
 ```
 
-## Pulse Database
+## Pulse API And Database
 
-The active Pulse backend slice lives inside this Next app and uses Prisma with PostgreSQL. It can share the existing local PostgreSQL container while keeping Pulse tables isolated in the `pulse` schema.
+The default Compose stack runs the web app, NestJS API, and PostgreSQL together. Browser calls to `/api/...` stay stable and are proxied to the NestJS API through `PULSE_API_URL`.
 
 Create `apps/web/.env` from `.env.example`:
 
 ```text
 DATABASE_URL="postgresql://kuotesuite:kuotesuite_dev_password@localhost:5432/kuotesuite?schema=pulse"
+PULSE_API_URL="http://localhost:3000"
+PULSE_SESSION_SECRET="pulse-local-dev-session-secret"
 ```
 
 Then run:
 
 ```bash
-docker compose -f ../../docker-compose.dev.yml up -d postgres
-npm run db:setup
+docker compose up --build
 ```
 
 Useful database commands:

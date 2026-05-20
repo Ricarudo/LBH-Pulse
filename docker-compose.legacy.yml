@@ -1,0 +1,19 @@
+services:
+  legacy-backend:
+    container_name: legacy-backend-container
+    profiles:
+      - legacy
+    build:
+      context: ./backend
+      target: dev
+    command: sh -c "npm run db:setup && npm start"
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: development
+      FRONTEND: http://localhost:4300
+      FRONTEND_PORT: 4300
+      DATABASE_URL: postgresql://kuotesuite:kuotesuite_dev_password@postgres:5432/kuotesuite?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy

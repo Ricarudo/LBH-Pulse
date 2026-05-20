@@ -4,6 +4,52 @@ Date: 2026-05-09
 
 Purpose: Save the current repository/startup state after moving the app to a PostgreSQL and Prisma-only runtime path and starting the UI modernization work.
 
+## Pulse NestJS API And Compose Stack Checkpoint - 2026-05-20
+
+The default Pulse runtime now uses a single Docker Compose app:
+
+- `postgres`: PostgreSQL 16 with persistent local volume.
+- `api`: NestJS app in `apps/api`, serving `/api/...` on port `3000`.
+- `web`: Next.js app in `apps/web`, serving Pulse on port `4300` and proxying browser `/api/...` calls to NestJS through `PULSE_API_URL`.
+
+Implementation notes:
+
+- Active Pulse API parity was scaffolded in NestJS for health, auth/session/password changes, activity, settings/accounts, request checklist templates, clients, and requests.
+- The initial NestJS parity slice mechanically copied the existing Pulse domain services, types, validations, Prisma schema, and seed from `apps/web` into `apps/api`; consolidate this into shared packages after the runtime boundary settles.
+- The legacy Express backend remains in `backend/` but is no longer part of the default Compose stack. It is available through `docker-compose.legacy.yml`.
+- `docker-compose.yml`, `docker-compose.dev.yml`, and `docker-compose.ci.yml` now resolve default services as `postgres`, `api`, and `web`.
+- The dev/default API container generates Prisma at startup, but does not push schema changes or run the destructive demo seed automatically.
+- `apps/web` now runs Prisma generation and Next type generation before typecheck to avoid stale generated client and route-type failures.
+
+Verification:
+
+```text
+docker compose config --services                  # postgres, api, web
+docker compose -f docker-compose.dev.yml config --services  # postgres, api, web
+docker compose -f docker-compose.ci.yml config --services   # postgres, api, web
+cd apps/api && npm run typecheck                  # passed
+cd apps/api && npm run build                      # passed
+cd apps/api && npm test                           # passed
+cd apps/web && npm run typecheck                  # passed
+cd apps/web && npm run build                      # passed
+```
+
+Docker Desktop became available late in implementation, and the API image build passed. A live `docker compose up --build -d api web` smoke check initially exposed that automatic `prisma db push` would refuse to drop old non-empty Lead tables, so schema push was removed from normal startup.
+
+Live smoke checks then passed:
+
+```text
+http://localhost:3000/api/health           # 200, Nest API health
+http://localhost:4300/api/health           # 200, web proxy to Nest API health
+http://localhost:3000/api/health/database  # 200, Postgres reachable
+http://localhost:4300/api/health/database  # 200, web proxy to database health
+http://localhost:3000/api/auth/session     # 200, no-cookie session returns null user
+http://localhost:4300/api/auth/session     # 200, web proxy no-cookie session returns null user
+http://localhost:4300                      # 200, Pulse web app
+```
+
+Admin login could not complete against the current local database because the `pulse.LocalUser` table is not present yet. The API now returns a clear `503` schema-not-ready response for missing Prisma tables instead of a generic `500`.
+
 ## Pulse Shell, Request Detail, And Local Accounts Checkpoint - 2026-05-19
 
 Three new local commits were prepared after the Pulse shell, Request navigation, and local account-management work:

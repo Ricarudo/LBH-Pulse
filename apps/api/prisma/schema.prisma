@@ -1,0 +1,413 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Request {
+  id              String              @id @default(cuid())
+  requestNumber   String              @unique
+  title           String
+  requestType     String
+  source          String
+  serviceCategory String
+  status          String              @default("New")
+  priority        String              @default("Normal")
+  companyName     String?
+  contactName     String?
+  contactEmail    String?
+  contactPhone    String?
+  siteName        String?
+  siteAddress     String?
+  city            String?
+  state           String?
+  clientId        String?
+  contactId       String?
+  siteId          String?
+  assignedToId    String?
+  receivedDate    DateTime            @default(now())
+  dueDate         DateTime?
+  nextAction      String?
+  nextFollowUpAt  DateTime?
+  lastActivityAt  DateTime?
+  missingInfo     String?
+  siteVisitNeeded Boolean             @default(false)
+  siteVisitCompleted Boolean          @default(false)
+  description     String?
+  internalNotes   String?
+  relatedQuoteId  String?
+  checklistTemplateId String?
+  checklistTemplateNameSnapshot String?
+  createdById     String?
+  archivedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  assignedTo      LocalUser?          @relation("AssignedRequests", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy       LocalUser?          @relation("CreatedRequests", fields: [createdById], references: [id], onDelete: SetNull)
+  client          Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contact         ClientContact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  site            ClientSite?         @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  relatedQuote    Quote?              @relation(fields: [relatedQuoteId], references: [id], onDelete: SetNull)
+  checklistTemplate RequestChecklistTemplate? @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
+  activities      RequestActivity[]
+  tasks           RequestTask[]
+  notesList       RequestNote[]
+  attachments     RequestAttachment[]
+  checklistItems  RequestChecklistItem[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([requestType])
+  @@index([source])
+  @@index([serviceCategory])
+  @@index([assignedToId])
+  @@index([clientId])
+  @@index([contactId])
+  @@index([siteId])
+  @@index([relatedQuoteId])
+  @@index([checklistTemplateId])
+  @@index([archivedAt])
+}
+
+model RequestChecklistTemplate {
+  id              String                         @id @default(cuid())
+  key             String                         @unique
+  name            String
+  requestType     String?
+  serviceCategory String?
+  active          Boolean                        @default(true)
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
+  items           RequestChecklistTemplateItem[]
+  requests        Request[]
+
+  @@index([requestType])
+  @@index([serviceCategory])
+  @@index([active])
+}
+
+model RequestChecklistTemplateItem {
+  id          String                   @id @default(cuid())
+  templateId  String
+  label       String
+  description String?
+  required    Boolean                  @default(true)
+  appliesWhen String?
+  sortOrder   Int                      @default(0)
+  group       String?
+  active      Boolean                  @default(true)
+  template    RequestChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  requestItems RequestChecklistItem[]
+
+  @@index([templateId])
+  @@index([sortOrder])
+  @@index([active])
+}
+
+model RequestChecklistItem {
+  id             String                        @id @default(cuid())
+  requestId      String
+  templateItemId String?
+  label          String
+  description    String?
+  required       Boolean                       @default(true)
+  appliesWhen    String?
+  sortOrder      Int                           @default(0)
+  group          String?
+  completed      Boolean                       @default(false)
+  completedAt    DateTime?
+  completedById  String?
+  completedByNameSnapshot String?
+  notes          String?
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+  request        Request                       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  templateItem   RequestChecklistTemplateItem? @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  completedBy    LocalUser?                    @relation(fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+  @@index([templateItemId])
+  @@index([completed])
+  @@index([completedById])
+}
+
+model RequestActivity {
+  id        String   @id @default(cuid())
+  requestId String
+  type      String
+  title     String
+  body      String?
+  actor     String   @default("Pulse User")
+  createdAt DateTime @default(now())
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([createdAt])
+}
+
+model RequestTask {
+  id          String    @id @default(cuid())
+  requestId   String
+  title       String
+  dueAt       DateTime?
+  owner       String    @default("Unassigned")
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  request     Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([completedAt])
+}
+
+model RequestNote {
+  id        String   @id @default(cuid())
+  requestId String
+  body      String
+  actor     String   @default("Pulse User")
+  createdAt DateTime @default(now())
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([createdAt])
+}
+
+model RequestAttachment {
+  id        String   @id @default(cuid())
+  requestId String
+  fileName  String
+  url       String?
+  createdAt DateTime @default(now())
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model LocalUser {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  role         String
+  passwordHash String
+  active       Boolean    @default(true)
+  mustChangePassword Boolean @default(false)
+  authProvider String     @default("LOCAL")
+  entraObjectId String?
+  lastLoginAt  DateTime?
+  deactivatedAt DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  activities   Activity[]
+  assignedRequests Request[] @relation("AssignedRequests")
+  createdRequests  Request[] @relation("CreatedRequests")
+  completedRequestChecklistItems RequestChecklistItem[]
+
+  @@index([role])
+  @@index([active])
+  @@index([authProvider])
+  @@index([entraObjectId])
+  @@index([lastLoginAt])
+}
+
+model Activity {
+  id                String    @id @default(cuid())
+  relatedEntityType String
+  relatedEntityId   String
+  actorUserId       String?
+  actorName         String
+  actorRole         String
+  type              String
+  title             String
+  detail            String?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  actor             LocalUser? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([relatedEntityType, relatedEntityId])
+  @@index([actorUserId])
+  @@index([actorRole])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Opportunity {
+  id          String    @id @default(cuid())
+  number      String    @unique
+  name        String
+  clientName  String?
+  status      String    @default("Open")
+  owner       String    @default("Unassigned")
+  value       Decimal   @default(0) @db.Decimal(12, 2)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([owner])
+  @@index([archivedAt])
+}
+
+model Quote {
+  id          String    @id @default(cuid())
+  quoteNumber String    @unique
+  title       String
+  clientName  String?
+  status      String    @default("Draft")
+  owner       String    @default("Unassigned")
+  total       Decimal   @default(0) @db.Decimal(12, 2)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  requests    Request[]
+
+  @@index([status])
+  @@index([owner])
+  @@index([archivedAt])
+}
+
+model Client {
+  id                 String           @id @default(cuid())
+  clientNumber       String           @unique
+  companyName        String?
+  legalName          String?
+  displayName        String           @default("Unnamed Client")
+  clientType         String           @default("Commercial")
+  industry           String?
+  website            String?
+  status             String           @default("Active")
+  accountOwner       String           @default("Unassigned")
+  mainPhone          String?
+  mainEmail          String?
+  taxId              String?
+  paymentTerms       String?
+  billingEmail       String?
+  preferredCurrency  String           @default("USD")
+  preferredLanguage  String           @default("English")
+  brandPreferences   String?
+  technologyPreferences String?
+  generalNotes       String?
+  importantNotes     String?
+  preferredVendors   String?
+  preferredCameraBrand String?
+  preferredAccessControlBrand String?
+  preferredNetworkBrand String?
+  preferredCablingBrand String?
+  standardTechnologies String?
+  documentationRequirements String?
+  invoiceRequirements String?
+  insuranceRequirements String?
+  purchaseOrderRequired Boolean       @default(false)
+  source             String?
+  openOpportunities  Int              @default(0)
+  activeProjects     Int              @default(0)
+  lifetimeValue      Decimal          @default(0) @db.Decimal(12, 2)
+  outstandingBalance Decimal          @default(0) @db.Decimal(12, 2)
+  archivedAt         DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  lastActivityAt     DateTime?
+  contacts           ClientContact[]
+  sites              ClientSite[]
+  services           ClientService[]
+  activities         ClientActivity[]
+  requests           Request[]
+
+  @@index([status])
+  @@index([clientType])
+  @@index([accountOwner])
+  @@index([archivedAt])
+}
+
+model ClientContact {
+  id                     String      @id @default(cuid())
+  clientId               String
+  siteId                 String?
+  role                   String?     @default("Primary")
+  name                   String?
+  firstName              String      @default("Unknown")
+  lastName               String      @default("")
+  title                  String?
+  department             String?
+  email                  String?
+  phone                  String?
+  mobile                 String?
+  preferredContactMethod String?
+  isPrimary              Boolean     @default(false)
+  isBilling              Boolean     @default(false)
+  isPrimaryContact       Boolean     @default(false)
+  isBillingContact       Boolean     @default(false)
+  isTechnicalContact     Boolean     @default(false)
+  isDecisionMaker        Boolean     @default(false)
+  notes                  String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  client                 Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  site                   ClientSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  requests               Request[]
+
+  @@index([clientId])
+  @@index([siteId])
+  @@index([email])
+}
+
+model ClientSite {
+  id                   String          @id @default(cuid())
+  clientId             String
+  name                 String?
+  siteName             String          @default("Unnamed Site")
+  siteType             String          @default("Main Office")
+  address              String?
+  addressLine1         String?
+  addressLine2         String?
+  city                 String?
+  state                String?
+  postalCode           String?
+  country              String          @default("Puerto Rico")
+  googleMapsUrl        String?
+  latitude             Decimal?        @db.Decimal(10, 7)
+  longitude            Decimal?        @db.Decimal(10, 7)
+  operationalHours     String?
+  accessInstructions   String?
+  parkingInstructions  String?
+  securityRequirements String?
+  siteNotes            String?
+  status               String?         @default("Active")
+  isPrimarySite        Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  client               Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contacts             ClientContact[]
+  requests             Request[]
+
+  @@index([clientId])
+  @@index([siteType])
+  @@index([isPrimarySite])
+}
+
+model ClientService {
+  id          String   @id @default(cuid())
+  clientId    String
+  serviceName String
+  createdAt   DateTime @default(now())
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, serviceName])
+  @@index([clientId])
+}
+
+model ClientActivity {
+  id        String   @id @default(cuid())
+  clientId  String
+  type      String
+  title     String
+  detail    String?
+  actor     String   @default("Pulse User")
+  createdAt DateTime @default(now())
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([createdAt])
+}

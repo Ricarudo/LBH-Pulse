@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 --port 4300",
-    "build": "next build",
+    "build": "npm run prisma:generate && next build",
     "start": "next start --hostname 0.0.0.0 --port 4300",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run prisma:generate && node scripts/clear-next-types.mjs && next typegen && tsc --noEmit",
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "node prisma/seed.js",
