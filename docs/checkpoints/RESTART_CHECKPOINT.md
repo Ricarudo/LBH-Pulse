@@ -1,8 +1,81 @@
 # Restart Checkpoint
 
-Date: 2026-05-09
+Date: 2026-05-24
 
-Purpose: Save the current repository/startup state after moving the app to a PostgreSQL and Prisma-only runtime path and starting the UI modernization work.
+Purpose: Primary restart source of truth for Pulse after documentation consolidation. Use `docs/PULSE_OVERVIEW.md` for a quick orientation and this checkpoint for current state, condensed history, and recovery notes.
+
+## Documentation Consolidation Checkpoint - 2026-05-24
+
+Documentation entry points are now intentionally small:
+
+- `README.md`: repository quick start, stack, commands, and local accounts.
+- `docs/PULSE_OVERVIEW.md`: practical Pulse overview for fast context.
+- `docs/checkpoints/RESTART_CHECKPOINT.md`: canonical current state, historical checkpoints, architecture notes, and recovery guidance.
+
+Consolidation completed:
+
+- Former transition, ADR, architecture, brand, report, and sandbox docs under `docs/` were summarized into this checkpoint and the Pulse overview.
+- App, package, backend, and Prisma READMEs remain local setup notes.
+- `lan-html-inspect.txt` is intentionally unchanged because it is a tracked inspection artifact outside the docs-folder consolidation scope.
+
+Current runtime:
+
+- The default Pulse stack is Docker Compose with `postgres`, `api`, and `web`.
+- `postgres` runs PostgreSQL 16 with Pulse data in the `pulse` schema.
+- `api` is the active NestJS service in `apps/api`, serving `/api/...` on port `3000`.
+- `web` is the active Next.js app in `apps/web`, serving Pulse on port `4300` and proxying browser `/api/...` calls to the NestJS API through `PULSE_API_URL`.
+- The legacy Express backend in `backend/` is compatibility/reference code only. It is available through the legacy Compose profile and is not part of the default runtime.
+
+Active architecture decisions:
+
+- Pulse is the modern internal operations platform for R2 Communications, replacing the inherited KuoteSuite prototype.
+- The primary business flow is `Request -> Quote Workspace -> Proposal -> Project`.
+- New work should target `apps/web` for UI and `apps/api` for active API behavior.
+- The current architecture is a modular monolith path, not a microservice split.
+- Prisma and PostgreSQL are the active persistence path. Review data-loss prompts before schema pushes and do not run destructive seeds against data that must be preserved.
+- Some domain services, types, validations, Prisma schema, and seed logic were copied between `apps/web` and `apps/api` during the first NestJS parity pass. Consolidate shared code into packages after the runtime boundary settles.
+- The removed Angular `gui/` app, Angular routing, Angular Material patterns, and old frontend build assumptions must not be used for new work.
+
+Product and module state:
+
+- Requests are the active intake object and replace Leads in user-facing navigation and language.
+- Requests are short-lived intake gates before quote work, with lifecycle states, service categories, readiness rules, checklist templates, site-visit handling, request detail routes, and activity history.
+- Directory/Clients is the active account lookup and relationship foundation. It stores clients, sites, contacts, billing preferences, technology preferences, and client activity.
+- Quotes and Projects exist as starter workspaces; the real database-backed Quote Workspace, BOM/pricing model, proposal generation, and project handoff remain future work.
+- Settings includes local account management for Admin users, including account lifecycle fields, activation/deactivation, role edits, temporary password resets, and forced password changes.
+- Global Activity exists for cross-record history. Password hashes must never be serialized to frontend account responses.
+
+UI, mobile, and brand state:
+
+- `PulseShell` is the persistent app shell with dark top bar, collapsible desktop sidebar, compact page headers, and mobile navigation.
+- Requests is the first desktop and mobile workflow proof point.
+- Mobile foundation work added shared mobile primitives and a bottom navigation pattern; other modules still need module-specific mobile workflows.
+- Page/view transitions should stay subtle, fast, and respectful of reduced-motion preferences.
+- Manrope is the default Pulse application font. UI should use the existing custom Pulse CSS patterns and `lucide-react` icons.
+
+Preserved legacy business concepts:
+
+- The removed KuoteSuite prototype remains useful only as historical business reference.
+- Preserved concepts include request/lead intake fields, Directory client/site/contact ideas, lead-to-quote handoff, QM-style quote numbering, quote approval/revision states, BOM and quote-line fields, labor/material cost formulas, and proposal/PDF field ideas.
+- Old Leads module planning is historical. The active direction is Requests plus Directory, with legacy lead export/import support documented in `apps/api/README.md`.
+
+Operational notes:
+
+- Local web URL: `http://localhost:4300`.
+- Direct API health: `http://localhost:3000/api/health`.
+- Proxied API health through web: `http://localhost:4300/api/health`.
+- Workstation LAN access has previously used `http://192.168.1.12:4300`; verify the current LAN address before relying on it.
+- Local test accounts are listed in `README.md` and app READMEs.
+- The Windows sandbox runner can fail before process startup. Prefer targeted commands, exclude generated folders, avoid broad recursive scans, and document when non-sandbox execution is required for verification.
+
+Near-term priorities:
+
+- Build the real Quote Workspace, pricing/BOM model, proposal/PDF flow, and project handoff.
+- Consolidate duplicated API/web domain code into shared packages when the NestJS boundary settles.
+- Add Settings workflows for Request Types and Intake Checklist Templates.
+- Link Request checklist requirements to Directory client/contact/site selectors instead of only raw intake text.
+- Migrate or explicitly retire remaining useful behavior from the legacy Express backend.
+- Add browser-level interaction checks for shell/sidebar/menu behavior and key mobile Request workflows.
 
 ## Pulse NestJS API And Compose Stack Checkpoint - 2026-05-20
 
@@ -121,7 +194,7 @@ Operational notes:
 
 The legacy Angular `gui/` application has been removed from the active repository structure. Angular dependencies, Angular CLI/build scripts, Angular routing, Angular Material UI code, legacy browser PDF packages, Angular Dockerfile/config files, and the root-only empty `package-lock.json` were removed with it.
 
-Useful business concepts from the removed Angular prototype were preserved in `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`, including Request/Lead intake fields, Directory client/site/contact ideas, lead-to-quote handoff, QM-style quote numbering, quote approval/revision states, BOM/quote-line fields, labor/material cost formula ideas, and early proposal/PDF field concepts.
+Useful business concepts from the removed Angular prototype are summarized in the 2026-05-24 consolidation checkpoint above, including Request/Lead intake fields, Directory client/site/contact ideas, lead-to-quote handoff, QM-style quote numbering, quote approval/revision states, BOM/quote-line fields, labor/material cost formula ideas, and early proposal/PDF field concepts.
 
 The active Pulse stack is now:
 
@@ -223,7 +296,7 @@ Global mobile UI planning and first-pass implementation are continuing from the 
 - Added `RequestsMobileView` as the first workflow proof point using real Request data and capability-based permissions.
 - Stabilized mobile shell sizing so the collapsed desktop sidebar does not squeeze mobile content.
 - Added Hub-specific mobile scaling fixes so dashboard cards and command tables do not preserve desktop ratios on phones.
-- Added `docs/architecture/PULSE_GLOBAL_MOBILE_FOUNDATION.md` to guide future module adoption.
+- Captured global mobile foundation guidance for future module adoption; it is now summarized in the 2026-05-24 consolidation checkpoint above.
 - Known limitation: Clients, Quotes, Projects, and other modules currently inherit the global mobile shell first; their module-specific mobile workflows should be added in later passes. Quotes and Projects remain starter-data modules and are not the current focus.
 
 ## Desktop Requests Simplification Pass - 2026-05-12
@@ -242,7 +315,7 @@ Pulse web app navigation was optimized for mobile and responsive design.
 - Mobile now hides the desktop sidebar entirely, giving Requests and other modules the full viewport width.
 - Mobile topbar keeps global actions icon-first and keeps primary module navigation horizontally scrollable.
 - Requests queue rows now render as labeled mobile cards below 760px instead of relying on horizontal table scrolling.
-- Added `docs/architecture/PULSE_REQUESTS_MOBILE_UX_ANALYSIS.md` with a focused mobile refactor analysis for the Requests page.
+- Captured a focused mobile refactor analysis for the Requests page; it is now summarized in the 2026-05-24 consolidation checkpoint above.
 - Desktop: Sidebar now starts in collapsed state (icon-only, 104px width) by default. Users can expand with toggle button at top of sidebar.
 - Mobile (< 980px): Sidebar is hidden and replaced by the top navigation strip to preserve screen space for content.
 - Mobile: Collapse/expand toggle button remains hidden on viewports below 980px.
@@ -261,7 +334,7 @@ This update captures the current Pulse work built beside the legacy KuoteSuite A
 
 ## Requests / Directory Navigation Pass - 2026-05-11
 
-Pulse navigation has started moving from the old CRM-centered structure toward the operations model documented in `docs/architecture/PULSE_REQUESTS_DIRECTORY_IMPACT_NOTE.md`.
+Pulse navigation has started moving from the old CRM-centered structure toward the operations model summarized in the 2026-05-24 consolidation checkpoint above.
 
 - Primary sidebar now shows Hub, Requests, Quotes, Projects, Directory, Billing, Analytics, and Settings.
 - Requests is the user-facing replacement for Leads in navigation and page language.
@@ -498,7 +571,7 @@ Result: Frontend build passed with the existing Angular CommonJS optimization wa
 
 ## Brand Standards
 
-- Baseline Pulse brand standards now live in `docs/brand/BRAND_STANDARDS.md`.
+- Baseline Pulse brand standards are now summarized in the 2026-05-24 consolidation checkpoint above.
 - Manrope is the default application font for both the legacy Angular modernization path and the new Pulse web app.
 
 ## GUI Refresh Progress
@@ -566,7 +639,7 @@ Result: Compose config validation passed.
 - Because those commands do not search the repo, wait for stdin, or use shell pipes, the likely cause is the Windows sandbox runner failing during process/pipe startup rather than `rg`, large CSS output, or pipe behavior such as `rg ... | head`.
 - The repo does contain large generated/vendor folders such as `apps/web/node_modules`, `apps/web/.next`, and `backend/node_modules`, so broad recursive PowerShell commands can still be noisy and slow when the sandbox is healthy. The old `gui/node_modules` tree was removed with the Angular cleanup on 2026-05-14.
 - Safer pattern going forward: target the relevant source directory and exclude generated folders, for example `rg "pattern" apps/web/src -n --glob '!node_modules' --glob '!dist' --glob '!build' --glob '!.angular' --glob '!coverage' --glob '!.next'`. Avoid `grep ... | head`, `cat ... | grep`, `find ... | xargs ...`, and broad repo-root recursion.
-- See `docs/sandbox-command-guidelines.md` for the short command guide.
+- See the 2026-05-24 consolidation checkpoint above for the short command guide.
 
 ### Sandbox Availability Note
 

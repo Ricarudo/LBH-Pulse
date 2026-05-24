@@ -25,7 +25,7 @@ Pulse is the current platform direction, but the working repository still has an
 - Active backend direction: new Pulse API work should continue in `apps/api`.
 - Active frontend direction: new Pulse UI work should continue in `apps/web`, with browser `/api/...` calls proxied to NestJS.
 
-This framing is grounded in `backend/package.json`, `backend/app.js`, `backend/prisma/schema.prisma`, `docker-compose.dev.yml`, `docs/checkpoints/RESTART_CHECKPOINT.md`, `docs/PULSE_TRANSITION_PLAN.md`, and `apps/api/README.md`.
+This framing is grounded in `backend/package.json`, `backend/app.js`, `backend/prisma/schema.prisma`, `docker-compose.dev.yml`, `docs/PULSE_OVERVIEW.md`, `docs/checkpoints/RESTART_CHECKPOINT.md`, and `apps/api/README.md`.
 
 ## Project Structure
 
@@ -39,7 +39,7 @@ prisma/                   Top-level future Prisma workspace placeholder
 database-azure-backup/    PostgreSQL dump helper
 dev-tools/                Legacy helper scripts
 proxy/                    Legacy proxy Dockerfile
-docs/                     Architecture notes, reports, ADRs, checkpoints, and legacy references
+docs/                     Pulse overview and restart checkpoint
 docker-compose.yml        Default Pulse compose stack
 docker-compose.dev.yml    Explicit local development compose stack
 docker-compose.legacy.yml Optional legacy Express compose service
@@ -152,11 +152,8 @@ npm test
 
 ## Documentation
 
-- `docs/checkpoints/RESTART_CHECKPOINT.md`: latest restart/checkpoint state.
-- `docs/sandbox-command-guidelines.md`: command patterns for this Windows runner.
-- `docs/architecture/PULSE_REQUESTS_DIRECTORY_IMPACT_NOTE.md`: Requests and Directory architecture direction.
-- `docs/architecture/LEGACY_KUOTESUITE_REFERENCE.md`: preserved concepts from the removed Angular prototype.
-- `docs/brand/BRAND_STANDARDS.md`: Pulse brand standards.
+- `docs/PULSE_OVERVIEW.md`: short practical overview of Pulse.
+- `docs/checkpoints/RESTART_CHECKPOINT.md`: source of truth for current state, condensed history, architecture notes, and recovery guidance.
 
 ## Known Issues
 
@@ -164,4 +161,4 @@ npm test
 - Some active Pulse service code is intentionally copied between `apps/web` and `apps/api` during the first NestJS parity pass; consolidate into shared packages after runtime migration settles.
 - Quotes and Projects in `apps/web` are still starter workflows and need real quote workspace/database implementation.
 - Some compatibility docs and backend code still mention legacy KuoteSuite table names because the Express backend has not been fully retired.
-- The Windows sandbox runner can fail before process startup; follow `docs/sandbox-command-guidelines.md`.
+- The Windows sandbox runner can fail before process startup; see `docs/checkpoints/RESTART_CHECKPOINT.md` for command guidance.

@@ -70,4 +70,4 @@ Technician: technician@r2.local / PulseTech123!
 
 ## Brand
 
-The default UI font is Manrope, matching `docs/brand/BRAND_STANDARDS.md`.
+The default UI font is Manrope. Current brand and UI notes are summarized in `docs/PULSE_OVERVIEW.md` and `docs/checkpoints/RESTART_CHECKPOINT.md`.
