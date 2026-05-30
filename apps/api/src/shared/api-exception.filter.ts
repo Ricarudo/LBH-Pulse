@@ -5,7 +5,7 @@ import {
   HttpException,
   HttpStatus
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import type { Response } from "express";
 import { ZodError } from "zod";
 import { AuthError } from "@/shared/auth.service";

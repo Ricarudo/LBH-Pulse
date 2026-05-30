@@ -11,17 +11,19 @@
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:push:accept-data-loss": "prisma db push --accept-data-loss",
-    "db:bootstrap": "npm run prisma:generate && node prisma/bootstrap.js",
-    "db:seed": "node prisma/seed.js",
+    "db:bootstrap": "npm run prisma:generate && tsx prisma/bootstrap.ts",
+    "db:seed": "tsx prisma/seed.ts",
     "db:setup": "npm run prisma:generate && npm run db:push && npm run db:seed",
-    "legacy-leads:export": "npm run prisma:generate && node scripts/export-legacy-leads.js",
-    "legacy-leads:import": "npm run prisma:generate && node scripts/import-legacy-leads.js"
+    "legacy-leads:export": "npm run prisma:generate && tsx scripts/export-legacy-leads.ts",
+    "legacy-leads:import": "npm run prisma:generate && tsx scripts/import-legacy-leads.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
-    "@prisma/client": "^6.19.3",
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
+    "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^4.4.3"
@@ -29,7 +31,8 @@
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "25.6.2",
-    "prisma": "^6.19.3",
+    "dotenv": "^16.6.1",
+    "prisma": "7.8.0",
     "tsc-alias": "^1.8.10",
     "tsx": "^4.20.0",
     "typescript": "6.0.3"

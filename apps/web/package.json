@@ -9,22 +9,26 @@
     "typecheck": "npm run prisma:generate && node scripts/clear-next-types.mjs && next typegen && tsc --noEmit",
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "node prisma/seed.js",
+    "db:seed": "tsx prisma/seed.ts",
     "db:setup": "npm run prisma:generate && npm run db:push && npm run db:seed"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
     "lucide-react": "^1.14.0",
     "next": "16.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "pg": "^8.16.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "25.6.2",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "prisma": "^6.19.3",
+    "dotenv": "^16.6.1",
+    "prisma": "7.8.0",
+    "tsx": "^4.20.0",
     "typescript": "6.0.3"
   }
 }

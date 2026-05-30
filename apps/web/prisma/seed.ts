@@ -1,7 +1,12 @@
-const { PrismaClient } = require("@prisma/client");
-const { scryptSync } = require("crypto");
+// @ts-nocheck
+import { PrismaPg } from "@prisma/adapter-pg";
+import { scryptSync } from "node:crypto";
+import { PrismaClient } from "../src/generated/prisma/client";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL
+});
+const prisma = new PrismaClient({ adapter });
 
 function hashPassword(password, salt) {
   return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;

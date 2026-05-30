@@ -6,6 +6,9 @@ build/
 coverage/
 *.tsbuildinfo
 
+apps/api/src/generated/prisma/
+apps/web/src/generated/prisma/
+
 .env
 *.log
 

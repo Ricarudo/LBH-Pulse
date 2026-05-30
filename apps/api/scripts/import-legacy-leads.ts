@@ -1,8 +1,13 @@
-const { PrismaClient } = require("@prisma/client");
-const { readdir, readFile, stat } = require("fs/promises");
-const path = require("path");
+// @ts-nocheck
+import { PrismaPg } from "@prisma/adapter-pg";
+import { readdir, readFile, stat } from "node:fs/promises";
+import path from "node:path";
+import { PrismaClient } from "../src/generated/prisma/client";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL
+});
+const prisma = new PrismaClient({ adapter });
 const backupTables = ["Lead", "LeadActivity", "LeadAttachment", "LeadNote", "LeadTask"];
 
 const statusMap = new Map([

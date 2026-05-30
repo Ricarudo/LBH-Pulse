@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { canSeeActivity, type AuthenticatedUser } from "@/lib/auth/permissions";
 import type { ActivityRecord } from "@/types/activity";

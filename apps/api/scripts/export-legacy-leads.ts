@@ -1,9 +1,14 @@
-const { PrismaClient } = require("@prisma/client");
-const { createHash } = require("crypto");
-const { mkdir, writeFile } = require("fs/promises");
-const path = require("path");
+// @ts-nocheck
+import { PrismaPg } from "@prisma/adapter-pg";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { PrismaClient } from "../src/generated/prisma/client";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL
+});
+const prisma = new PrismaClient({ adapter });
 const legacyTables = ["Lead", "LeadActivity", "LeadAttachment", "LeadNote", "LeadTask"];
 
 function schemaName() {

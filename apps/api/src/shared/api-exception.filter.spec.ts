@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { apiErrorPayload } from "@/shared/api-exception.filter";
 import { AuthError } from "@/shared/auth.service";
