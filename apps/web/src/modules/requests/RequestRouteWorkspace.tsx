@@ -79,7 +79,43 @@ type ActivityListResponse = {
   activities: ActivityRecord[];
 };
 
+const requestDetailTabs = ["Notes", "Workflow", "Files", "Quote", "Activity"] as const;
+type RequestDetailTab = (typeof requestDetailTabs)[number];
+
 const today = new Date().toISOString().slice(0, 10);
+
+function sortChecklistItems(items: RequestChecklistItem[]) {
+  return [...items].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+}
+
+function groupChecklistItems(items: RequestChecklistItem[]) {
+  return items.reduce<Record<string, RequestChecklistItem[]>>((groups, item) => {
+    const key = item.group || "Intake";
+    groups[key] = [...(groups[key] ?? []), item];
+    return groups;
+  }, {});
+}
+
+function checklistItemClass(item: RequestChecklistItem, missingRequired: boolean) {
+  return [
+    "request-checklist-item",
+    item.completed ? "complete" : "",
+    !item.applicable ? "muted" : "",
+    missingRequired ? "missing" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function checklistItemMeta(item: RequestChecklistItem) {
+  return [
+    item.required ? "Required" : "Optional",
+    !item.applicable ? "Not applicable" : "",
+    item.notes
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
 
 function emptyForm(defaultAssignedToId = ""): RequestFormState {
   return {
@@ -230,6 +266,7 @@ export function RequestRouteWorkspace({
   const [noteText, setNoteText] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
   const [recordActivities, setRecordActivities] = useState<ActivityRecord[]>([]);
+  const [activeDetailTab, setActiveDetailTab] = useState<RequestDetailTab>("Notes");
 
   const isForm = mode === "new" || mode === "edit";
 
@@ -275,16 +312,32 @@ export function RequestRouteWorkspace({
     void load();
   }, [loadRecordActivity, requestId, user?.id]);
 
-  const checklistGroups = useMemo(() => {
-    return (request?.checklistItems ?? []).reduce<Record<string, RequestChecklistItem[]>>(
-      (groups, item) => {
-        const key = item.group || "Intake";
-        groups[key] = [...(groups[key] ?? []), item];
-        return groups;
-      },
-      {}
-    );
+  const checklistBuckets = useMemo(() => {
+    const sortedItems = sortChecklistItems(request?.checklistItems ?? []);
+    const todo = sortedItems.filter((item) => item.applicable && !item.completed);
+    const done = sortedItems.filter((item) => item.completed);
+    const inactive = sortedItems.filter((item) => !item.applicable && !item.completed);
+
+    return {
+      todo,
+      done,
+      inactive,
+      todoGroups: groupChecklistItems(todo),
+      doneGroups: groupChecklistItems(done),
+      inactiveGroups: groupChecklistItems(inactive)
+    };
   }, [request?.checklistItems]);
+
+  const missingRequiredLabels = useMemo(
+    () => new Set(request?.checklistSummary.missingRequired ?? []),
+    [request?.checklistSummary.missingRequired]
+  );
+
+  const intakeMissingItems = useMemo(() => (request ? getMissingInfoItems(request) : []), [request]);
+
+  const checklistProgress = request?.checklistSummary.total
+    ? Math.round((request.checklistSummary.completed / request.checklistSummary.total) * 100)
+    : 0;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -343,8 +396,8 @@ export function RequestRouteWorkspace({
 
     try {
       const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ status })
+        method: "PATCH",
+        body: JSON.stringify({ status })
       });
       setRequest(data.request);
       await loadRecordActivity(data.request.id);
@@ -438,6 +491,41 @@ export function RequestRouteWorkspace({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to update follow-up.");
     }
+  }
+
+  function renderChecklistGroups(groups: Record<string, RequestChecklistItem[]>, emptyMessage: string) {
+    const entries = Object.entries(groups);
+
+    if (!entries.length) {
+      return <p className="lead-notes request-empty-note">{emptyMessage}</p>;
+    }
+
+    return entries.map(([group, items]) => (
+      <div className="request-checklist-group" key={group}>
+        <h4>{group}</h4>
+        {items.map((item) => {
+          const missingRequired = item.required && !item.completed && missingRequiredLabels.has(item.label);
+
+          return (
+            <button
+              key={item.id}
+              className={checklistItemClass(item, missingRequired)}
+              type="button"
+              onClick={() => toggleChecklistItem(item)}
+              disabled={!canWriteActivity || !item.applicable}
+            >
+              {item.completed ? <CheckCircle2 size={17} /> : <ClipboardList size={17} />}
+              <span className="request-checklist-item-content">
+                <strong>{item.label}</strong>
+                {item.description ? <span className="request-checklist-description">{item.description}</span> : null}
+                <small>{checklistItemMeta(item)}</small>
+                <RequestChecklistSignature item={item} compact />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    ));
   }
 
   if (isLoading) {
@@ -594,8 +682,14 @@ export function RequestRouteWorkspace({
     );
   }
 
+  const siteSummary =
+    [request.siteName, request.siteAddress, request.city, request.state].filter(Boolean).join(", ") ||
+    "Not captured";
+  const quoteActionDisabled =
+    Boolean(request.relatedQuoteId) || !canWriteCrm || !request.checklistSummary.readyForQuote;
+
   return (
-    <section className="request-route-page">
+    <section className="request-route-page request-route-page-cockpit">
       <div className="request-route-heading">
         <Link className="toolbar-button compact" href="/requests">
           <ArrowLeft size={16} />
@@ -622,72 +716,98 @@ export function RequestRouteWorkspace({
         </div>
       </div>
 
-      <div className="request-route-grid">
-        <section className="lead-detail-panel always-visible">
-          <div className="lead-detail-grid">
-            <div><span>Client</span><strong>{request.companyName || "Not captured"}</strong></div>
-            <div><span>Contact</span><strong>{request.contactName || "Not captured"}</strong></div>
-            <div><span>Site</span><strong>{[request.siteName, request.siteAddress, request.city].filter(Boolean).join(", ") || "Not captured"}</strong></div>
-            <div><span>Owner</span><strong>{request.assignedToName || "Unassigned"}</strong></div>
-            <div><span>Source</span><strong>{request.source}</strong></div>
-            <div><span>Type</span><strong>{request.requestType}</strong></div>
-          </div>
+      <div className="request-command-strip" aria-label="Request summary">
+        <div><span>Client</span><strong>{request.companyName || "Not captured"}</strong></div>
+        <div><span>Contact</span><strong>{request.contactName || "Not captured"}</strong></div>
+        <div><span>Email</span><strong><Mail size={14} /> {request.contactEmail || "Not captured"}</strong></div>
+        <div><span>Phone</span><strong><Phone size={14} /> {request.contactPhone || "Not captured"}</strong></div>
+        <div><span>Site</span><strong><MapPin size={14} /> {siteSummary}</strong></div>
+        <div><span>Owner</span><strong>{request.assignedToName || "Unassigned"}</strong></div>
+        <div><span>Source</span><strong>{request.source}</strong></div>
+        <div><span>Type</span><strong>{request.requestType}</strong></div>
+        <div><span>Received</span><strong><CalendarClock size={14} /> {request.receivedDate || "Not captured"}</strong></div>
+        <div><span>Due</span><strong>{request.dueDate || "Not set"}</strong></div>
+        <div><span>Follow-up</span><strong>{request.nextFollowUpAt || "Not set"}</strong></div>
+      </div>
 
-          <div className="lead-contact-card">
-            <p><Mail size={15} /> {request.contactEmail || "No email captured"}</p>
-            <p><Phone size={15} /> {request.contactPhone || "No phone captured"}</p>
-            <p>
-              <MapPin size={15} />{" "}
-              {[request.siteName, request.siteAddress, request.city, request.state]
-                .filter(Boolean)
-                .join(", ") || "No site captured"}
-            </p>
-            <p><CalendarClock size={15} /> Received: {request.receivedDate || "Not captured"}</p>
-          </div>
-
-          <section className="lead-section">
-            <h3>Next Action</h3>
-            <div className="request-next-action-card">
-              <strong>{getNextAction(request)}</strong>
-              <span>Due: {request.dueDate || "Not set"} - Follow-up: {request.nextFollowUpAt || "Not set"}</span>
+      <div className="request-cockpit-grid">
+        <section className="request-checklist-workspace" aria-labelledby="request-checklist-heading">
+          <div className="request-checklist-workspace-heading">
+            <div>
+              <span>Checklist</span>
+              <h2 id="request-checklist-heading">{request.checklistSummary.templateName}</h2>
             </div>
+            <strong>{checklistBuckets.todo.length} open</strong>
+          </div>
+
+          <div className="request-checklist-board">
+            <section className="request-checklist-column">
+              <div className="request-checklist-column-heading">
+                <h3>To do</h3>
+                <span>{checklistBuckets.todo.length}</span>
+              </div>
+              <div className="request-checklist">
+                {renderChecklistGroups(checklistBuckets.todoGroups, "No open checklist items.")}
+              </div>
+            </section>
+
+            <section className="request-checklist-column done">
+              <div className="request-checklist-column-heading">
+                <h3>Done</h3>
+                <span>{checklistBuckets.done.length}</span>
+              </div>
+              <div className="request-checklist">
+                {renderChecklistGroups(checklistBuckets.doneGroups, "Nothing has been completed yet.")}
+              </div>
+            </section>
+          </div>
+
+          {checklistBuckets.inactive.length ? (
+            <section className="request-checklist-inactive">
+              <div className="request-checklist-column-heading">
+                <h3>Not applicable</h3>
+                <span>{checklistBuckets.inactive.length}</span>
+              </div>
+              <div className="request-checklist inactive">
+                {renderChecklistGroups(checklistBuckets.inactiveGroups, "No inactive checklist items.")}
+              </div>
+            </section>
+          ) : null}
+        </section>
+
+        <aside className="request-side-rail" aria-label="Request cockpit">
+          <section className="request-side-card">
+            <span>Next Action</span>
+            <strong>{getNextAction(request)}</strong>
+            <small>Due: {request.dueDate || "Not set"} - Follow-up: {request.nextFollowUpAt || "Not set"}</small>
           </section>
 
-          <section className="lead-section">
-            <h3>Intake Details</h3>
-            <p className="lead-notes">{request.description || "No request description yet."}</p>
+          <section className={request.checklistSummary.readyForQuote ? "request-side-card readiness ready" : "request-side-card readiness"}>
+            <span>Readiness</span>
+            <strong>{request.checklistSummary.readyForQuote ? "Ready for Quote" : `${request.checklistSummary.missingRequired.length} required missing`}</strong>
+            <div className="request-progress-track" aria-label={`${checklistProgress}% checklist complete`}>
+              <span style={{ width: `${checklistProgress}%` }} />
+            </div>
+            <small>
+              {request.checklistSummary.completed}/{request.checklistSummary.total} complete - {request.checklistSummary.requiredCompleted}/{request.checklistSummary.requiredTotal} required
+            </small>
           </section>
 
-          <section className="lead-section">
-            <h3>Missing Information</h3>
-            {getMissingInfoItems(request).length ? (
-              <div className="request-tag-list">
-                {getMissingInfoItems(request).map((item) => (
+          <section className="request-side-card">
+            <span>Missing Required</span>
+            {request.checklistSummary.missingRequired.length ? (
+              <div className="request-tag-list compact">
+                {request.checklistSummary.missingRequired.map((item) => (
                   <span key={item}>{item}</span>
                 ))}
               </div>
             ) : (
-              <p className="lead-notes">No missing intake information is flagged.</p>
+              <p className="lead-notes">All required checklist items are complete.</p>
             )}
           </section>
 
-          <section className="lead-section">
-            <h3>Internal Notes</h3>
-            <p className="lead-notes">{request.internalNotes || "No internal notes yet."}</p>
-            <textarea
-              placeholder="Add a note to the timeline..."
-              value={noteText}
-              onChange={(event) => setNoteText(event.target.value)}
-              disabled={!canWriteActivity}
-            />
-            <button className="toolbar-button compact" type="button" onClick={addNote} disabled={!canWriteActivity || !noteText.trim()}>
-              <StickyNote size={16} />
-              Add Note
-            </button>
-          </section>
-
-          <section className="lead-section">
-            <h3>Follow-Ups</h3>
+          <section className="request-side-card">
+            <span>Follow-Ups</span>
             <div className="task-composer">
               <input
                 placeholder="Add follow-up task..."
@@ -697,7 +817,7 @@ export function RequestRouteWorkspace({
               />
               <button type="button" onClick={addTask} disabled={!canWriteActivity || !taskTitle.trim()}>Add</button>
             </div>
-            <div className="task-list">
+            <div className="task-list compact">
               {request.tasks.length ? (
                 request.tasks.map((task) => (
                   <button key={task.id} className="task-row" type="button" onClick={() => toggleTask(task.id, task.completed)} disabled={!canWriteActivity}>
@@ -713,85 +833,113 @@ export function RequestRouteWorkspace({
               )}
             </div>
           </section>
-        </section>
+        </aside>
+      </div>
 
-        <section className="lead-detail-panel always-visible">
-          <section className="lead-section">
-            <h3>Checklist</h3>
-            <div className={request.checklistSummary.readyForQuote ? "request-readiness-card ready" : "request-readiness-card"}>
-              <strong>{request.checklistSummary.readyForQuote ? "Ready for Quote" : `${request.checklistSummary.missingRequired.length} required item(s) missing`}</strong>
-              <span>{request.checklistSummary.completed}/{request.checklistSummary.total} complete from {request.checklistSummary.templateName}</span>
+      <section className="request-secondary-panel">
+        <div className="lead-view-tabs request-detail-tabs" role="tablist" aria-label="Request detail sections">
+          {requestDetailTabs.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={activeDetailTab === tab}
+              className={activeDetailTab === tab ? "lead-view-tab active" : "lead-view-tab"}
+              onClick={() => setActiveDetailTab(tab)}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        <div className="request-detail-tab-panel">
+          {activeDetailTab === "Notes" ? (
+            <div className="request-tab-grid">
+              <section className="lead-section">
+                <h3>Intake Details</h3>
+                <p className="lead-notes">{request.description || "No request description yet."}</p>
+              </section>
+              <section className="lead-section">
+                <h3>Missing Information</h3>
+                {intakeMissingItems.length ? (
+                  <div className="request-tag-list">
+                    {intakeMissingItems.map((item) => (
+                      <span key={item}>{item}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="lead-notes">No missing intake information is flagged.</p>
+                )}
+              </section>
+              <section className="lead-section">
+                <h3>Internal Notes</h3>
+                <p className="lead-notes">{request.internalNotes || "No internal notes yet."}</p>
+                <textarea
+                  placeholder="Add a note to the timeline..."
+                  value={noteText}
+                  onChange={(event) => setNoteText(event.target.value)}
+                  disabled={!canWriteActivity}
+                />
+                <button className="toolbar-button compact" type="button" onClick={addNote} disabled={!canWriteActivity || !noteText.trim()}>
+                  <StickyNote size={16} />
+                  Add Note
+                </button>
+              </section>
             </div>
-            {request.checklistSummary.missingRequired.length ? (
-              <div className="request-tag-list">
-                {request.checklistSummary.missingRequired.map((item) => (
-                  <span key={item}>{item}</span>
+          ) : null}
+
+          {activeDetailTab === "Workflow" ? (
+            <section className="lead-section">
+              <h3>Workflow Status</h3>
+              <div className="status-action-grid">
+                {requestStatuses.map((status) => (
+                  <button
+                    key={status}
+                    className={status === request.status ? "active" : ""}
+                    type="button"
+                    onClick={() => updateStatus(status)}
+                    disabled={!canWriteCrm}
+                  >
+                    {status}
+                  </button>
                 ))}
               </div>
-            ) : null}
-            <div className="request-checklist">
-              {Object.entries(checklistGroups).map(([group, items]) => (
-                <div className="request-checklist-group" key={group}>
-                  <h4>{group}</h4>
-                  {items.map((item) => (
-                    <button
-                      key={item.id}
-                      className={item.completed ? "request-checklist-item complete" : item.applicable ? "request-checklist-item" : "request-checklist-item muted"}
-                      type="button"
-                      onClick={() => toggleChecklistItem(item)}
-                      disabled={!canWriteActivity || !item.applicable}
-                    >
-                      {item.completed ? <CheckCircle2 size={17} /> : <ClipboardList size={17} />}
-                      <span>
-                        <strong>{item.label}</strong>
-                        <small>{item.required ? "Required" : "Optional"}</small>
-                        <RequestChecklistSignature item={item} />
-                      </span>
-                    </button>
-                  ))}
+            </section>
+          ) : null}
+
+          {activeDetailTab === "Files" ? (
+            <section className="lead-section">
+              <h3>Files / Drawings</h3>
+              {request.files.length ? (
+                <div className="request-tag-list">
+                  {request.files.map((file) => <span key={file}>{file}</span>)}
                 </div>
-              ))}
-            </div>
-          </section>
+              ) : (
+                <p className="lead-notes">No files are indexed yet. Upload and drawing package handling are planned for a later file model.</p>
+              )}
+            </section>
+          ) : null}
 
-          <section className="lead-section">
-            <h3>Workflow Status</h3>
-            <div className="status-action-grid">
-              {requestStatuses.map((status) => (
-                <button key={status} type="button" onClick={() => updateStatus(status)} disabled={!canWriteCrm}>
-                  {status}
+          {activeDetailTab === "Quote" ? (
+            <section className="lead-section">
+              <h3>Related Quote</h3>
+              <div className="request-next-action-card">
+                <strong>{request.relatedQuoteNumber || "No quote workspace linked yet"}</strong>
+                <button className="toolbar-button compact" type="button" disabled={quoteActionDisabled} onClick={convertRequest}>
+                  Create Quote Workspace
                 </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="lead-section">
-            <h3>Files / Drawings</h3>
-            {request.files.length ? (
-              <div className="request-tag-list">
-                {request.files.map((file) => <span key={file}>{file}</span>)}
               </div>
-            ) : (
-              <p className="lead-notes">No files are indexed yet. Upload and drawing package handling are planned for a later file model.</p>
-            )}
-          </section>
+            </section>
+          ) : null}
 
-          <section className="lead-section">
-            <h3>Related Quote</h3>
-            <div className="request-next-action-card">
-              <strong>{request.relatedQuoteNumber || "No quote workspace linked yet"}</strong>
-              <button className="toolbar-button compact" type="button" disabled={Boolean(request.relatedQuoteId) || !canWriteCrm || !request.checklistSummary.readyForQuote} onClick={convertRequest}>
-                Create Quote Workspace
-              </button>
-            </div>
-          </section>
-
-          <section className="lead-section">
-            <h3>Activity Timeline</h3>
-            <ActivityTimeline activities={recordActivities} emptyMessage="No shared activity has been recorded for this request yet." />
-          </section>
-        </section>
-      </div>
+          {activeDetailTab === "Activity" ? (
+            <section className="lead-section">
+              <h3>Activity Timeline</h3>
+              <ActivityTimeline activities={recordActivities} emptyMessage="No shared activity has been recorded for this request yet." />
+            </section>
+          ) : null}
+        </div>
+      </section>
 
       {message ? <div className="lead-toast">{message}</div> : null}
     </section>

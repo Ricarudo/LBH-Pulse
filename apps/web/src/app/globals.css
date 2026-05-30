@@ -4031,6 +4031,332 @@ a {
   gap: 16px;
 }
 
+.request-route-page-cockpit {
+  gap: 14px;
+}
+
+.request-route-heading > div {
+  min-width: 0;
+}
+
+.request-route-heading h1 {
+  overflow-wrap: anywhere;
+}
+
+.request-command-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 14px;
+  background: var(--pulse-surface);
+}
+
+.request-command-strip div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--pulse-surface-soft);
+}
+
+.request-command-strip span {
+  color: var(--pulse-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.request-command-strip strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--pulse-text);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.request-command-strip svg {
+  flex: 0 0 auto;
+  color: var(--pulse-muted);
+}
+
+.request-cockpit-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  align-items: start;
+  gap: 14px;
+}
+
+.request-checklist-workspace,
+.request-secondary-panel {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 14px;
+  background: var(--pulse-surface);
+}
+
+.request-checklist-workspace {
+  display: grid;
+  gap: 12px;
+}
+
+.request-checklist-workspace-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.request-checklist-workspace-heading span,
+.request-side-card > span {
+  color: var(--pulse-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.request-checklist-workspace-heading h2 {
+  margin: 2px 0 0;
+  color: var(--pulse-text);
+  font-size: 18px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.request-checklist-workspace-heading > strong {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--pulse-blue-soft);
+  color: var(--pulse-blue);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.request-checklist-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.request-checklist-column,
+.request-checklist-inactive {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.request-checklist-column-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+}
+
+.request-checklist-column-heading h3 {
+  margin: 0;
+  color: var(--pulse-text);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.request-checklist-column-heading span {
+  min-width: 28px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--pulse-surface-soft);
+  color: var(--pulse-muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.request-checklist-column.done .request-checklist-column-heading span {
+  background: var(--pulse-green-soft);
+  color: var(--pulse-green);
+}
+
+.request-checklist-board .request-checklist {
+  align-content: start;
+  gap: 10px;
+}
+
+.request-checklist-board .request-checklist-item,
+.request-checklist-inactive .request-checklist-item {
+  min-height: 0;
+  padding: 9px;
+  border-radius: 8px;
+}
+
+.request-checklist-item.missing {
+  border-color: rgba(245, 158, 11, 0.58);
+  background: var(--pulse-orange-soft);
+}
+
+.request-checklist-item.complete {
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.request-checklist-item-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.request-checklist-item strong {
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.request-checklist-description {
+  margin-top: 3px;
+  color: var(--pulse-sidebar-text);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.request-checklist-item small {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.request-checklist-inactive {
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--pulse-line);
+}
+
+.request-checklist-inactive .request-checklist {
+  gap: 8px;
+}
+
+.request-empty-note {
+  padding: 10px;
+  border: 1px dashed var(--pulse-line);
+  border-radius: 8px;
+  background: var(--pulse-surface-soft);
+}
+
+.request-side-rail {
+  position: sticky;
+  top: 24px;
+  display: grid;
+  gap: 10px;
+}
+
+.request-side-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 12px;
+  background: var(--pulse-surface);
+}
+
+.request-side-card strong {
+  color: var(--pulse-text);
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.request-side-card small {
+  color: var(--pulse-muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.request-side-card.readiness {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: var(--pulse-orange-soft);
+}
+
+.request-side-card.readiness.ready {
+  border-color: rgba(34, 197, 94, 0.38);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.request-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.1);
+}
+
+.request-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pulse-blue);
+}
+
+.request-side-card.readiness.ready .request-progress-track span {
+  background: var(--pulse-green);
+}
+
+.request-tag-list.compact {
+  gap: 6px;
+}
+
+.request-tag-list.compact span {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.task-list.compact {
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.request-side-card .task-row {
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.request-secondary-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.request-detail-tabs {
+  max-width: 100%;
+}
+
+.request-detail-tab-panel {
+  display: grid;
+  gap: 12px;
+  min-height: 118px;
+}
+
+.request-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+
+.status-action-grid button.active {
+  border-color: rgba(14, 165, 233, 0.55);
+  background: var(--pulse-blue-soft);
+  color: var(--pulse-blue);
+}
+
 .request-route-form {
   padding: 18px;
   border: 1px solid var(--pulse-line);
@@ -4054,6 +4380,16 @@ a {
 
   .request-route-grid {
     grid-template-columns: 1fr;
+  }
+
+  .request-cockpit-grid,
+  .request-checklist-board,
+  .request-tab-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .request-side-rail {
+    position: static;
   }
 }
 
