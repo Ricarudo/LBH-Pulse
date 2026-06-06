@@ -276,7 +276,6 @@ model Client {
   companyName        String?
   legalName          String?
   displayName        String           @default("Unnamed Client")
-  clientType         String           @default("Commercial")
   industry           String?
   website            String?
   status             String           @default("Active")
