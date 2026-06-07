@@ -15,6 +15,7 @@ import {
   updateClientContact,
   updateClientSite
 } from "@/lib/services/clientService";
+import { listClientRelatedWork } from "@/lib/services/requestService";
 import {
   addClientContactSchema,
   addClientSiteSchema,
@@ -51,6 +52,12 @@ export class ClientsController {
     await this.auth.requireUser(request, "crm:read");
     const client = await getClientById(id);
     return { client };
+  }
+
+  @Get(":id/related-work")
+  async relatedWork(@Req() request: Request, @Param("id") id: string) {
+    await this.auth.requireUser(request, "crm:read");
+    return listClientRelatedWork(id);
   }
 
   @Patch(":id")

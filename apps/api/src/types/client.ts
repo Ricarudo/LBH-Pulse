@@ -153,6 +153,19 @@ export type ClientRecord = {
   updatedAt: string;
 };
 
+export type ClientQuoteSummary = {
+  id: string;
+  quoteNumber: string;
+  title: string;
+  status: string;
+  owner: string;
+  total: number;
+  createdAt: string;
+  updatedAt: string;
+  requestId: string;
+  requestNumber: string;
+};
+
 export type ClientSiteInput = {
   localId?: string;
   siteName: string;
@@ -232,4 +245,3 @@ export function formatMoney(value: number) {
     maximumFractionDigits: 0
   }).format(value);
 }
-

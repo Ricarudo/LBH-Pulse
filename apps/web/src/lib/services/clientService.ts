@@ -253,12 +253,15 @@ async function generateClientNumber(tx: Prisma.TransactionClient) {
 }
 
 async function getClientOrThrow(id: string) {
-  const client = await prisma.client.findUnique({
-    where: { id },
+  const client = await prisma.client.findFirst({
+    where: {
+      archivedAt: null,
+      OR: [{ id }, { clientNumber: id }]
+    },
     include: clientInclude
   });
 
-  if (!client || client.archivedAt) {
+  if (!client) {
     throw new Error("CLIENT_NOT_FOUND");
   }
 

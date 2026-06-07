@@ -9,6 +9,7 @@ export {
   type ClientContact,
   type ClientContactInput,
   type ClientCreatePayload,
+  type ClientQuoteSummary,
   type ClientRecord,
   type ClientSite,
   type ClientSiteInput,
