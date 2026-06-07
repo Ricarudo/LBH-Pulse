@@ -2,6 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { toAuthenticatedUser, type AuthenticatedUser } from "@/lib/auth/permissions";
 import { recordActivity } from "@/lib/services/activityService";
+import type { ClientQuoteSummary } from "@/types/client";
 import type {
   RequestActivityType,
   RequestAssignee,
@@ -401,6 +402,61 @@ export async function listRequests() {
   });
 
   return requests.map(toRequestRecord);
+}
+
+export async function listClientRelatedWork(clientId: string) {
+  const client = await prisma.client.findFirst({
+    where: {
+      archivedAt: null,
+      OR: [{ id: clientId }, { clientNumber: clientId }]
+    },
+    select: {
+      id: true
+    }
+  });
+
+  if (!client) {
+    throw new Error("CLIENT_NOT_FOUND");
+  }
+
+  const clientRequests = await prisma.request.findMany({
+    where: {
+      clientId: client.id,
+      archivedAt: null
+    },
+    include: requestInclude,
+    orderBy: [
+      {
+        updatedAt: "desc"
+      }
+    ]
+  });
+
+  const quoteById = new Map<string, ClientQuoteSummary>();
+
+  for (const request of clientRequests) {
+    if (!request.relatedQuote) {
+      continue;
+    }
+
+    quoteById.set(request.relatedQuote.id, {
+      id: request.relatedQuote.id,
+      quoteNumber: request.relatedQuote.quoteNumber,
+      title: request.relatedQuote.title,
+      status: request.relatedQuote.status,
+      owner: request.relatedQuote.owner,
+      total: Number(request.relatedQuote.total),
+      createdAt: formatDateInput(request.relatedQuote.createdAt),
+      updatedAt: request.relatedQuote.updatedAt.toISOString(),
+      requestId: request.id,
+      requestNumber: request.requestNumber
+    });
+  }
+
+  return {
+    requests: clientRequests.map(toRequestRecord),
+    quotes: Array.from(quoteById.values())
+  };
 }
 
 export async function listRequestAssignees() {
