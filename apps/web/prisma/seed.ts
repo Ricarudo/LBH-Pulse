@@ -869,7 +869,7 @@ async function main() {
   await prisma.clientActivity.deleteMany();
   await prisma.clientService.deleteMany();
   await prisma.clientSite.deleteMany();
-  await prisma.clientContact.deleteMany();
+  await prisma.pointOfContact.deleteMany();
   await prisma.client.deleteMany();
 
   const seededUsers = await Promise.all(
@@ -985,27 +985,6 @@ async function main() {
         lifetimeValue: client.lifetimeValue,
         outstandingBalance: client.outstandingBalance,
         lastActivityAt: client.lastActivityAt,
-        contacts: {
-          create: client.contacts.map((contact, index) => {
-            const [firstName, ...rest] = contact.name.split(" ");
-
-            return {
-              firstName: firstName || "Unknown",
-              lastName: rest.join(" "),
-              title: contact.title,
-              department: contact.department ?? null,
-              email: contact.email,
-              phone: contact.phone,
-              mobile: contact.mobile ?? null,
-              preferredContactMethod: contact.preferredContactMethod ?? "Email",
-              isPrimaryContact: contact.isPrimary ?? index === 0,
-              isBillingContact: contact.isBilling ?? false,
-              isTechnicalContact: contact.isTechnicalContact ?? false,
-              isDecisionMaker: contact.isDecisionMaker ?? false,
-              notes: contact.notes ?? null
-            };
-          })
-        },
         sites: {
           create: client.sites.map((site, index) => ({
             siteName: site.name,
@@ -1031,6 +1010,33 @@ async function main() {
         }
       }
     });
+
+    await Promise.all(
+      client.contacts.map((contact, index) => {
+        const [firstName, ...rest] = contact.name.split(" ");
+
+        return prisma.pointOfContact.create({
+          data: {
+            ownerType: "Client",
+            ownerId: createdClient.id,
+            clientId: createdClient.id,
+            firstName: firstName || "Unknown",
+            lastName: rest.join(" "),
+            title: contact.title,
+            department: contact.department ?? null,
+            email: contact.email,
+            phone: contact.phone,
+            mobile: contact.mobile ?? null,
+            preferredContactMethod: contact.preferredContactMethod ?? "Email",
+            isPrimaryContact: contact.isPrimary ?? index === 0,
+            isBillingContact: contact.isBilling ?? false,
+            isTechnicalContact: contact.isTechnicalContact ?? false,
+            isDecisionMaker: contact.isDecisionMaker ?? false,
+            notes: contact.notes ?? null
+          }
+        });
+      })
+    );
 
     await createActivity({
       relatedEntityType: "Client",

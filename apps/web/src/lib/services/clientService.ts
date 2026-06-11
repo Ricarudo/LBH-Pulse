@@ -14,6 +14,8 @@ import type {
   UpdateClientSiteInput
 } from "@/lib/validations/client";
 
+const CLIENT_OWNER_TYPE = "Client";
+
 const clientInclude = {
   contacts: {
     include: {
@@ -298,6 +300,8 @@ function contactCreateData(
   siteId?: string | null
 ) {
   return {
+    ownerType: CLIENT_OWNER_TYPE,
+    ownerId: clientId,
     clientId,
     siteId: siteId || null,
     firstName: contact.firstName || "Unknown",
@@ -403,7 +407,7 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
           ? siteIdByLocalId.get(contact.siteLocalId)
           : undefined);
 
-      await tx.clientContact.create({
+      await tx.pointOfContact.create({
         data: contactCreateData(
           createdClient.id,
           contact,
@@ -748,8 +752,8 @@ export async function removeClientSite(id: string, siteId: string, user?: Authen
 
   const now = new Date();
   const client = await prisma.$transaction(async (tx) => {
-    await tx.clientContact.updateMany({
-      where: { clientId: id, siteId },
+    await tx.pointOfContact.updateMany({
+      where: { ownerType: CLIENT_OWNER_TYPE, ownerId: id, siteId },
       data: { siteId: null }
     });
 
@@ -800,13 +804,13 @@ export async function addClientContact(id: string, input: ClientContactInput, us
   const now = new Date();
   const client = await prisma.$transaction(async (tx) => {
     if (input.isPrimaryContact) {
-      await tx.clientContact.updateMany({
-        where: { clientId: id },
+      await tx.pointOfContact.updateMany({
+        where: { ownerType: CLIENT_OWNER_TYPE, ownerId: id },
         data: { isPrimaryContact: false }
       });
     }
 
-    await tx.clientContact.create({
+    await tx.pointOfContact.create({
       data: contactCreateData(id, input, input.isPrimaryContact, input.siteId)
     });
 
@@ -855,14 +859,14 @@ export async function updateClientContact(
   const now = new Date();
   const client = await prisma.$transaction(async (tx) => {
     if (input.isPrimaryContact) {
-      await tx.clientContact.updateMany({
-        where: { clientId: id, NOT: { id: contactId } },
+      await tx.pointOfContact.updateMany({
+        where: { ownerType: CLIENT_OWNER_TYPE, ownerId: id, NOT: { id: contactId } },
         data: { isPrimaryContact: false }
       });
     }
 
-    const result = await tx.clientContact.updateMany({
-      where: { id: contactId, clientId: id },
+    const result = await tx.pointOfContact.updateMany({
+      where: { id: contactId, ownerType: CLIENT_OWNER_TYPE, ownerId: id },
       data: {
         ...(input.siteId !== undefined ? { siteId: input.siteId || null } : {}),
         ...(input.firstName !== undefined
@@ -937,8 +941,8 @@ export async function removeClientContact(id: string, contactId: string, user?: 
 
   const now = new Date();
   const client = await prisma.$transaction(async (tx) => {
-    const result = await tx.clientContact.deleteMany({
-      where: { id: contactId, clientId: id }
+    const result = await tx.pointOfContact.deleteMany({
+      where: { id: contactId, ownerType: CLIENT_OWNER_TYPE, ownerId: id }
     });
 
     if (result.count === 0) {

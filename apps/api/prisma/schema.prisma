@@ -50,7 +50,7 @@ model Request {
   assignedTo      LocalUser?          @relation("AssignedRequests", fields: [assignedToId], references: [id], onDelete: SetNull)
   createdBy       LocalUser?          @relation("CreatedRequests", fields: [createdById], references: [id], onDelete: SetNull)
   client          Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  contact         ClientContact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contact         PointOfContact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
   site            ClientSite?         @relation(fields: [siteId], references: [id], onDelete: SetNull)
   relatedQuote    Quote?              @relation(fields: [relatedQuoteId], references: [id], onDelete: SetNull)
   checklistTemplate RequestChecklistTemplate? @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
@@ -311,7 +311,7 @@ model Client {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   lastActivityAt     DateTime?
-  contacts           ClientContact[]
+  contacts           PointOfContact[]
   sites              ClientSite[]
   services           ClientService[]
   activities         ClientActivity[]
@@ -323,9 +323,11 @@ model Client {
   @@index([archivedAt])
 }
 
-model ClientContact {
+model PointOfContact {
   id                     String      @id @default(cuid())
-  clientId               String
+  ownerType              String      @default("Client")
+  ownerId                String
+  clientId               String?
   siteId                 String?
   role                   String?     @default("Primary")
   name                   String?
@@ -346,10 +348,11 @@ model ClientContact {
   notes                  String?
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
-  client                 Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client                 Client?     @relation(fields: [clientId], references: [id], onDelete: Cascade)
   site                   ClientSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
   requests               Request[]
 
+  @@index([ownerType, ownerId])
   @@index([clientId])
   @@index([siteId])
   @@index([email])
@@ -381,7 +384,7 @@ model ClientSite {
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   client               Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  contacts             ClientContact[]
+  contacts             PointOfContact[]
   requests             Request[]
 
   @@index([clientId])
