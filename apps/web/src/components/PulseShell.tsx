@@ -133,6 +133,14 @@ function getShellRouteMeta(pathname: string): ShellRouteMeta {
     };
   }
 
+  if (pathname.startsWith("/contacts")) {
+    return {
+      activePage: "directory",
+      title: "Directory",
+      subtitle: "People connected to client accounts, sites, and relationships."
+    };
+  }
+
   if (pathname.startsWith("/directory")) {
     return {
       activePage: "directory",
@@ -643,7 +651,9 @@ function PulseShellFrame({
                     activeShellPage === item.key ||
                     pathname === item.href ||
                     (item.key === "requests" && pathname === "/leads") ||
-                    (item.key === "directory" && pathname.startsWith("/clients"))
+                    (item.key === "directory" &&
+                      (pathname.startsWith("/clients") ||
+                        pathname.startsWith("/contacts")))
                       ? "nav-link nav-link-active"
                       : "nav-link"
                   }

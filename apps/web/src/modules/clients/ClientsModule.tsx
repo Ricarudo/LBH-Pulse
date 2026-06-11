@@ -1,20 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
+  ArrowLeft,
   Building2,
   Filter,
+  Plus,
   Search,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  clientIndustries,
   clientOwners,
   clientStatuses,
   clientTypes,
   formatMoney,
+  type ClientCreatePayload,
+  type ClientIndustry,
   type ClientRecord,
   type ClientStatus,
   type ClientType
@@ -23,6 +29,67 @@ import {
 type ClientListResponse = {
   clients: ClientRecord[];
 };
+
+type ClientCreateResponse = {
+  client: ClientRecord;
+};
+
+type ApiIssue = {
+  path?: Array<string | number>;
+  message?: string;
+};
+
+type ApiErrorBody = {
+  error?: string;
+  fields?: Record<string, string>;
+  issues?: ApiIssue[];
+};
+
+class ClientRequestError extends Error {
+  fields: Record<string, string>;
+  issues: ApiIssue[];
+
+  constructor(message: string, fields?: Record<string, string>, issues?: ApiIssue[]) {
+    super(message);
+    this.name = "ClientRequestError";
+    this.fields = fields ?? {};
+    this.issues = issues ?? [];
+  }
+}
+
+type QuickCreateForm = {
+  clientName: string;
+  industry: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  contactRole: string;
+};
+
+type QuickCreateField = keyof QuickCreateForm;
+type QuickCreateErrors = Partial<Record<QuickCreateField | "form", string>>;
+
+const quickCreateLimits = {
+  clientName: 160,
+  contactName: 120,
+  contactEmail: 254,
+  contactPhone: 40,
+  contactRole: 120
+};
+
+const unsafeFreeTextPattern = /[<>]|javascript\s*:/i;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function createBlankQuickCreateForm(): QuickCreateForm {
+  return {
+    clientName: "",
+    industry: "",
+    contactName: "",
+    contactEmail: "",
+    contactPhone: "",
+    contactRole: ""
+  };
+}
 
 function statusClass(status: ClientStatus) {
   if (status === "On Hold") {
@@ -67,6 +134,230 @@ function compactValue(value: string | number | null | undefined) {
   return value?.trim() || "Not captured";
 }
 
+function normalizeText(value: string, collapseSpaces = false) {
+  const trimmed = value.trim();
+  return collapseSpaces ? trimmed.replace(/\s+/g, " ") : trimmed;
+}
+
+function normalizeEmail(value: string) {
+  return normalizeText(value).toLowerCase();
+}
+
+function normalizePhone(value: string) {
+  return normalizeText(value, true);
+}
+
+function hasUnsafeFreeText(value: string) {
+  return unsafeFreeTextPattern.test(value);
+}
+
+function isClientIndustry(value: string): value is ClientIndustry {
+  return clientIndustries.includes(value as ClientIndustry);
+}
+
+function validateTextField(
+  errors: QuickCreateErrors,
+  field: QuickCreateField,
+  value: string,
+  limit: number
+) {
+  if (value.length > limit) {
+    errors[field] = `Must be ${limit} characters or less.`;
+    return;
+  }
+
+  if (hasUnsafeFreeText(value)) {
+    errors[field] = "Remove HTML or script content.";
+  }
+}
+
+function validateQuickCreateForm(form: QuickCreateForm) {
+  const normalized: QuickCreateForm = {
+    clientName: normalizeText(form.clientName, true),
+    industry: normalizeText(form.industry),
+    contactName: normalizeText(form.contactName, true),
+    contactEmail: normalizeEmail(form.contactEmail),
+    contactPhone: normalizePhone(form.contactPhone),
+    contactRole: normalizeText(form.contactRole, true)
+  };
+  const errors: QuickCreateErrors = {};
+
+  if (!normalized.clientName) {
+    errors.clientName = "Client Name is required.";
+  } else {
+    validateTextField(
+      errors,
+      "clientName",
+      normalized.clientName,
+      quickCreateLimits.clientName
+    );
+  }
+
+  if (!normalized.industry) {
+    errors.industry = "Client Industry is required.";
+  } else if (!isClientIndustry(normalized.industry)) {
+    errors.industry = "Select a valid client industry.";
+  }
+
+  validateTextField(
+    errors,
+    "contactName",
+    normalized.contactName,
+    quickCreateLimits.contactName
+  );
+  validateTextField(
+    errors,
+    "contactPhone",
+    normalized.contactPhone,
+    quickCreateLimits.contactPhone
+  );
+  validateTextField(
+    errors,
+    "contactRole",
+    normalized.contactRole,
+    quickCreateLimits.contactRole
+  );
+
+  if (normalized.contactEmail.length > quickCreateLimits.contactEmail) {
+    errors.contactEmail = `Must be ${quickCreateLimits.contactEmail} characters or less.`;
+  } else if (
+    normalized.contactEmail &&
+    !emailPattern.test(normalized.contactEmail)
+  ) {
+    errors.contactEmail = "Enter a valid email address.";
+  }
+
+  return { normalized, errors };
+}
+
+function splitContactName(contactName: string) {
+  const [firstName = "", ...lastNameParts] = contactName.split(" ");
+  return {
+    firstName,
+    lastName: lastNameParts.join(" ")
+  };
+}
+
+function buildQuickCreatePayload(form: QuickCreateForm): ClientCreatePayload {
+  const contactProvided = Boolean(
+    form.contactName || form.contactEmail || form.contactPhone || form.contactRole
+  );
+  const contacts: ClientCreatePayload["contacts"] = [];
+
+  if (contactProvided) {
+    const { firstName, lastName } = splitContactName(form.contactName);
+
+    contacts.push({
+      firstName,
+      lastName,
+      title: form.contactRole,
+      department: "",
+      email: form.contactEmail,
+      phone: form.contactPhone,
+      mobile: "",
+      preferredContactMethod: form.contactEmail
+        ? "Email"
+        : form.contactPhone
+          ? "Phone"
+          : "Email",
+      isPrimaryContact: true,
+      isBillingContact: false,
+      isTechnicalContact: false,
+      isDecisionMaker: false,
+      notes: ""
+    });
+  }
+
+  return {
+    legalName: form.clientName,
+    displayName: form.clientName,
+    clientType: "Commercial",
+    industry: form.industry,
+    website: "",
+    status: "Prospect",
+    accountOwner: "Unassigned",
+    mainPhone: "",
+    mainEmail: "",
+    taxId: "",
+    paymentTerms: "",
+    billingEmail: "",
+    preferredCurrency: "USD",
+    preferredLanguage: "English",
+    brandPreferences: "",
+    technologyPreferences: "",
+    generalNotes: "",
+    preferredVendors: "",
+    preferredCameraBrand: "",
+    preferredAccessControlBrand: "",
+    preferredNetworkBrand: "",
+    preferredCablingBrand: "",
+    standardTechnologies: "",
+    documentationRequirements: "",
+    invoiceRequirements: "",
+    insuranceRequirements: "",
+    purchaseOrderRequired: false,
+    sites: [],
+    contacts,
+    serviceProfile: []
+  };
+}
+
+function popupFieldFromApiPath(path: string): QuickCreateField | "form" {
+  if (path === "displayName" || path === "legalName") {
+    return "clientName";
+  }
+
+  if (path === "industry") {
+    return "industry";
+  }
+
+  if (path.startsWith("contacts.0.")) {
+    const contactField = path.replace("contacts.0.", "");
+
+    if (contactField === "firstName" || contactField === "lastName") {
+      return "contactName";
+    }
+
+    if (contactField === "email") {
+      return "contactEmail";
+    }
+
+    if (contactField === "phone" || contactField === "mobile") {
+      return "contactPhone";
+    }
+
+    if (contactField === "title") {
+      return "contactRole";
+    }
+  }
+
+  return "form";
+}
+
+function mapApiErrorsToPopup(error: ClientRequestError): QuickCreateErrors {
+  const mapped: QuickCreateErrors = {};
+
+  for (const [path, message] of Object.entries(error.fields)) {
+    const field = popupFieldFromApiPath(path);
+    mapped[field] ??= message;
+  }
+
+  for (const issue of error.issues) {
+    if (!issue.message || !issue.path) {
+      continue;
+    }
+
+    const field = popupFieldFromApiPath(issue.path.map(String).join("."));
+    mapped[field] ??= issue.message;
+  }
+
+  if (!Object.keys(mapped).length) {
+    mapped.form = error.message;
+  }
+
+  return mapped;
+}
+
 async function requestJson<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -76,11 +367,13 @@ async function requestJson<T>(url: string, init?: RequestInit) {
     }
   });
 
-  const data = await response.json().catch(() => ({}));
+  const data = (await response.json().catch(() => ({}))) as ApiErrorBody;
 
   if (!response.ok) {
-    throw new Error(
-      typeof data.error === "string" ? data.error : "Client request failed."
+    throw new ClientRequestError(
+      typeof data.error === "string" ? data.error : "Client request failed.",
+      data.fields,
+      data.issues
     );
   }
 
@@ -88,6 +381,7 @@ async function requestJson<T>(url: string, init?: RequestInit) {
 }
 
 export function ClientsModule() {
+  const router = useRouter();
   const { user } = useCurrentUser();
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -96,6 +390,11 @@ export function ClientsModule() {
   const [ownerFilter, setOwnerFilter] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
+  const [quickCreateForm, setQuickCreateForm] = useState(createBlankQuickCreateForm);
+  const [quickCreateErrors, setQuickCreateErrors] = useState<QuickCreateErrors>({});
+  const [isCreatingClient, setIsCreatingClient] = useState(false);
+  const clientNameInputRef = useRef<HTMLInputElement>(null);
 
   const canWriteCrm = canRole(user?.role, "crm:write");
 
@@ -127,6 +426,35 @@ export function ClientsModule() {
 
     void loadClients();
   }, []);
+
+  useEffect(() => {
+    if (!isQuickCreateOpen) {
+      return;
+    }
+
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    const focusTimer = window.setTimeout(() => {
+      clientNameInputRef.current?.focus();
+    }, 0);
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !isCreatingClient) {
+        setIsQuickCreateOpen(false);
+      }
+    }
+
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [isCreatingClient, isQuickCreateOpen]);
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -173,6 +501,74 @@ export function ClientsModule() {
     setOwnerFilter("All");
   }
 
+  function openQuickCreateDialog() {
+    setQuickCreateForm(createBlankQuickCreateForm());
+    setQuickCreateErrors({});
+    setIsQuickCreateOpen(true);
+  }
+
+  function closeQuickCreateDialog() {
+    if (isCreatingClient) {
+      return;
+    }
+
+    setIsQuickCreateOpen(false);
+    setQuickCreateErrors({});
+  }
+
+  function updateQuickCreateField(field: QuickCreateField, value: string) {
+    setQuickCreateForm((current) => ({
+      ...current,
+      [field]: value
+    }));
+    setQuickCreateErrors((current) => {
+      if (!current[field] && !current.form) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[field];
+      delete next.form;
+      return next;
+    });
+  }
+
+  async function handleQuickCreateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const { normalized, errors } = validateQuickCreateForm(quickCreateForm);
+    setQuickCreateForm(normalized);
+
+    if (Object.keys(errors).length) {
+      setQuickCreateErrors(errors);
+      return;
+    }
+
+    try {
+      setIsCreatingClient(true);
+      setQuickCreateErrors({});
+      const data = await requestJson<ClientCreateResponse>("/api/clients", {
+        method: "POST",
+        body: JSON.stringify(buildQuickCreatePayload(normalized))
+      });
+
+      router.push(`/clients/${data.client.id}`);
+    } catch (error) {
+      if (error instanceof ClientRequestError) {
+        setQuickCreateErrors(mapApiErrorsToPopup(error));
+      } else {
+        setQuickCreateErrors({
+          form:
+            error instanceof Error
+              ? error.message
+              : "Unable to create this client."
+        });
+      }
+    } finally {
+      setIsCreatingClient(false);
+    }
+  }
+
   return (
     <div className="clients-module">
       <section className="clients-command-bar">
@@ -181,10 +577,15 @@ export function ClientsModule() {
           <h2>Clients</h2>
         </div>
         <div className="clients-hero-actions">
+          <Link className="toolbar-button compact" href="/directory">
+            <ArrowLeft size={16} />
+            Directory
+          </Link>
           {canWriteCrm ? (
-            <Link className="primary-button" href="/clients/new">
+            <button className="primary-button" type="button" onClick={openQuickCreateDialog}>
+              <Plus size={17} />
               New Client
-            </Link>
+            </button>
           ) : null}
         </div>
       </section>
@@ -353,9 +754,14 @@ export function ClientsModule() {
                   </button>
                 ) : null}
                 {canWriteCrm ? (
-                  <Link className="primary-button" href="/clients/new">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={openQuickCreateDialog}
+                  >
+                    <Plus size={17} />
                     Create new client
-                  </Link>
+                  </button>
                 ) : null}
               </div>
             </div>
@@ -363,6 +769,208 @@ export function ClientsModule() {
         </div>
 
       </section>
+      {isQuickCreateOpen ? (
+        <div
+          className="client-create-dialog-scrim"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeQuickCreateDialog();
+            }
+          }}
+        >
+          <form
+            className="client-create-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quick-client-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={handleQuickCreateSubmit}
+          >
+            <div className="client-create-dialog-header">
+              <div>
+                <p className="eyebrow">Directory</p>
+                <h3 id="quick-client-dialog-title">Create New Client</h3>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close create client popup"
+                onClick={closeQuickCreateDialog}
+                disabled={isCreatingClient}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="material-field-grid">
+              <label className="material-field">
+                <span>
+                  Client Name <small>Required</small>
+                </span>
+                <input
+                  ref={clientNameInputRef}
+                  value={quickCreateForm.clientName}
+                  maxLength={quickCreateLimits.clientName + 16}
+                  aria-invalid={Boolean(quickCreateErrors.clientName)}
+                  aria-describedby={
+                    quickCreateErrors.clientName ? "quick-client-name-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("clientName", event.target.value)
+                  }
+                />
+                {quickCreateErrors.clientName ? (
+                  <small id="quick-client-name-error" className="field-error" role="alert">
+                    {quickCreateErrors.clientName}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>
+                  Client Industry <small>Required</small>
+                </span>
+                <select
+                  value={quickCreateForm.industry}
+                  aria-invalid={Boolean(quickCreateErrors.industry)}
+                  aria-describedby={
+                    quickCreateErrors.industry ? "quick-client-industry-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("industry", event.target.value)
+                  }
+                >
+                  <option value="">Select industry</option>
+                  {clientIndustries.map((industry) => (
+                    <option key={industry} value={industry}>
+                      {industry}
+                    </option>
+                  ))}
+                </select>
+                {quickCreateErrors.industry ? (
+                  <small
+                    id="quick-client-industry-error"
+                    className="field-error"
+                    role="alert"
+                  >
+                    {quickCreateErrors.industry}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>Point of Contact Name</span>
+                <input
+                  value={quickCreateForm.contactName}
+                  maxLength={quickCreateLimits.contactName + 16}
+                  aria-invalid={Boolean(quickCreateErrors.contactName)}
+                  aria-describedby={
+                    quickCreateErrors.contactName ? "quick-contact-name-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("contactName", event.target.value)
+                  }
+                />
+                {quickCreateErrors.contactName ? (
+                  <small id="quick-contact-name-error" className="field-error" role="alert">
+                    {quickCreateErrors.contactName}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>Point of Contact Email</span>
+                <input
+                  type="email"
+                  value={quickCreateForm.contactEmail}
+                  maxLength={quickCreateLimits.contactEmail + 16}
+                  aria-invalid={Boolean(quickCreateErrors.contactEmail)}
+                  aria-describedby={
+                    quickCreateErrors.contactEmail ? "quick-contact-email-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("contactEmail", event.target.value)
+                  }
+                />
+                {quickCreateErrors.contactEmail ? (
+                  <small id="quick-contact-email-error" className="field-error" role="alert">
+                    {quickCreateErrors.contactEmail}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>Point of Contact Phone</span>
+                <input
+                  value={quickCreateForm.contactPhone}
+                  maxLength={quickCreateLimits.contactPhone + 16}
+                  aria-invalid={Boolean(quickCreateErrors.contactPhone)}
+                  aria-describedby={
+                    quickCreateErrors.contactPhone ? "quick-contact-phone-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("contactPhone", event.target.value)
+                  }
+                />
+                {quickCreateErrors.contactPhone ? (
+                  <small id="quick-contact-phone-error" className="field-error" role="alert">
+                    {quickCreateErrors.contactPhone}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>Point of Contact Role</span>
+                <input
+                  value={quickCreateForm.contactRole}
+                  maxLength={quickCreateLimits.contactRole + 16}
+                  aria-invalid={Boolean(quickCreateErrors.contactRole)}
+                  aria-describedby={
+                    quickCreateErrors.contactRole ? "quick-contact-role-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("contactRole", event.target.value)
+                  }
+                />
+                {quickCreateErrors.contactRole ? (
+                  <small id="quick-contact-role-error" className="field-error" role="alert">
+                    {quickCreateErrors.contactRole}
+                  </small>
+                ) : null}
+              </label>
+            </div>
+
+            {quickCreateErrors.form ? (
+              <div className="form-alert error">{quickCreateErrors.form}</div>
+            ) : null}
+
+            <div className="client-create-dialog-actions">
+              <button
+                className="toolbar-button compact"
+                type="button"
+                onClick={closeQuickCreateDialog}
+                disabled={isCreatingClient}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-button compact"
+                type="submit"
+                disabled={isCreatingClient}
+              >
+                <Plus size={17} />
+                {isCreatingClient ? "Creating..." : "Create Client"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
