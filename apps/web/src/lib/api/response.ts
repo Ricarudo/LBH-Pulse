@@ -2,6 +2,17 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { AuthError } from "@/lib/auth/session";
 
+function zodFieldErrors(error: ZodError) {
+  const fields: Record<string, string> = {};
+
+  for (const issue of error.issues) {
+    const path = issue.path.join(".") || "form";
+    fields[path] ??= issue.message;
+  }
+
+  return fields;
+}
+
 export function apiError(error: unknown) {
   if (error instanceof AuthError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
@@ -11,6 +22,7 @@ export function apiError(error: unknown) {
     return NextResponse.json(
       {
         error: "Validation failed.",
+        fields: zodFieldErrors(error),
         issues: error.issues
       },
       { status: 400 }

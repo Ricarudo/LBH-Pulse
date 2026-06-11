@@ -6,6 +6,7 @@ import { Building2, Plus } from "lucide-react";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
+  clientIndustries,
   clientOwners,
   clientStatuses,
   clientTypes,
@@ -294,6 +295,10 @@ export function ClientCreateForm() {
         return { message: "Legal name or display name is required.", step };
       }
 
+      if (!overview.industry.trim()) {
+        return { message: "Industry is required.", step };
+      }
+
       if (!isEmailValid(overview.mainEmail)) {
         return { message: "Main email needs a valid email format.", step };
       }
@@ -526,13 +531,20 @@ export function ClientCreateForm() {
             </select>
           </label>
           <label>
-            Industry
-            <input
+            Industry <span className="required-hint">Required</span>
+            <select
               value={overview.industry}
               onChange={(event) =>
                 setOverview({ ...overview, industry: event.target.value })
               }
-            />
+            >
+              <option value="">Select industry</option>
+              {clientIndustries.map((industry) => (
+                <option key={industry} value={industry}>
+                  {industry}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Website

@@ -1,4 +1,5 @@
 export {
+  clientIndustries,
   clientOwners,
   clientSiteTypes,
   clientStatuses,
@@ -9,6 +10,7 @@ export {
   type ClientContact,
   type ClientContactInput,
   type ClientCreatePayload,
+  type ClientIndustry,
   type ClientQuoteSummary,
   type ClientRecord,
   type ClientSite,

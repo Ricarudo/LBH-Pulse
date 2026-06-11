@@ -29,6 +29,9 @@ describe("apiErrorPayload", () => {
       assert.equal(payload?.status, 400);
       assert.equal(payload?.body.error, "Validation failed.");
       assert.ok(Array.isArray(payload?.body.issues));
+      assert.deepEqual(payload?.body.fields, {
+        email: "Invalid email address"
+      });
     }
   });
 

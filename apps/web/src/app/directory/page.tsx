@@ -22,7 +22,8 @@ const directorySections = [
   {
     label: "Contacts",
     detail: "People connected to clients, partners, vendors, and projects.",
-    status: "Coming soon",
+    href: "/contacts",
+    status: "Active",
     icon: UserRound
   },
   {
@@ -74,7 +75,7 @@ export default function DirectoryPage() {
         <div className="section-heading">
           <div>
             <h2 id="directory-title">Directory Records</h2>
-            <p>Clients are active today. The remaining relationship records will be promoted into searchable modules as the domain model expands.</p>
+            <p>Clients and contacts are active today. The remaining relationship records will be promoted into searchable modules as the domain model expands.</p>
           </div>
         </div>
 

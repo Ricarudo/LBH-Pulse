@@ -20,6 +20,30 @@ export const clientTypes = [
 
 export type ClientType = (typeof clientTypes)[number];
 
+export const clientIndustries = [
+  "Agriculture",
+  "Aerospace",
+  "Architecture",
+  "Corporate",
+  "Construction",
+  "Defense",
+  "Education",
+  "Entertainment",
+  "Finance",
+  "Food",
+  "Healthcare",
+  "Hospitality",
+  "House of Worship",
+  "Local Government",
+  "Federal Government",
+  "Retail",
+  "Manufacturing",
+  "Technology",
+  "Other"
+] as const;
+
+export type ClientIndustry = (typeof clientIndustries)[number];
+
 export const clientSiteTypes = [
   "Main Office",
   "Warehouse",

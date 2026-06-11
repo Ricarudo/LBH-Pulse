@@ -62,6 +62,17 @@ const errorMap: Record<string, ErrorPayload> = {
   CLIENT_NOT_FOUND: { status: 404, body: { error: "Client not found." } }
 };
 
+function zodFieldErrors(error: ZodError) {
+  const fields: Record<string, string> = {};
+
+  for (const issue of error.issues) {
+    const path = issue.path.join(".") || "form";
+    fields[path] ??= issue.message;
+  }
+
+  return fields;
+}
+
 export function apiErrorPayload(error: unknown): ErrorPayload | null {
   if (error instanceof AuthError) {
     return {
@@ -75,6 +86,7 @@ export function apiErrorPayload(error: unknown): ErrorPayload | null {
       status: 400,
       body: {
         error: "Validation failed.",
+        fields: zodFieldErrors(error),
         issues: error.issues
       }
     };
