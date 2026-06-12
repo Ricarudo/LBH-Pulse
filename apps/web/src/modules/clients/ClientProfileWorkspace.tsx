@@ -235,8 +235,8 @@ function FieldList({
 
 function ContactFlags({ contact }: { contact: ClientContact }) {
   const flags = [
-    contact.isPrimaryContact ? "Primary" : "",
-    contact.isBillingContact ? "Billing" : "",
+    contact.isPrimary || contact.isPrimaryContact ? "Primary" : "",
+    contact.isBilling || contact.isBillingContact ? "Billing" : "",
     contact.isTechnicalContact ? "Technical" : "",
     contact.isDecisionMaker ? "Decision Maker" : ""
   ].filter(Boolean);
@@ -497,7 +497,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   const [workspaceFilter, setWorkspaceFilter] = useState<ClientWorkFilter>("All Records");
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
 
-  const canWriteCrm = canRole(user?.role, "crm:write");
+  const canEditClients = user?.role === "Admin";
   const canWriteActivity = canRole(user?.role, "crm:activity:write");
 
   useEffect(() => {
@@ -769,13 +769,12 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
 
   const primarySite = client.sites.find((site) => site.isPrimarySite) ?? client.sites[0];
   const primarySiteName = primarySite?.siteName || client.primarySite;
-  const primaryContact =
-    client.contacts.find((contact) => contact.isPrimaryContact) ??
-    client.contacts[0] ??
-    (client.primaryContact.name ? client.primaryContact : undefined);
-  const billingContact =
-    client.contacts.find((contact) => contact.isBillingContact) ??
-    (client.billingContact.name ? client.billingContact : undefined);
+  const primaryContact = client.contacts.find(
+    (contact) => contact.isPrimary || contact.isPrimaryContact
+  );
+  const billingContact = client.contacts.find(
+    (contact) => contact.isBilling || contact.isBillingContact
+  );
   const importantNotes = client.importantNotes || client.generalNotes;
   const serviceProfile = client.serviceProfile.filter(Boolean);
 
@@ -791,24 +790,17 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
           <h1>{client.displayName}</h1>
           <div className="request-preview-badges">
             <span className={clientStatusClass(client.status)}>{client.status}</span>
-            <span className="request-inline-flags">{client.clientType}</span>
+            <span className="request-inline-flags">{compactValue(client.industry)}</span>
             <span className="request-inline-flags">{client.accountOwner}</span>
           </div>
         </div>
         <div className="client-360-actions">
-          <button
-            className="toolbar-button compact"
-            type="button"
-            onClick={() =>
-              setMessage(
-                `Edit workflow placeholder: ${client.displayName} can be updated through the client API.`
-              )
-            }
-            disabled={!canWriteCrm}
-          >
-            <Edit3 size={16} />
-            Edit Client
-          </button>
+          {canEditClients ? (
+            <Link className="toolbar-button compact" href={`/directory/clients/${client.id}/edit`}>
+              <Edit3 size={16} />
+              Edit Client
+            </Link>
+          ) : null}
           {canWriteActivity ? (
             <div className="client-360-more-actions">
               <button
@@ -852,7 +844,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               <h2>{client.displayName}</h2>
               <div className="client-360-profile-badges">
                 <span className={clientStatusClass(client.status)}>{client.status}</span>
-                <span className="request-inline-flags">{client.clientType}</span>
+                <span className="request-inline-flags">{compactValue(client.industry)}</span>
               </div>
             </div>
           </div>
@@ -873,11 +865,11 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
             <div className="client-360-channel-list">
               <span>
                 <Phone size={14} />
-                {compactValue(client.mainPhone)}
+                {primaryContact ? compactValue(primaryContact.phone || primaryContact.mobile) : "No primary contact selected."}
               </span>
               <span>
                 <Mail size={14} />
-                {compactValue(client.mainEmail)}
+                {primaryContact ? compactValue(primaryContact.email) : "No primary contact selected."}
               </span>
               <span>
                 <Globe size={14} />
@@ -896,7 +888,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
             {primaryContact?.name ? (
               <ContactSummary contact={primaryContact} />
             ) : (
-              <p className="lead-notes">No primary contact captured.</p>
+              <p className="lead-notes">No primary contact selected.</p>
             )}
           </ProfileSection>
 
@@ -1003,7 +995,8 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                     <h3>Relationship</h3>
                     <FieldList
                       items={[
-                        { label: "Client Type", value: client.clientType },
+                        { label: "Industry", value: client.industry },
+                        { label: "Source", value: client.source },
                         { label: "Payment Terms", value: client.paymentTerms },
                         { label: "Open Opportunities", value: client.openOpportunities },
                         { label: "Created", value: displayDate(client.createdAt) },
@@ -1015,7 +1008,8 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                     <h3>Billing</h3>
                     <FieldList
                       items={[
-                        { label: "Billing Email", value: client.billingEmail },
+                        { label: "Billing Contact", value: billingContact?.name },
+                        { label: "Billing Email", value: billingContact?.email },
                         { label: "Currency", value: client.preferredCurrency },
                         { label: "Tax ID", value: client.taxId },
                         { label: "PO Required", value: client.purchaseOrderRequired ? "Yes" : "No" },
