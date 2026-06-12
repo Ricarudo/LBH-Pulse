@@ -48,6 +48,7 @@ type ClientWithRelations = Prisma.ClientGetPayload<{
 
 const emptyContact: ClientContact = {
   id: "",
+  role: "",
   firstName: "",
   lastName: "",
   name: "Not captured",
@@ -57,6 +58,8 @@ const emptyContact: ClientContact = {
   phone: "",
   mobile: "",
   preferredContactMethod: "",
+  isPrimary: false,
+  isBilling: false,
   isPrimaryContact: false,
   isBillingContact: false,
   isTechnicalContact: false,
@@ -133,17 +136,20 @@ function mapContact(
     id: contact.id,
     siteId: contact.siteId ?? undefined,
     siteName: contact.site?.siteName,
+    role: contact.role ?? "",
     firstName: contact.firstName,
     lastName: contact.lastName,
-    name: fullName(contact.firstName, contact.lastName),
+    name: contact.name ?? fullName(contact.firstName, contact.lastName),
     title: contact.title ?? "",
     department: contact.department ?? "",
     email: contact.email ?? "",
     phone: contact.phone ?? "",
     mobile: contact.mobile ?? "",
     preferredContactMethod: contact.preferredContactMethod ?? "",
-    isPrimaryContact: contact.isPrimaryContact,
-    isBillingContact: contact.isBillingContact,
+    isPrimary: contact.isPrimary,
+    isBilling: contact.isBilling,
+    isPrimaryContact: contact.isPrimary || contact.isPrimaryContact,
+    isBillingContact: contact.isBilling || contact.isBillingContact,
     isTechnicalContact: contact.isTechnicalContact,
     isDecisionMaker: contact.isDecisionMaker,
     notes: contact.notes ?? ""
@@ -182,11 +188,9 @@ function mapSite(site?: ClientWithRelations["sites"][number]): ClientSite {
 
 function toClientRecord(client: ClientWithRelations): ClientRecord {
   const primaryContact =
-    client.contacts.find((contact) => contact.isPrimaryContact) ??
-    client.contacts[0];
+    client.contacts.find((contact) => contact.isPrimary || contact.isPrimaryContact);
   const billingContact =
-    client.contacts.find((contact) => contact.isBillingContact) ??
-    primaryContact;
+    client.contacts.find((contact) => contact.isBilling || contact.isBillingContact);
   const primarySite =
     client.sites.find((site) => site.isPrimarySite) ?? client.sites[0];
 
@@ -196,18 +200,14 @@ function toClientRecord(client: ClientWithRelations): ClientRecord {
     legalName: client.legalName ?? "",
     displayName: client.displayName,
     companyName: client.displayName,
-    clientType: client.clientType as ClientRecord["clientType"],
     industry: client.industry ?? "",
     website: client.website ?? "",
     status: client.status as ClientRecord["status"],
     accountOwner: client.accountOwner,
     primaryContact: mapContact(primaryContact),
     billingContact: mapContact(billingContact),
-    mainPhone: client.mainPhone ?? "",
-    mainEmail: client.mainEmail ?? "",
     taxId: client.taxId ?? "",
     paymentTerms: client.paymentTerms ?? "",
-    billingEmail: client.billingEmail ?? "",
     preferredCurrency: client.preferredCurrency,
     preferredLanguage: client.preferredLanguage,
     primarySite: primarySite?.siteName ?? "",
@@ -304,6 +304,8 @@ function contactCreateData(
     ownerId: clientId,
     clientId,
     siteId: siteId || null,
+    role: contact.role || "Primary",
+    name: contact.name || fullName(contact.firstName, contact.lastName),
     firstName: contact.firstName || "Unknown",
     lastName: contact.lastName || "",
     title: toNullable(contact.title),
@@ -312,12 +314,55 @@ function contactCreateData(
     phone: toNullable(contact.phone),
     mobile: toNullable(contact.mobile),
     preferredContactMethod: contact.preferredContactMethod || "Email",
+    isPrimary: primary,
+    isBilling: contact.isBilling || contact.isBillingContact,
     isPrimaryContact: primary,
-    isBillingContact: contact.isBillingContact,
+    isBillingContact: contact.isBilling || contact.isBillingContact,
     isTechnicalContact: contact.isTechnicalContact,
     isDecisionMaker: contact.isDecisionMaker,
     notes: toNullable(contact.notes)
   };
+}
+
+function hasPrimarySiteContent(site?: UpdateClientInput["primarySite"]) {
+  if (!site) {
+    return false;
+  }
+
+  return [
+    site.siteName,
+    site.addressLine1,
+    site.addressLine2,
+    site.city,
+    site.state,
+    site.postalCode,
+    site.country,
+    site.googleMapsUrl,
+    site.operationalHours,
+    site.accessInstructions,
+    site.parkingInstructions,
+    site.securityRequirements,
+    site.siteNotes
+  ].some(Boolean);
+}
+
+function hasPrimaryContactContent(contact?: UpdateClientInput["primaryContact"]) {
+  if (!contact) {
+    return false;
+  }
+
+  return [
+    contact.name,
+    contact.role,
+    contact.firstName,
+    contact.lastName,
+    contact.title,
+    contact.department,
+    contact.email,
+    contact.phone,
+    contact.mobile,
+    contact.notes
+  ].some(Boolean);
 }
 
 export async function listClients() {
@@ -349,16 +394,12 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
         clientNumber,
         legalName: input.legalName || null,
         displayName: input.displayName,
-        clientType: input.clientType,
         industry: toNullable(input.industry),
         website: toNullable(input.website),
         status: input.status,
         accountOwner: input.accountOwner || "Unassigned",
-        mainPhone: toNullable(input.mainPhone),
-        mainEmail: toNullable(input.mainEmail),
         taxId: toNullable(input.taxId),
         paymentTerms: toNullable(input.paymentTerms),
-        billingEmail: toNullable(input.billingEmail),
         preferredCurrency: input.preferredCurrency || "USD",
         preferredLanguage: input.preferredLanguage || "English",
         brandPreferences: toNullable(input.brandPreferences),
@@ -397,7 +438,7 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
     }
 
     const hasPrimaryContact = input.contacts.some(
-      (contact) => contact.isPrimaryContact
+      (contact) => contact.isPrimary || contact.isPrimaryContact
     );
 
     for (const [index, contact] of input.contacts.entries()) {
@@ -411,7 +452,7 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
         data: contactCreateData(
           createdClient.id,
           contact,
-          contact.isPrimaryContact || (!hasPrimaryContact && index === 0),
+          contact.isPrimary || contact.isPrimaryContact || (!hasPrimaryContact && index === 0),
           siteId
         )
       });
@@ -458,96 +499,317 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
 }
 
 export async function updateClient(id: string, input: UpdateClientInput, user?: AuthenticatedUser) {
-  await getClientOrThrow(id);
-
+  const existing = await getClientOrThrow(id);
   const now = new Date();
-  const client = await prisma.client.update({
-    where: { id },
-    data: {
-      ...(input.legalName !== undefined
-        ? { legalName: input.legalName || null }
-        : {}),
-      ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
-      ...(input.clientType !== undefined ? { clientType: input.clientType } : {}),
-      ...(input.industry !== undefined ? { industry: input.industry || null } : {}),
-      ...(input.website !== undefined ? { website: input.website || null } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.accountOwner !== undefined
-        ? { accountOwner: input.accountOwner || "Unassigned" }
-        : {}),
-      ...(input.mainPhone !== undefined
-        ? { mainPhone: input.mainPhone || null }
-        : {}),
-      ...(input.mainEmail !== undefined
-        ? { mainEmail: input.mainEmail || null }
-        : {}),
-      ...(input.taxId !== undefined ? { taxId: input.taxId || null } : {}),
-      ...(input.paymentTerms !== undefined
-        ? { paymentTerms: input.paymentTerms || null }
-        : {}),
-      ...(input.billingEmail !== undefined
-        ? { billingEmail: input.billingEmail || null }
-        : {}),
-      ...(input.preferredCurrency !== undefined
-        ? { preferredCurrency: input.preferredCurrency || "USD" }
-        : {}),
-      ...(input.preferredLanguage !== undefined
-        ? { preferredLanguage: input.preferredLanguage || "English" }
-        : {}),
-      ...(input.brandPreferences !== undefined
-        ? { brandPreferences: input.brandPreferences || null }
-        : {}),
-      ...(input.technologyPreferences !== undefined
-        ? { technologyPreferences: input.technologyPreferences || null }
-        : {}),
-      ...(input.generalNotes !== undefined
-        ? { generalNotes: input.generalNotes || null }
-        : {}),
-      ...(input.preferredVendors !== undefined
-        ? { preferredVendors: input.preferredVendors || null }
-        : {}),
-      ...(input.preferredCameraBrand !== undefined
-        ? { preferredCameraBrand: input.preferredCameraBrand || null }
-        : {}),
-      ...(input.preferredAccessControlBrand !== undefined
-        ? {
-            preferredAccessControlBrand:
-              input.preferredAccessControlBrand || null
-          }
-        : {}),
-      ...(input.preferredNetworkBrand !== undefined
-        ? { preferredNetworkBrand: input.preferredNetworkBrand || null }
-        : {}),
-      ...(input.preferredCablingBrand !== undefined
-        ? { preferredCablingBrand: input.preferredCablingBrand || null }
-        : {}),
-      ...(input.standardTechnologies !== undefined
-        ? { standardTechnologies: input.standardTechnologies || null }
-        : {}),
-      ...(input.documentationRequirements !== undefined
-        ? { documentationRequirements: input.documentationRequirements || null }
-        : {}),
-      ...(input.invoiceRequirements !== undefined
-        ? { invoiceRequirements: input.invoiceRequirements || null }
-        : {}),
-      ...(input.insuranceRequirements !== undefined
-        ? { insuranceRequirements: input.insuranceRequirements || null }
-        : {}),
-      ...(input.purchaseOrderRequired !== undefined
-        ? { purchaseOrderRequired: input.purchaseOrderRequired }
-        : {}),
-      lastActivityAt: now,
-      activities: {
-        create: {
-          type: "Client",
-          title: "Client updated",
-          detail: "Client account fields were updated.",
-          actor: user?.name ?? "Pulse System",
-          createdAt: now
-        }
+  const expectedUpdatedAt = input.updatedAt ? new Date(input.updatedAt) : undefined;
+
+  const client = await prisma.$transaction(async (tx) => {
+    const updateResult = await tx.client.updateMany({
+      where: {
+        id: existing.id,
+        archivedAt: null,
+        ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {})
+      },
+      data: {
+        ...(input.legalName !== undefined
+          ? { legalName: input.legalName || null }
+          : {}),
+        ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+        ...(input.industry !== undefined ? { industry: input.industry || null } : {}),
+        ...(input.website !== undefined ? { website: input.website || null } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.accountOwner !== undefined
+          ? { accountOwner: input.accountOwner || "Unassigned" }
+          : {}),
+        ...(input.source !== undefined ? { source: input.source || null } : {}),
+        ...(input.taxId !== undefined ? { taxId: input.taxId || null } : {}),
+        ...(input.paymentTerms !== undefined
+          ? { paymentTerms: input.paymentTerms || null }
+          : {}),
+        ...(input.preferredCurrency !== undefined
+          ? { preferredCurrency: input.preferredCurrency || "USD" }
+          : {}),
+        ...(input.preferredLanguage !== undefined
+          ? { preferredLanguage: input.preferredLanguage || "English" }
+          : {}),
+        ...(input.brandPreferences !== undefined
+          ? { brandPreferences: input.brandPreferences || null }
+          : {}),
+        ...(input.technologyPreferences !== undefined
+          ? { technologyPreferences: input.technologyPreferences || null }
+          : {}),
+        ...(input.generalNotes !== undefined
+          ? { generalNotes: input.generalNotes || null }
+          : {}),
+        ...(input.preferredVendors !== undefined
+          ? { preferredVendors: input.preferredVendors || null }
+          : {}),
+        ...(input.preferredCameraBrand !== undefined
+          ? { preferredCameraBrand: input.preferredCameraBrand || null }
+          : {}),
+        ...(input.preferredAccessControlBrand !== undefined
+          ? {
+              preferredAccessControlBrand:
+                input.preferredAccessControlBrand || null
+            }
+          : {}),
+        ...(input.preferredNetworkBrand !== undefined
+          ? { preferredNetworkBrand: input.preferredNetworkBrand || null }
+          : {}),
+        ...(input.preferredCablingBrand !== undefined
+          ? { preferredCablingBrand: input.preferredCablingBrand || null }
+          : {}),
+        ...(input.standardTechnologies !== undefined
+          ? { standardTechnologies: input.standardTechnologies || null }
+          : {}),
+        ...(input.documentationRequirements !== undefined
+          ? { documentationRequirements: input.documentationRequirements || null }
+          : {}),
+        ...(input.invoiceRequirements !== undefined
+          ? { invoiceRequirements: input.invoiceRequirements || null }
+          : {}),
+        ...(input.insuranceRequirements !== undefined
+          ? { insuranceRequirements: input.insuranceRequirements || null }
+          : {}),
+        ...(input.purchaseOrderRequired !== undefined
+          ? { purchaseOrderRequired: input.purchaseOrderRequired }
+          : {}),
+        lastActivityAt: now
       }
-    },
-    include: clientInclude
+    });
+
+    if (updateResult.count === 0) {
+      throw new Error("CLIENT_VERSION_CONFLICT");
+    }
+
+    if (input.serviceProfile !== undefined) {
+      await tx.clientService.deleteMany({ where: { clientId: existing.id } });
+
+      for (const serviceName of Array.from(new Set(input.serviceProfile))) {
+        await tx.clientService.create({
+          data: {
+            clientId: existing.id,
+            serviceName
+          }
+        });
+      }
+    }
+
+    if (input.primarySite?.id) {
+      await tx.clientSite.updateMany({
+        where: { clientId: existing.id, NOT: { id: input.primarySite.id } },
+        data: { isPrimarySite: false }
+      });
+
+      const siteResult = await tx.clientSite.updateMany({
+        where: { id: input.primarySite.id, clientId: existing.id },
+        data: {
+          ...(input.primarySite.siteName !== undefined
+            ? { siteName: input.primarySite.siteName }
+            : {}),
+          ...(input.primarySite.siteType !== undefined
+            ? { siteType: input.primarySite.siteType || "Main Office" }
+            : {}),
+          ...(input.primarySite.addressLine1 !== undefined
+            ? { addressLine1: input.primarySite.addressLine1 || null }
+            : {}),
+          ...(input.primarySite.addressLine2 !== undefined
+            ? { addressLine2: input.primarySite.addressLine2 || null }
+            : {}),
+          ...(input.primarySite.city !== undefined
+            ? { city: input.primarySite.city || null }
+            : {}),
+          ...(input.primarySite.state !== undefined
+            ? { state: input.primarySite.state || null }
+            : {}),
+          ...(input.primarySite.postalCode !== undefined
+            ? { postalCode: input.primarySite.postalCode || null }
+            : {}),
+          ...(input.primarySite.country !== undefined
+            ? { country: input.primarySite.country || "Puerto Rico" }
+            : {}),
+          ...(input.primarySite.googleMapsUrl !== undefined
+            ? { googleMapsUrl: input.primarySite.googleMapsUrl || null }
+            : {}),
+          ...(input.primarySite.latitude !== undefined
+            ? { latitude: toDecimal(input.primarySite.latitude) }
+            : {}),
+          ...(input.primarySite.longitude !== undefined
+            ? { longitude: toDecimal(input.primarySite.longitude) }
+            : {}),
+          ...(input.primarySite.operationalHours !== undefined
+            ? { operationalHours: input.primarySite.operationalHours || null }
+            : {}),
+          ...(input.primarySite.accessInstructions !== undefined
+            ? { accessInstructions: input.primarySite.accessInstructions || null }
+            : {}),
+          ...(input.primarySite.parkingInstructions !== undefined
+            ? { parkingInstructions: input.primarySite.parkingInstructions || null }
+            : {}),
+          ...(input.primarySite.securityRequirements !== undefined
+            ? { securityRequirements: input.primarySite.securityRequirements || null }
+            : {}),
+          ...(input.primarySite.siteNotes !== undefined
+            ? { siteNotes: input.primarySite.siteNotes || null }
+            : {}),
+          isPrimarySite: true
+        }
+      });
+
+      if (siteResult.count === 0) {
+        throw new Error("CLIENT_NOT_FOUND");
+      }
+    } else if (hasPrimarySiteContent(input.primarySite)) {
+      await tx.clientSite.updateMany({
+        where: { clientId: existing.id },
+        data: { isPrimarySite: false }
+      });
+      await tx.clientSite.create({
+        data: siteCreateData(
+          existing.id,
+          {
+            localId: "",
+            siteName: input.primarySite?.siteName ?? "",
+            siteType: input.primarySite?.siteType ?? "Main Office",
+            addressLine1: input.primarySite?.addressLine1 ?? "",
+            addressLine2: input.primarySite?.addressLine2 ?? "",
+            city: input.primarySite?.city ?? "",
+            state: input.primarySite?.state ?? "PR",
+            postalCode: input.primarySite?.postalCode ?? "",
+            country: input.primarySite?.country ?? "Puerto Rico",
+            googleMapsUrl: input.primarySite?.googleMapsUrl ?? "",
+            latitude: input.primarySite?.latitude,
+            longitude: input.primarySite?.longitude,
+            operationalHours: input.primarySite?.operationalHours ?? "",
+            accessInstructions: input.primarySite?.accessInstructions ?? "",
+            parkingInstructions: input.primarySite?.parkingInstructions ?? "",
+            securityRequirements: input.primarySite?.securityRequirements ?? "",
+            siteNotes: input.primarySite?.siteNotes ?? "",
+            isPrimarySite: true
+          },
+          true
+        )
+      });
+    }
+
+    if (input.primaryContact?.id) {
+      await tx.pointOfContact.updateMany({
+        where: { ownerType: CLIENT_OWNER_TYPE, ownerId: existing.id, NOT: { id: input.primaryContact.id } },
+        data: { isPrimary: false, isPrimaryContact: false }
+      });
+
+      const contactResult = await tx.pointOfContact.updateMany({
+        where: { id: input.primaryContact.id, ownerType: CLIENT_OWNER_TYPE, ownerId: existing.id },
+        data: {
+          ...(input.primaryContact.siteId !== undefined
+            ? { siteId: input.primaryContact.siteId || null }
+            : {}),
+          ...(input.primaryContact.name !== undefined
+            ? { name: input.primaryContact.name || null }
+            : {}),
+          ...(input.primaryContact.role !== undefined
+            ? { role: input.primaryContact.role || "Primary" }
+            : {}),
+          ...(input.primaryContact.firstName !== undefined
+            ? { firstName: input.primaryContact.firstName || "Unknown" }
+            : {}),
+          ...(input.primaryContact.lastName !== undefined
+            ? { lastName: input.primaryContact.lastName }
+            : {}),
+          ...(input.primaryContact.title !== undefined
+            ? { title: input.primaryContact.title || null }
+            : {}),
+          ...(input.primaryContact.department !== undefined
+            ? { department: input.primaryContact.department || null }
+            : {}),
+          ...(input.primaryContact.email !== undefined
+            ? { email: input.primaryContact.email || null }
+            : {}),
+          ...(input.primaryContact.phone !== undefined
+            ? { phone: input.primaryContact.phone || null }
+            : {}),
+          ...(input.primaryContact.mobile !== undefined
+            ? { mobile: input.primaryContact.mobile || null }
+            : {}),
+          ...(input.primaryContact.preferredContactMethod !== undefined
+            ? { preferredContactMethod: input.primaryContact.preferredContactMethod || null }
+            : {}),
+          ...(input.primaryContact.isBilling !== undefined ||
+          input.primaryContact.isBillingContact !== undefined
+            ? {
+                isBilling: input.primaryContact.isBilling || input.primaryContact.isBillingContact,
+                isBillingContact:
+                  input.primaryContact.isBilling || input.primaryContact.isBillingContact
+              }
+            : {}),
+          ...(input.primaryContact.isTechnicalContact !== undefined
+            ? { isTechnicalContact: input.primaryContact.isTechnicalContact }
+            : {}),
+          ...(input.primaryContact.isDecisionMaker !== undefined
+            ? { isDecisionMaker: input.primaryContact.isDecisionMaker }
+            : {}),
+          ...(input.primaryContact.notes !== undefined
+            ? { notes: input.primaryContact.notes || null }
+            : {}),
+          isPrimary: true,
+          isPrimaryContact: true
+        }
+      });
+
+      if (contactResult.count === 0) {
+        throw new Error("CLIENT_NOT_FOUND");
+      }
+    } else if (hasPrimaryContactContent(input.primaryContact)) {
+      await tx.pointOfContact.updateMany({
+        where: { ownerType: CLIENT_OWNER_TYPE, ownerId: existing.id },
+        data: { isPrimary: false, isPrimaryContact: false }
+      });
+      await tx.pointOfContact.create({
+        data: contactCreateData(
+          existing.id,
+          {
+            siteId: input.primaryContact?.siteId || "",
+            siteLocalId: "",
+            name: input.primaryContact?.name ?? "",
+            role: input.primaryContact?.role ?? "Primary",
+            firstName: input.primaryContact?.firstName ?? "",
+            lastName: input.primaryContact?.lastName ?? "",
+            title: input.primaryContact?.title ?? "",
+            department: input.primaryContact?.department ?? "",
+            email: input.primaryContact?.email ?? "",
+            phone: input.primaryContact?.phone ?? "",
+            mobile: input.primaryContact?.mobile ?? "",
+            preferredContactMethod: input.primaryContact?.preferredContactMethod ?? "Email",
+            isPrimary: true,
+            isBilling: input.primaryContact?.isBilling ?? false,
+            isPrimaryContact: true,
+            isBillingContact:
+              input.primaryContact?.isBilling || input.primaryContact?.isBillingContact || false,
+            isTechnicalContact: input.primaryContact?.isTechnicalContact ?? false,
+            isDecisionMaker: input.primaryContact?.isDecisionMaker ?? false,
+            notes: input.primaryContact?.notes ?? ""
+          },
+          true,
+          input.primaryContact?.siteId
+        )
+      });
+    }
+
+    await tx.clientActivity.create({
+      data: {
+        clientId: existing.id,
+        type: "Client",
+        title: "Client updated",
+        detail: "Client account fields were updated.",
+        actor: user?.name ?? "Pulse System",
+        createdAt: now
+      }
+    });
+
+    return tx.client.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: clientInclude
+    });
   });
 
   await recordActivity({
@@ -803,15 +1065,17 @@ export async function addClientContact(id: string, input: ClientContactInput, us
 
   const now = new Date();
   const client = await prisma.$transaction(async (tx) => {
-    if (input.isPrimaryContact) {
+    const shouldBePrimary = input.isPrimary || input.isPrimaryContact;
+
+    if (shouldBePrimary) {
       await tx.pointOfContact.updateMany({
         where: { ownerType: CLIENT_OWNER_TYPE, ownerId: id },
-        data: { isPrimaryContact: false }
+        data: { isPrimary: false, isPrimaryContact: false }
       });
     }
 
     await tx.pointOfContact.create({
-      data: contactCreateData(id, input, input.isPrimaryContact, input.siteId)
+      data: contactCreateData(id, input, shouldBePrimary, input.siteId)
     });
 
     await tx.client.update({
@@ -858,10 +1122,12 @@ export async function updateClientContact(
 
   const now = new Date();
   const client = await prisma.$transaction(async (tx) => {
-    if (input.isPrimaryContact) {
+    const shouldBePrimary = input.isPrimary || input.isPrimaryContact;
+
+    if (shouldBePrimary) {
       await tx.pointOfContact.updateMany({
         where: { ownerType: CLIENT_OWNER_TYPE, ownerId: id, NOT: { id: contactId } },
-        data: { isPrimaryContact: false }
+        data: { isPrimary: false, isPrimaryContact: false }
       });
     }
 
@@ -869,6 +1135,8 @@ export async function updateClientContact(
       where: { id: contactId, ownerType: CLIENT_OWNER_TYPE, ownerId: id },
       data: {
         ...(input.siteId !== undefined ? { siteId: input.siteId || null } : {}),
+        ...(input.name !== undefined ? { name: input.name || null } : {}),
+        ...(input.role !== undefined ? { role: input.role || "Primary" } : {}),
         ...(input.firstName !== undefined
           ? { firstName: input.firstName || "Unknown" }
           : {}),
@@ -883,11 +1151,14 @@ export async function updateClientContact(
         ...(input.preferredContactMethod !== undefined
           ? { preferredContactMethod: input.preferredContactMethod || null }
           : {}),
-        ...(input.isPrimaryContact !== undefined
-          ? { isPrimaryContact: input.isPrimaryContact }
+        ...(input.isPrimary !== undefined || input.isPrimaryContact !== undefined
+          ? { isPrimary: shouldBePrimary, isPrimaryContact: shouldBePrimary }
           : {}),
-        ...(input.isBillingContact !== undefined
-          ? { isBillingContact: input.isBillingContact }
+        ...(input.isBilling !== undefined || input.isBillingContact !== undefined
+          ? {
+              isBilling: input.isBilling || input.isBillingContact,
+              isBillingContact: input.isBilling || input.isBillingContact
+            }
           : {}),
         ...(input.isTechnicalContact !== undefined
           ? { isTechnicalContact: input.isTechnicalContact }
@@ -900,7 +1171,7 @@ export async function updateClientContact(
     });
 
     if (result.count === 0) {
-      throw new Error("CLIENT_NOT_FOUND");
+      throw new Error("CONTACT_NOT_FOUND");
     }
 
     await tx.client.update({
@@ -946,7 +1217,7 @@ export async function removeClientContact(id: string, contactId: string, user?: 
     });
 
     if (result.count === 0) {
-      throw new Error("CLIENT_NOT_FOUND");
+      throw new Error("CONTACT_NOT_FOUND");
     }
 
     await tx.client.update({

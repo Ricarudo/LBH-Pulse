@@ -1,9 +1,12 @@
 import { z } from "zod";
 import {
   clientIndustries,
+  clientLanguages,
+  clientOwners,
+  clientPaymentTerms,
   clientSiteTypes,
+  clientSources,
   clientStatuses,
-  clientTypes,
   preferredContactMethods
 } from "@/types/client";
 
@@ -29,11 +32,50 @@ function textField(options: { max?: number; collapseSpaces?: boolean } = {}) {
     .refine((value) => !unsafeFreeTextPattern.test(value), unsafeFreeTextMessage);
 }
 
-const optionalText = textField();
+function isValidHttpUrl(value: string) {
+  if (!value) {
+    return true;
+  }
+
+  if (/\s/.test(value)) {
+    return false;
+  }
+
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(value)
+    ? value
+    : `https://${value}`;
+
+  try {
+    const url = new URL(candidate);
+    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+const optionalText = textField({ max: 2000 });
 const clientNameText = textField({ max: 160, collapseSpaces: true });
-const contactNameText = textField({ max: 120, collapseSpaces: true });
-const contactRoleText = textField({ max: 120, collapseSpaces: true });
-const phoneText = textField({ max: 40, collapseSpaces: true });
+const contactNameText = textField({ max: 160, collapseSpaces: true });
+const contactPartNameText = textField({ max: 120, collapseSpaces: true });
+const contactTitleText = textField({ max: 120, collapseSpaces: true });
+const contactRoleText = textField({ max: 80, collapseSpaces: true });
+const phonePattern = /^[0-9+().\-\s]*(?:(?:x|ext\.?)\s?\d{1,8})?$/i;
+const phoneText = textField({ max: 40, collapseSpaces: true }).refine(
+  (value) => !value || (phonePattern.test(value) && value.replace(/\D/g, "").length >= 7),
+  "Enter a valid phone number."
+);
+const optionalUrl = textField({ max: 2048, collapseSpaces: true }).refine(
+  isValidHttpUrl,
+  "Enter a valid URL."
+);
+const optionalDateTimeText = z
+  .string()
+  .optional()
+  .transform((value) => normalizeText(value))
+  .refine(
+    (value) => !value || !Number.isNaN(Date.parse(value)),
+    "Enter a valid timestamp."
+  );
 const requiredIndustry = z
   .string()
   .optional()
@@ -68,10 +110,13 @@ const optionalCoordinate = z
   );
 
 export const clientStatusSchema = z.enum(clientStatuses);
-export const clientTypeSchema = z.enum(clientTypes);
 export const clientIndustrySchema = z.enum(clientIndustries);
 export const clientSiteTypeSchema = z.enum(clientSiteTypes);
 export const preferredContactMethodSchema = z.enum(preferredContactMethods);
+export const clientOwnerSchema = z.enum(clientOwners);
+export const clientSourceSchema = z.enum(clientSources);
+export const clientLanguageSchema = z.enum(clientLanguages);
+export const clientPaymentTermsSchema = z.enum(clientPaymentTerms);
 
 export const clientSiteSchema = z.object({
   localId: optionalText,
@@ -86,7 +131,7 @@ export const clientSiteSchema = z.object({
   state: optionalText.default("PR"),
   postalCode: optionalText,
   country: optionalText.default("Puerto Rico"),
-  googleMapsUrl: optionalText,
+  googleMapsUrl: optionalUrl,
   latitude: optionalCoordinate,
   longitude: optionalCoordinate,
   operationalHours: optionalText,
@@ -95,69 +140,89 @@ export const clientSiteSchema = z.object({
   securityRequirements: optionalText,
   siteNotes: optionalText,
   isPrimarySite: z.boolean().default(false)
-});
+}).strict();
+
+function splitContactName(name: string) {
+  const [firstName = "", ...lastNameParts] = name.split(" ");
+  return {
+    firstName,
+    lastName: lastNameParts.join(" ")
+  };
+}
 
 const clientContactFieldsSchema = z.object({
   siteId: optionalText,
   siteLocalId: optionalText,
-  firstName: contactNameText,
-  lastName: contactNameText,
-  title: contactRoleText,
+  name: contactNameText,
+  role: contactRoleText.default("Primary"),
+  firstName: contactPartNameText,
+  lastName: contactPartNameText,
+  title: contactTitleText,
   department: optionalText,
   email: optionalEmail,
   phone: phoneText,
   mobile: phoneText,
   preferredContactMethod: preferredContactMethodSchema.default("Email"),
+  isPrimary: z.boolean().default(false),
+  isBilling: z.boolean().default(false),
   isPrimaryContact: z.boolean().default(false),
   isBillingContact: z.boolean().default(false),
   isTechnicalContact: z.boolean().default(false),
   isDecisionMaker: z.boolean().default(false),
   notes: optionalText
-});
+}).strict();
 
 export const clientContactSchema = clientContactFieldsSchema
   .superRefine((data, context) => {
-    const contactName = [data.firstName, data.lastName].filter(Boolean).join(" ");
+    const contactName =
+      data.name || [data.firstName, data.lastName].filter(Boolean).join(" ");
 
-    if (contactName.length > 120) {
+    if (!contactName) {
       context.addIssue({
         code: "custom",
-        message: "Contact name must be 120 characters or less.",
-        path: ["firstName"]
+        message: "Contact name is required.",
+        path: ["name"]
       });
     }
 
-    if (
-      !data.firstName &&
-      !data.lastName &&
-      !data.title &&
-      !data.email &&
-      !data.phone &&
-      !data.mobile
-    ) {
+    if (!data.email && !data.phone && !data.mobile) {
       context.addIssue({
         code: "custom",
-        message: "Contact requires a name, email, phone, or role.",
-        path: ["firstName"]
+        message: "Provide at least one contact method.",
+        path: ["email"]
       });
     }
+  })
+  .transform((data) => {
+    const name = data.name || [data.firstName, data.lastName].filter(Boolean).join(" ");
+    const splitName = splitContactName(name);
+    const isPrimary = data.isPrimary || data.isPrimaryContact;
+    const isBilling = data.isBilling || data.isBillingContact;
+
+    return {
+      ...data,
+      name,
+      role: data.role || "Primary",
+      firstName: data.firstName || splitName.firstName || "Unknown",
+      lastName: data.lastName || splitName.lastName,
+      isPrimary,
+      isPrimaryContact: isPrimary,
+      isBilling,
+      isBillingContact: isBilling
+    };
   });
 
 const clientFieldsSchema = z.object({
   legalName: clientNameText,
   displayName: clientNameText,
-  clientType: clientTypeSchema.default("Commercial"),
   industry: requiredIndustry,
-  website: optionalText,
+  website: optionalUrl,
   status: clientStatusSchema.default("Prospect"),
-  accountOwner: optionalText.default("Unassigned"),
-  mainPhone: phoneText,
-  mainEmail: optionalEmail,
+  accountOwner: clientOwnerSchema.default("Unassigned"),
   taxId: optionalText,
-  paymentTerms: optionalText,
-  billingEmail: optionalEmail,
+  paymentTerms: clientPaymentTermsSchema.default(""),
   preferredCurrency: optionalText.default("USD"),
-  preferredLanguage: optionalText.default("English"),
+  preferredLanguage: clientLanguageSchema.default("English"),
   brandPreferences: optionalText,
   technologyPreferences: optionalText,
   generalNotes: optionalText,
@@ -174,7 +239,7 @@ const clientFieldsSchema = z.object({
   serviceProfile: z.array(z.string().trim().min(1)).default([]),
   sites: z.array(clientSiteSchema).default([]),
   contacts: z.array(clientContactSchema).default([])
-});
+}).strict();
 
 export const createClientSchema = clientFieldsSchema
   .superRefine((data, context) => {
@@ -195,7 +260,7 @@ export const createClientSchema = clientFieldsSchema
     }
 
     if (
-      data.contacts.filter((contact) => contact.isPrimaryContact).length > 1
+      data.contacts.filter((contact) => contact.isPrimary || contact.isPrimaryContact).length > 1
     ) {
       context.addIssue({
         code: "custom",
@@ -213,7 +278,80 @@ export const createClientSchema = clientFieldsSchema
     accountOwner: data.accountOwner || "Unassigned"
   }));
 
-export const updateClientSchema = clientFieldsSchema.partial();
+const serviceProfileUpdateSchema = z
+  .array(textField({ max: 120, collapseSpaces: true }).refine(Boolean, "Service name is required."))
+  .default([]);
+
+const updatePrimarySiteSchema = clientSiteSchema
+  .partial()
+  .extend({
+    id: optionalText
+  })
+  .strict();
+
+const updatePrimaryContactSchema = clientContactFieldsSchema
+  .partial()
+  .extend({
+    id: optionalText
+  })
+  .strict();
+
+export const updateClientSchema = clientFieldsSchema
+  .omit({
+    sites: true,
+    contacts: true
+  })
+  .extend({
+    source: clientSourceSchema,
+    accountOwner: clientOwnerSchema,
+    preferredLanguage: clientLanguageSchema,
+    paymentTerms: clientPaymentTermsSchema,
+    serviceProfile: serviceProfileUpdateSchema,
+    updatedAt: optionalDateTimeText,
+    primarySite: updatePrimarySiteSchema.optional(),
+    primaryContact: updatePrimaryContactSchema.optional()
+  })
+  .partial()
+  .strict()
+  .superRefine((data, context) => {
+    if (
+      ("legalName" in data || "displayName" in data) &&
+      !data.legalName &&
+      !data.displayName
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Legal name or display name is required.",
+        path: ["displayName"]
+      });
+    }
+
+    if (data.primarySite) {
+      const hasSiteContent = [
+        data.primarySite.siteName,
+        data.primarySite.addressLine1,
+        data.primarySite.addressLine2,
+        data.primarySite.city,
+        data.primarySite.state,
+        data.primarySite.postalCode,
+        data.primarySite.country,
+        data.primarySite.googleMapsUrl,
+        data.primarySite.operationalHours,
+        data.primarySite.accessInstructions,
+        data.primarySite.parkingInstructions,
+        data.primarySite.securityRequirements,
+        data.primarySite.siteNotes
+      ].some(Boolean);
+
+      if (!data.primarySite.id && hasSiteContent && !data.primarySite.siteName) {
+        context.addIssue({
+          code: "custom",
+          message: "Site name is required.",
+          path: ["primarySite", "siteName"]
+        });
+      }
+    }
+  });
 
 export const createClientActivitySchema = z.object({
   type: optionalText.default("Note"),
@@ -228,9 +366,9 @@ export const importClientInfoSchema = z.object({
 });
 
 export const addClientSiteSchema = clientSiteSchema;
-export const updateClientSiteSchema = clientSiteSchema.partial();
+export const updateClientSiteSchema = clientSiteSchema.partial().strict();
 export const addClientContactSchema = clientContactSchema;
-export const updateClientContactSchema = clientContactFieldsSchema.partial();
+export const updateClientContactSchema = clientContactSchema;
 
 export type CreateClientInput = z.infer<typeof createClientSchema>;
 export type UpdateClientInput = z.infer<typeof updateClientSchema>;

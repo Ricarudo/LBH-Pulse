@@ -7,19 +7,6 @@ export const clientStatuses = [
 
 export type ClientStatus = (typeof clientStatuses)[number];
 
-export const clientTypes = [
-  "Commercial",
-  "Healthcare",
-  "Education",
-  "Government",
-  "Hospitality",
-  "Industrial",
-  "Enterprise",
-  "Other"
-] as const;
-
-export type ClientType = (typeof clientTypes)[number];
-
 export const clientIndustries = [
   "Agriculture",
   "Aerospace",
@@ -30,7 +17,6 @@ export const clientIndustries = [
   "Education",
   "Entertainment",
   "Finance",
-  "Food",
   "Healthcare",
   "Hospitality",
   "House of Worship",
@@ -73,10 +59,45 @@ export const clientOwners = [
   "Unassigned"
 ] as const;
 
+export const clientSources = [
+  "",
+  "Call",
+  "Email",
+  "Existing Client",
+  "Existing Customer",
+  "Referral",
+  "Website",
+  "RFP",
+  "Drawing Package",
+  "Phone",
+  "Vendor",
+  "Partner",
+  "Internal",
+  "Other"
+] as const;
+
+export const clientLanguages = [
+  "English",
+  "Spanish",
+  "Bilingual"
+] as const;
+
+export const clientPaymentTerms = [
+  "",
+  "Due on Receipt",
+  "Net 15",
+  "Net 30",
+  "Net 45",
+  "Net 60",
+  "Prepaid",
+  "COD"
+] as const;
+
 export type ClientContact = {
   id: string;
   siteId?: string;
   siteName?: string;
+  role: string;
   firstName: string;
   lastName: string;
   name: string;
@@ -86,6 +107,8 @@ export type ClientContact = {
   phone: string;
   mobile: string;
   preferredContactMethod: string;
+  isPrimary: boolean;
+  isBilling: boolean;
   isPrimaryContact: boolean;
   isBillingContact: boolean;
   isTechnicalContact: boolean;
@@ -132,18 +155,14 @@ export type ClientRecord = {
   legalName: string;
   displayName: string;
   companyName: string;
-  clientType: ClientType;
   industry: string;
   website: string;
   status: ClientStatus;
   accountOwner: string;
   primaryContact: ClientContact;
   billingContact: ClientContact;
-  mainPhone: string;
-  mainEmail: string;
   taxId: string;
   paymentTerms: string;
-  billingEmail: string;
   preferredCurrency: string;
   preferredLanguage: string;
   primarySite: string;
@@ -214,6 +233,8 @@ export type ClientSiteInput = {
 export type ClientContactInput = {
   siteId?: string;
   siteLocalId?: string;
+  name?: string;
+  role?: string;
   firstName: string;
   lastName: string;
   title: string;
@@ -222,6 +243,8 @@ export type ClientContactInput = {
   phone: string;
   mobile: string;
   preferredContactMethod: string;
+  isPrimary?: boolean;
+  isBilling?: boolean;
   isPrimaryContact: boolean;
   isBillingContact: boolean;
   isTechnicalContact: boolean;
@@ -232,16 +255,12 @@ export type ClientContactInput = {
 export type ClientCreatePayload = {
   legalName: string;
   displayName: string;
-  clientType: ClientType;
   industry: string;
   website: string;
   status: ClientStatus;
   accountOwner: string;
-  mainPhone: string;
-  mainEmail: string;
   taxId: string;
   paymentTerms: string;
-  billingEmail: string;
   preferredCurrency: string;
   preferredLanguage: string;
   brandPreferences: string;

@@ -59,7 +59,8 @@ const errorMap: Record<string, ErrorPayload> = {
     body: { error: "Password changes are only available for local Pulse accounts." }
   },
   LOCAL_USER_PASSWORD_INVALID: { status: 400, body: { error: "Current password is incorrect." } },
-  CLIENT_NOT_FOUND: { status: 404, body: { error: "Client not found." } }
+  CLIENT_NOT_FOUND: { status: 404, body: { error: "Client not found." } },
+  CONTACT_NOT_FOUND: { status: 404, body: { error: "Contact not found." } }
 };
 
 function zodFieldErrors(error: ZodError) {

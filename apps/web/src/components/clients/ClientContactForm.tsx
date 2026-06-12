@@ -32,7 +32,8 @@ export function ClientContactForm({
         <div>
           <strong>Contact {index + 1}</strong>
           <span>
-            {[contact.firstName, contact.lastName].filter(Boolean).join(" ") ||
+            {contact.name ||
+              [contact.firstName, contact.lastName].filter(Boolean).join(" ") ||
               "New point of contact"}
           </span>
         </div>
@@ -48,18 +49,18 @@ export function ClientContactForm({
       </div>
 
       <div className="client-form-grid">
-        <label>
-          First name
+        <label className="client-form-wide">
+          Contact name
           <input
-            value={contact.firstName}
-            onChange={(event) => onChange({ ...contact, firstName: event.target.value })}
+            value={contact.name ?? ""}
+            onChange={(event) => onChange({ ...contact, name: event.target.value })}
           />
         </label>
         <label>
-          Last name
+          Contact role
           <input
-            value={contact.lastName}
-            onChange={(event) => onChange({ ...contact, lastName: event.target.value })}
+            value={contact.role ?? ""}
+            onChange={(event) => onChange({ ...contact, role: event.target.value })}
           />
         </label>
         <label>
@@ -144,7 +145,7 @@ export function ClientContactForm({
         <label className="client-checkbox">
           <input
             type="checkbox"
-            checked={contact.isPrimaryContact}
+            checked={contact.isPrimary || contact.isPrimaryContact}
             onChange={onPrimaryChange}
           />
           Primary contact
@@ -152,9 +153,13 @@ export function ClientContactForm({
         <label className="client-checkbox">
           <input
             type="checkbox"
-            checked={contact.isBillingContact}
+            checked={contact.isBilling || contact.isBillingContact}
             onChange={(event) =>
-              onChange({ ...contact, isBillingContact: event.target.checked })
+              onChange({
+                ...contact,
+                isBilling: event.target.checked,
+                isBillingContact: event.target.checked
+              })
             }
           />
           Billing contact
@@ -183,4 +188,3 @@ export function ClientContactForm({
     </article>
   );
 }
-

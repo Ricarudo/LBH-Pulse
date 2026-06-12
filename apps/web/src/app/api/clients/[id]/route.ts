@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api/response";
-import { requireUser } from "@/lib/auth/session";
+import { AuthError, requireUser } from "@/lib/auth/session";
 import {
   archiveClient,
   getClientById,
@@ -30,6 +30,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
 export async function PATCH(request: Request, { params }: RouteContext) {
   try {
     const user = await requireUser("crm:write");
+    if (user.role !== "Admin") {
+      throw new AuthError("Admin access is required to edit clients.", 403);
+    }
+
     const { id } = await params;
     const payload = updateClientSchema.parse(await request.json());
     const client = await updateClient(id, payload, user);

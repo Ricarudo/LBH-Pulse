@@ -48,6 +48,7 @@ type ClientWithRelations = Prisma.ClientGetPayload<{
 
 const emptyContact: ClientContact = {
   id: "",
+  role: "",
   firstName: "",
   lastName: "",
   name: "Not captured",
@@ -57,6 +58,8 @@ const emptyContact: ClientContact = {
   phone: "",
   mobile: "",
   preferredContactMethod: "",
+  isPrimary: false,
+  isBilling: false,
   isPrimaryContact: false,
   isBillingContact: false,
   isTechnicalContact: false,
@@ -133,17 +136,20 @@ function mapContact(
     id: contact.id,
     siteId: contact.siteId ?? undefined,
     siteName: contact.site?.siteName,
+    role: contact.role ?? "",
     firstName: contact.firstName,
     lastName: contact.lastName,
-    name: fullName(contact.firstName, contact.lastName),
+    name: contact.name ?? fullName(contact.firstName, contact.lastName),
     title: contact.title ?? "",
     department: contact.department ?? "",
     email: contact.email ?? "",
     phone: contact.phone ?? "",
     mobile: contact.mobile ?? "",
     preferredContactMethod: contact.preferredContactMethod ?? "",
-    isPrimaryContact: contact.isPrimaryContact,
-    isBillingContact: contact.isBillingContact,
+    isPrimary: contact.isPrimary,
+    isBilling: contact.isBilling,
+    isPrimaryContact: contact.isPrimary || contact.isPrimaryContact,
+    isBillingContact: contact.isBilling || contact.isBillingContact,
     isTechnicalContact: contact.isTechnicalContact,
     isDecisionMaker: contact.isDecisionMaker,
     notes: contact.notes ?? ""
@@ -182,11 +188,9 @@ function mapSite(site?: ClientWithRelations["sites"][number]): ClientSite {
 
 function toClientRecord(client: ClientWithRelations): ClientRecord {
   const primaryContact =
-    client.contacts.find((contact) => contact.isPrimaryContact) ??
-    client.contacts[0];
+    client.contacts.find((contact) => contact.isPrimary || contact.isPrimaryContact);
   const billingContact =
-    client.contacts.find((contact) => contact.isBillingContact) ??
-    primaryContact;
+    client.contacts.find((contact) => contact.isBilling || contact.isBillingContact);
   const primarySite =
     client.sites.find((site) => site.isPrimarySite) ?? client.sites[0];
 
@@ -196,18 +200,14 @@ function toClientRecord(client: ClientWithRelations): ClientRecord {
     legalName: client.legalName ?? "",
     displayName: client.displayName,
     companyName: client.displayName,
-    clientType: client.clientType as ClientRecord["clientType"],
     industry: client.industry ?? "",
     website: client.website ?? "",
     status: client.status as ClientRecord["status"],
     accountOwner: client.accountOwner,
     primaryContact: mapContact(primaryContact),
     billingContact: mapContact(billingContact),
-    mainPhone: client.mainPhone ?? "",
-    mainEmail: client.mainEmail ?? "",
     taxId: client.taxId ?? "",
     paymentTerms: client.paymentTerms ?? "",
-    billingEmail: client.billingEmail ?? "",
     preferredCurrency: client.preferredCurrency,
     preferredLanguage: client.preferredLanguage,
     primarySite: primarySite?.siteName ?? "",
@@ -304,6 +304,8 @@ function contactCreateData(
     ownerId: clientId,
     clientId,
     siteId: siteId || null,
+    role: contact.role || "Primary",
+    name: contact.name || fullName(contact.firstName, contact.lastName),
     firstName: contact.firstName || "Unknown",
     lastName: contact.lastName || "",
     title: toNullable(contact.title),
@@ -312,8 +314,10 @@ function contactCreateData(
     phone: toNullable(contact.phone),
     mobile: toNullable(contact.mobile),
     preferredContactMethod: contact.preferredContactMethod || "Email",
+    isPrimary: primary,
+    isBilling: contact.isBilling || contact.isBillingContact,
     isPrimaryContact: primary,
-    isBillingContact: contact.isBillingContact,
+    isBillingContact: contact.isBilling || contact.isBillingContact,
     isTechnicalContact: contact.isTechnicalContact,
     isDecisionMaker: contact.isDecisionMaker,
     notes: toNullable(contact.notes)
@@ -349,16 +353,12 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
         clientNumber,
         legalName: input.legalName || null,
         displayName: input.displayName,
-        clientType: input.clientType,
         industry: toNullable(input.industry),
         website: toNullable(input.website),
         status: input.status,
         accountOwner: input.accountOwner || "Unassigned",
-        mainPhone: toNullable(input.mainPhone),
-        mainEmail: toNullable(input.mainEmail),
         taxId: toNullable(input.taxId),
         paymentTerms: toNullable(input.paymentTerms),
-        billingEmail: toNullable(input.billingEmail),
         preferredCurrency: input.preferredCurrency || "USD",
         preferredLanguage: input.preferredLanguage || "English",
         brandPreferences: toNullable(input.brandPreferences),
@@ -397,7 +397,7 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
     }
 
     const hasPrimaryContact = input.contacts.some(
-      (contact) => contact.isPrimaryContact
+      (contact) => contact.isPrimary || contact.isPrimaryContact
     );
 
     for (const [index, contact] of input.contacts.entries()) {
@@ -411,7 +411,7 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
         data: contactCreateData(
           createdClient.id,
           contact,
-          contact.isPrimaryContact || (!hasPrimaryContact && index === 0),
+          contact.isPrimary || contact.isPrimaryContact || (!hasPrimaryContact && index === 0),
           siteId
         )
       });
@@ -468,25 +468,16 @@ export async function updateClient(id: string, input: UpdateClientInput, user?: 
         ? { legalName: input.legalName || null }
         : {}),
       ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
-      ...(input.clientType !== undefined ? { clientType: input.clientType } : {}),
       ...(input.industry !== undefined ? { industry: input.industry || null } : {}),
       ...(input.website !== undefined ? { website: input.website || null } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       ...(input.accountOwner !== undefined
         ? { accountOwner: input.accountOwner || "Unassigned" }
         : {}),
-      ...(input.mainPhone !== undefined
-        ? { mainPhone: input.mainPhone || null }
-        : {}),
-      ...(input.mainEmail !== undefined
-        ? { mainEmail: input.mainEmail || null }
-        : {}),
+      ...(input.source !== undefined ? { source: input.source || null } : {}),
       ...(input.taxId !== undefined ? { taxId: input.taxId || null } : {}),
       ...(input.paymentTerms !== undefined
         ? { paymentTerms: input.paymentTerms || null }
-        : {}),
-      ...(input.billingEmail !== undefined
-        ? { billingEmail: input.billingEmail || null }
         : {}),
       ...(input.preferredCurrency !== undefined
         ? { preferredCurrency: input.preferredCurrency || "USD" }
@@ -803,15 +794,17 @@ export async function addClientContact(id: string, input: ClientContactInput, us
 
   const now = new Date();
   const client = await prisma.$transaction(async (tx) => {
-    if (input.isPrimaryContact) {
+    const shouldBePrimary = input.isPrimary || input.isPrimaryContact;
+
+    if (shouldBePrimary) {
       await tx.pointOfContact.updateMany({
         where: { ownerType: CLIENT_OWNER_TYPE, ownerId: id },
-        data: { isPrimaryContact: false }
+        data: { isPrimary: false, isPrimaryContact: false }
       });
     }
 
     await tx.pointOfContact.create({
-      data: contactCreateData(id, input, input.isPrimaryContact, input.siteId)
+      data: contactCreateData(id, input, shouldBePrimary, input.siteId)
     });
 
     await tx.client.update({
@@ -858,10 +851,12 @@ export async function updateClientContact(
 
   const now = new Date();
   const client = await prisma.$transaction(async (tx) => {
-    if (input.isPrimaryContact) {
+    const shouldBePrimary = input.isPrimary || input.isPrimaryContact;
+
+    if (shouldBePrimary) {
       await tx.pointOfContact.updateMany({
         where: { ownerType: CLIENT_OWNER_TYPE, ownerId: id, NOT: { id: contactId } },
-        data: { isPrimaryContact: false }
+        data: { isPrimary: false, isPrimaryContact: false }
       });
     }
 
@@ -869,6 +864,8 @@ export async function updateClientContact(
       where: { id: contactId, ownerType: CLIENT_OWNER_TYPE, ownerId: id },
       data: {
         ...(input.siteId !== undefined ? { siteId: input.siteId || null } : {}),
+        ...(input.name !== undefined ? { name: input.name || null } : {}),
+        ...(input.role !== undefined ? { role: input.role || "Primary" } : {}),
         ...(input.firstName !== undefined
           ? { firstName: input.firstName || "Unknown" }
           : {}),
@@ -883,11 +880,14 @@ export async function updateClientContact(
         ...(input.preferredContactMethod !== undefined
           ? { preferredContactMethod: input.preferredContactMethod || null }
           : {}),
-        ...(input.isPrimaryContact !== undefined
-          ? { isPrimaryContact: input.isPrimaryContact }
+        ...(input.isPrimary !== undefined || input.isPrimaryContact !== undefined
+          ? { isPrimary: shouldBePrimary, isPrimaryContact: shouldBePrimary }
           : {}),
-        ...(input.isBillingContact !== undefined
-          ? { isBillingContact: input.isBillingContact }
+        ...(input.isBilling !== undefined || input.isBillingContact !== undefined
+          ? {
+              isBilling: input.isBilling || input.isBillingContact,
+              isBillingContact: input.isBilling || input.isBillingContact
+            }
           : {}),
         ...(input.isTechnicalContact !== undefined
           ? { isTechnicalContact: input.isTechnicalContact }
@@ -900,7 +900,7 @@ export async function updateClientContact(
     });
 
     if (result.count === 0) {
-      throw new Error("CLIENT_NOT_FOUND");
+      throw new Error("CONTACT_NOT_FOUND");
     }
 
     await tx.client.update({
@@ -946,7 +946,7 @@ export async function removeClientContact(id: string, contactId: string, user?: 
     });
 
     if (result.count === 0) {
-      throw new Error("CLIENT_NOT_FOUND");
+      throw new Error("CONTACT_NOT_FOUND");
     }
 
     await tx.client.update({

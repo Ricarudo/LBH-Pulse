@@ -78,8 +78,8 @@ function compactValue(value: string | number | null | undefined) {
 
 function contactFlags(contact: ClientContact): ContactFlagFilter[] {
   return [
-    contact.isPrimaryContact ? "Primary" : "",
-    contact.isBillingContact ? "Billing" : "",
+    contact.isPrimary || contact.isPrimaryContact ? "Primary" : "",
+    contact.isBilling || contact.isBillingContact ? "Billing" : "",
     contact.isTechnicalContact ? "Technical" : "",
     contact.isDecisionMaker ? "Decision Maker" : ""
   ].filter(Boolean) as ContactFlagFilter[];

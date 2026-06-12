@@ -276,16 +276,12 @@ model Client {
   companyName        String?
   legalName          String?
   displayName        String           @default("Unnamed Client")
-  clientType         String           @default("Commercial")
   industry           String?
   website            String?
   status             String           @default("Active")
   accountOwner       String           @default("Unassigned")
-  mainPhone          String?
-  mainEmail          String?
   taxId              String?
   paymentTerms       String?
-  billingEmail       String?
   preferredCurrency  String           @default("USD")
   preferredLanguage  String           @default("English")
   brandPreferences   String?
@@ -318,7 +314,6 @@ model Client {
   requests           Request[]
 
   @@index([status])
-  @@index([clientType])
   @@index([accountOwner])
   @@index([archivedAt])
 }
