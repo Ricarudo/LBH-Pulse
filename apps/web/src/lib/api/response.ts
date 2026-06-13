@@ -126,6 +126,22 @@ export function apiError(error: unknown) {
     );
   }
 
+  const workErrors: Record<string, { status: number; error: string }> = {
+    QUOTE_NOT_FOUND: { status: 404, error: "Quote not found." },
+    PROJECT_NOT_FOUND: { status: 404, error: "Project not found." },
+    INVOICE_NOT_FOUND: { status: 404, error: "Invoice not found." },
+    QUOTE_ALREADY_CONVERTED: { status: 409, error: "This quote already has a project." },
+    QUOTE_NOT_APPROVED: { status: 400, error: "Approve the quote before creating a project." },
+    QUOTE_CLIENT_REQUIRED: { status: 400, error: "Select a client before creating a project from this quote." },
+    WORK_CLIENT_MISMATCH: { status: 400, error: "The selected records must belong to the same client." },
+    PROJECT_CANCELLED: { status: 400, error: "Cancelled projects cannot create invoices." }
+  };
+
+  if (error instanceof Error && workErrors[error.message]) {
+    const mapped = workErrors[error.message];
+    return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+  }
+
   console.error(error);
   return NextResponse.json(
     { error: "Unexpected server error." },

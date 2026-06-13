@@ -60,7 +60,15 @@ const errorMap: Record<string, ErrorPayload> = {
   },
   LOCAL_USER_PASSWORD_INVALID: { status: 400, body: { error: "Current password is incorrect." } },
   CLIENT_NOT_FOUND: { status: 404, body: { error: "Client not found." } },
-  CONTACT_NOT_FOUND: { status: 404, body: { error: "Contact not found." } }
+  CONTACT_NOT_FOUND: { status: 404, body: { error: "Contact not found." } },
+  QUOTE_NOT_FOUND: { status: 404, body: { error: "Quote not found." } },
+  PROJECT_NOT_FOUND: { status: 404, body: { error: "Project not found." } },
+  INVOICE_NOT_FOUND: { status: 404, body: { error: "Invoice not found." } },
+  QUOTE_ALREADY_CONVERTED: { status: 409, body: { error: "This quote already has a project." } },
+  QUOTE_NOT_APPROVED: { status: 400, body: { error: "Approve the quote before creating a project." } },
+  QUOTE_CLIENT_REQUIRED: { status: 400, body: { error: "Select a client before creating a project from this quote." } },
+  WORK_CLIENT_MISMATCH: { status: 400, body: { error: "The selected records must belong to the same client." } },
+  PROJECT_CANCELLED: { status: 400, body: { error: "Cancelled projects cannot create invoices." } }
 };
 
 function zodFieldErrors(error: ZodError) {
