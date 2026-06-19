@@ -7114,3 +7114,69 @@ a {
     margin-bottom: 14px;
   }
 }
+.lifecycle-documents {
+  display: grid;
+  gap: 12px;
+}
+
+.document-uploader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.document-uploader input[type="file"] {
+  display: none;
+}
+
+.document-group {
+  display: grid;
+  gap: 8px;
+}
+
+.document-group h4 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.document-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.document-description {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.document-description strong {
+  overflow-wrap: anywhere;
+}
+
+.document-description small,
+.document-description em,
+.document-policy,
+.document-message {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.document-description em {
+  color: var(--warning-text, #a35b00);
+}
+
+.document-policy,
+.document-message {
+  margin: 0;
+}

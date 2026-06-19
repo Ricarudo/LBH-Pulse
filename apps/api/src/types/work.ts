@@ -1,3 +1,5 @@
+import type { LifecycleDocumentRecord } from "@/types/document";
+
 export const quoteStatuses = [
   "Draft", "Review", "Sent", "Approved", "Rejected", "Expired", "Cancelled"
 ] as const;
@@ -14,13 +16,14 @@ export type InvoiceStatus = (typeof invoiceStatuses)[number];
 export type QuoteRecord = {
   id: string; quoteNumber: string; title: string; clientId: string | null; clientName: string;
   status: QuoteStatus; owner: string; total: number; requestId: string | null; requestNumber: string;
-  projectId: string | null; createdAt: string; updatedAt: string;
+  projectId: string | null; createdAt: string; updatedAt: string; documents: LifecycleDocumentRecord[];
 };
 
 export type ProjectRecord = {
   id: string; projectNumber: string; title: string; clientId: string; clientName: string;
   quoteId: string | null; quoteNumber: string; owner: string; status: ProjectStatus; budget: number;
   startDate: string; dueDate: string; invoiceCount: number; createdAt: string; updatedAt: string;
+  documents: LifecycleDocumentRecord[];
 };
 
 export type InvoiceRecord = {

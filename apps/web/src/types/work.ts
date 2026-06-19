@@ -1,3 +1,5 @@
+import type { LifecycleDocumentRecord } from "@/types/document";
+
 export const quoteStatuses = [
   "Draft",
   "Review",
@@ -46,6 +48,7 @@ export type QuoteRecord = {
   projectId: string | null;
   createdAt: string;
   updatedAt: string;
+  documents: LifecycleDocumentRecord[];
 };
 
 export type ProjectRecord = {
@@ -64,6 +67,7 @@ export type ProjectRecord = {
   invoiceCount: number;
   createdAt: string;
   updatedAt: string;
+  documents: LifecycleDocumentRecord[];
 };
 
 export type InvoiceRecord = {

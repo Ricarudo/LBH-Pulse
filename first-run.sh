@@ -21,8 +21,8 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Starting PostgreSQL and API containers..."
-compose up -d --build postgres api
+echo "Starting PostgreSQL, private object storage, malware scanning, and API containers..."
+compose up -d --build postgres minio minio-init clamav api
 
 echo "Applying Prisma schema and seeding the database..."
 compose exec -T api npm run db:setup
@@ -37,6 +37,7 @@ Pulse is ready for local development.
 Web:               http://localhost:4300
 API health:        http://localhost:4300/api/health
 Direct API health: http://localhost:3000/api/health
+MinIO console:     http://localhost:9001
 
 Seeded local accounts:
 Admin:            admin@r2.local / PulseAdmin123!

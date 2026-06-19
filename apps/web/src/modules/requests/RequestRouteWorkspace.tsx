@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ActivityRecord } from "@/types/activity";
@@ -996,13 +997,13 @@ export function RequestRouteWorkspace({
           {activeDetailTab === "Files" ? (
             <section className="lead-section">
               <h3>Files / Drawings</h3>
-              {request.files.length ? (
-                <div className="request-tag-list">
-                  {request.files.map((file) => <span key={file}>{file}</span>)}
-                </div>
-              ) : (
-                <p className="lead-notes">No files are indexed yet. Upload and drawing package handling are planned for a later file model.</p>
-              )}
+              <LifecycleDocuments
+                stage="request"
+                recordId={request.id}
+                documents={request.documents}
+                canWrite={canWriteCrm}
+                onChange={(documents) => setRequest({ ...request, documents })}
+              />
             </section>
           ) : null}
 

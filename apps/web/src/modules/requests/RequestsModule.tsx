@@ -22,6 +22,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ActivityRecord } from "@/types/activity";
@@ -1287,13 +1288,17 @@ export function RequestsModule() {
 
               <section className="lead-section">
                 <h3>Files / Drawings</h3>
-                {selectedRequest.files.length ? (
-                  <div className="request-tag-list">
-                    {selectedRequest.files.map((file) => <span key={file}>{file}</span>)}
-                  </div>
-                ) : (
-                  <p className="lead-notes">No files are indexed yet. Upload and drawing package handling are planned for a later file model.</p>
-                )}
+                <LifecycleDocuments
+                  stage="request"
+                  recordId={selectedRequest.id}
+                  documents={selectedRequest.documents}
+                  canWrite={canWriteCrm}
+                  onChange={(documents) => setRequests((current) =>
+                    current.map((item) =>
+                      item.id === selectedRequest.id ? { ...item, documents } : item
+                    )
+                  )}
+                />
               </section>
 
               <section className="lead-section">

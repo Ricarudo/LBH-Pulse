@@ -8,9 +8,9 @@
     "start": "next start --hostname 0.0.0.0 --port 4300",
     "typecheck": "npm run prisma:generate && node scripts/clear-next-types.mjs && next typegen && tsc --noEmit",
     "prisma:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "db:push": "prisma db push && tsx prisma/ensure-constraints.ts",
     "db:seed": "tsx prisma/seed.ts",
-    "db:setup": "npm run prisma:generate && npm run db:push && npm run db:seed"
+    "db:setup": "npm run prisma:generate && prisma db push --accept-data-loss && tsx prisma/ensure-constraints.ts && npm run db:seed"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.8.0",

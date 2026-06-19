@@ -8,6 +8,7 @@ import { ProjectsController } from "@/controllers/projects.controller";
 import { QuotesController } from "@/controllers/quotes.controller";
 import { RequestsController } from "@/controllers/requests.controller";
 import { SettingsController } from "@/controllers/settings.controller";
+import { DocumentsController } from "@/controllers/documents.controller";
 import { AuthService } from "@/shared/auth.service";
 
 @Module({
@@ -15,6 +16,7 @@ import { AuthService } from "@/shared/auth.service";
     ActivityController,
     AuthController,
     ClientsController,
+    DocumentsController,
     HealthController,
     InvoicesController,
     ProjectsController,

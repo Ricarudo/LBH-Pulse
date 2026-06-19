@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Plus, Save, SlidersHorizontal, X } from "lucide-react";
 import { canRole } from "@/lib/auth/permissions";
+import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { formatMoney, type ClientRecord } from "@/types/client";
 import {
@@ -94,6 +95,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [message, setMessage] = useState(`Loading ${title.toLowerCase()} from Pulse...`);
   const [saving, setSaving] = useState(false);
+  const [documentRecordId, setDocumentRecordId] = useState("");
   const canWrite = canRole(user?.role, "crm:write");
 
   const statuses =
@@ -251,12 +253,18 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
           <thead><tr><th>ID</th><th>Work</th><th>Client</th><th>Owner</th><th>Status</th><th>Due</th><th>{valueLabel}</th><th>Action</th></tr></thead>
           <tbody>
             {visibleRecords.map((record) => (
+              <Fragment key={record.id}>
               <tr key={record.id}>
                 <td><strong>{recordNumber(record)}</strong></td>
                 <td>{record.title}<br /><span className="table-muted">{"requestNumber" in record && record.requestNumber ? `From ${record.requestNumber}` : "quoteId" in record && record.quoteNumber ? `From ${record.quoteNumber}` : "invoiceNumber" in record && record.projectNumber ? `From ${record.projectNumber}` : "Database record"}</span></td>
                 <td>{record.clientName || "Unlinked"}</td>
                 <td>{record.owner}</td>
                 <td>
+                  {kind !== "invoices" ? (
+                    <button className="toolbar-button compact" type="button" onClick={() => setDocumentRecordId(documentRecordId === record.id ? "" : record.id)}>
+                      Files
+                    </button>
+                  ) : null}
                   {canWrite ? (
                     <select value={record.status} onChange={(event) => void changeStatus(record, event.target.value)}>
                       {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
@@ -275,6 +283,22 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   {(kind === "quotes" && "projectId" in record && record.projectId) ? <span className="table-muted">Project created</span> : null}
                 </td>
               </tr>
+              {kind !== "invoices" && documentRecordId === record.id && "documents" in record ? (
+                <tr key={`${record.id}-documents`}>
+                  <td colSpan={8}>
+                    <LifecycleDocuments
+                      stage={kind === "quotes" ? "quote" : "project"}
+                      recordId={record.id}
+                      documents={record.documents}
+                      canWrite={canWrite}
+                      onChange={(documents) => setRecords((current) =>
+                        current.map((item) => item.id === record.id ? { ...item, documents } : item)
+                      )}
+                    />
+                  </td>
+                </tr>
+              ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>

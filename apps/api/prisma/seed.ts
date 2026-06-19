@@ -848,7 +848,7 @@ const sampleClients = [
 async function main() {
   await prisma.activity.deleteMany();
   await prisma.requestChecklistItem.deleteMany();
-  await prisma.requestAttachment.deleteMany();
+  await prisma.lifecycleDocument.deleteMany();
   await prisma.requestNote.deleteMany();
   await prisma.requestTask.deleteMany();
   await prisma.requestActivity.deleteMany();
@@ -1175,9 +1175,6 @@ async function main() {
         tasks: {
           create: request.tasks
         },
-        attachments: {
-          create: request.attachments.map((fileName) => ({ fileName }))
-        },
         activities: {
           create: request.activities
         },
@@ -1190,6 +1187,21 @@ async function main() {
         }
       }
     });
+
+    if (request.attachments.length) {
+      await prisma.lifecycleDocument.createMany({
+        data: request.attachments.map((fileName) => ({
+          requestId: createdRequest.id,
+          originalFileName: fileName,
+          category: "Unverified Legacy",
+          scanStatus: "Legacy",
+          scanMessage:
+            "This filename-only seed record has no stored object and is not downloadable.",
+          uploadedByName: "Seed Data",
+          createdAt: request.lastActivityAt
+        }))
+      });
+    }
 
     await createActivity({
       relatedEntityType: "Request",

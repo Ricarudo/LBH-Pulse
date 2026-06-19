@@ -44,7 +44,8 @@ const requestInclude = {
       createdAt: "desc"
     }
   },
-  attachments: {
+  documents: {
+    where: { deletedAt: null },
     orderBy: {
       createdAt: "desc"
     }
@@ -251,7 +252,26 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
     archivedAt: request.archivedAt ? request.archivedAt.toISOString() : undefined,
     createdAt: formatDateInput(request.createdAt),
     updatedAt: request.updatedAt.toISOString(),
-    files: request.attachments.map((attachment) => attachment.fileName),
+    documents: request.documents.map((document) => {
+      const available = document.scanStatus === "Clean" && Boolean(document.objectKey);
+      return {
+        id: document.id,
+        sourceType: "Request" as const,
+        sourceId: request.id,
+        sourceNumber: request.requestNumber,
+        inherited: false,
+        canDelete: true,
+        originalFileName: document.originalFileName,
+        mediaType: document.mediaType ?? "",
+        byteSize: Number(document.byteSize),
+        category: document.category,
+        scanStatus: document.scanStatus,
+        available,
+        uploadedByName: document.uploadedByName,
+        createdAt: document.createdAt.toISOString(),
+        downloadUrl: available ? `/api/documents/${document.id}/download` : null
+      };
+    }),
     activity: request.activities.map((activity) => ({
       id: activity.id,
       type: activity.type as RequestActivityType,
@@ -457,8 +477,8 @@ export async function listClientRelatedWork(clientId: string) {
   ]);
 
   const requestRecords = clientRequests.map(toRequestRecord);
-  const quoteRecords = quotes.map(toQuoteRecord);
-  const projectRecords = projects.map(toProjectRecord);
+  const quoteRecords = quotes.map((quote) => toQuoteRecord(quote));
+  const projectRecords = projects.map((project) => toProjectRecord(project));
   const invoiceRecords = invoices.map(toInvoiceRecord);
 
   return {

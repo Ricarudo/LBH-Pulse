@@ -2,6 +2,8 @@ import { Prisma } from "@/generated/prisma/client";
 import type { AuthenticatedUser } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
+import { listProjectDocuments, listQuoteDocuments } from "@/lib/services/documentService";
+import type { LifecycleDocumentRecord } from "@/types/document";
 import type {
   ConvertQuoteInput,
   CreateInvoiceInput,
@@ -51,7 +53,10 @@ function dateOutput(value?: Date | null) {
   return value ? value.toISOString().slice(0, 10) : "";
 }
 
-export function toQuoteRecord(quote: QuoteWithRelations): QuoteRecord {
+export function toQuoteRecord(
+  quote: QuoteWithRelations,
+  documents: LifecycleDocumentRecord[] = []
+): QuoteRecord {
   const request = quote.requests[0];
   return {
     id: quote.id,
@@ -66,11 +71,15 @@ export function toQuoteRecord(quote: QuoteWithRelations): QuoteRecord {
     requestNumber: request?.requestNumber ?? "",
     projectId: quote.project?.id ?? null,
     createdAt: dateOutput(quote.createdAt),
-    updatedAt: quote.updatedAt.toISOString()
+    updatedAt: quote.updatedAt.toISOString(),
+    documents
   };
 }
 
-export function toProjectRecord(project: ProjectWithRelations): ProjectRecord {
+export function toProjectRecord(
+  project: ProjectWithRelations,
+  documents: LifecycleDocumentRecord[] = []
+): ProjectRecord {
   return {
     id: project.id,
     projectNumber: project.projectNumber,
@@ -86,7 +95,8 @@ export function toProjectRecord(project: ProjectWithRelations): ProjectRecord {
     dueDate: dateOutput(project.dueDate),
     invoiceCount: project.invoices.length,
     createdAt: dateOutput(project.createdAt),
-    updatedAt: project.updatedAt.toISOString()
+    updatedAt: project.updatedAt.toISOString(),
+    documents
   };
 }
 
@@ -161,17 +171,19 @@ async function invoiceOrThrow(id: string) {
 }
 
 export async function listQuotes() {
-  return (
-    await prisma.quote.findMany({
+  const quotes = await prisma.quote.findMany({
       where: { archivedAt: null },
       include: quoteInclude,
       orderBy: { updatedAt: "desc" }
-    })
-  ).map(toQuoteRecord);
+    });
+  return Promise.all(
+    quotes.map(async (quote) => toQuoteRecord(quote, await listQuoteDocuments(quote.id)))
+  );
 }
 
 export async function getQuoteById(id: string) {
-  return toQuoteRecord(await quoteOrThrow(id));
+  const quote = await quoteOrThrow(id);
+  return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
 }
 
 export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedUser) {
@@ -198,7 +210,7 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
     title: `${quote.quoteNumber} created`,
     detail: quote.title
   });
-  return toQuoteRecord(quote);
+  return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
 }
 
 export async function updateQuote(id: string, input: UpdateQuoteInput, user?: AuthenticatedUser) {
@@ -227,7 +239,7 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
     title: `${quote.quoteNumber} updated`,
     metadata: { status: quote.status, total: Number(quote.total) }
   });
-  return toQuoteRecord(quote);
+  return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
 }
 
 export async function archiveQuote(id: string, user?: AuthenticatedUser) {
@@ -244,21 +256,25 @@ export async function archiveQuote(id: string, user?: AuthenticatedUser) {
     type: "Archived",
     title: `${quote.quoteNumber} archived`
   });
-  return toQuoteRecord(quote);
+  return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
 }
 
 export async function listProjects() {
-  return (
-    await prisma.project.findMany({
+  const projects = await prisma.project.findMany({
       where: { archivedAt: null },
       include: projectInclude,
       orderBy: { updatedAt: "desc" }
-    })
-  ).map(toProjectRecord);
+    });
+  return Promise.all(
+    projects.map(async (project) =>
+      toProjectRecord(project, await listProjectDocuments(project.id))
+    )
+  );
 }
 
 export async function getProjectById(id: string) {
-  return toProjectRecord(await projectOrThrow(id));
+  const project = await projectOrThrow(id);
+  return toProjectRecord(project, await listProjectDocuments(project.id));
 }
 
 async function createProjectData(
@@ -309,7 +325,7 @@ export async function createProject(input: CreateProjectInput, user?: Authentica
     title: `${project.projectNumber} created`,
     detail: project.title
   });
-  return toProjectRecord(project);
+  return toProjectRecord(project, await listProjectDocuments(project.id));
 }
 
 export async function convertQuoteToProject(
@@ -350,7 +366,7 @@ export async function convertQuoteToProject(
       title: `${project.projectNumber} created from ${quote.quoteNumber}`
     })
   ]);
-  return toProjectRecord(project);
+  return toProjectRecord(project, await listProjectDocuments(project.id));
 }
 
 export async function updateProject(id: string, input: UpdateProjectInput, user?: AuthenticatedUser) {
@@ -381,7 +397,7 @@ export async function updateProject(id: string, input: UpdateProjectInput, user?
     title: `${project.projectNumber} updated`,
     metadata: { status: project.status, budget: Number(project.budget) }
   });
-  return toProjectRecord(project);
+  return toProjectRecord(project, await listProjectDocuments(project.id));
 }
 
 export async function archiveProject(id: string, user?: AuthenticatedUser) {
@@ -398,7 +414,7 @@ export async function archiveProject(id: string, user?: AuthenticatedUser) {
     type: "Archived",
     title: `${project.projectNumber} archived`
   });
-  return toProjectRecord(project);
+  return toProjectRecord(project, await listProjectDocuments(project.id));
 }
 
 export async function listInvoices() {

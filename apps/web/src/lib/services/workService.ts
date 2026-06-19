@@ -66,7 +66,8 @@ export function toQuoteRecord(quote: QuoteWithRelations): QuoteRecord {
     requestNumber: request?.requestNumber ?? "",
     projectId: quote.project?.id ?? null,
     createdAt: dateOutput(quote.createdAt),
-    updatedAt: quote.updatedAt.toISOString()
+    updatedAt: quote.updatedAt.toISOString(),
+    documents: []
   };
 }
 
@@ -86,7 +87,8 @@ export function toProjectRecord(project: ProjectWithRelations): ProjectRecord {
     dueDate: dateOutput(project.dueDate),
     invoiceCount: project.invoices.length,
     createdAt: dateOutput(project.createdAt),
-    updatedAt: project.updatedAt.toISOString()
+    updatedAt: project.updatedAt.toISOString(),
+    documents: []
   };
 }
 
