@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Express } from "express";
 import {
+  parseDocumentRange,
   validateDocumentUpload,
   validDocumentSignature
 } from "@/lib/services/documentService";
@@ -61,5 +62,21 @@ describe("document upload validation", () => {
     );
     assert.equal(validDocumentSignature("image/jpeg", Buffer.from([0xff, 0xd8, 0xff])), true);
     assert.equal(validDocumentSignature("application/pdf", Buffer.from("not a pdf")), false);
+  });
+});
+
+describe("document preview ranges", () => {
+  it("parses bounded, open-ended, and suffix ranges", () => {
+    assert.deepEqual(parseDocumentRange("bytes=10-19", 100), { start: 10, end: 19 });
+    assert.deepEqual(parseDocumentRange("bytes=90-", 100), { start: 90, end: 99 });
+    assert.deepEqual(parseDocumentRange("bytes=-10", 100), { start: 90, end: 99 });
+    assert.equal(parseDocumentRange(undefined, 100), null);
+  });
+
+  it("clamps end positions and rejects malformed or unsatisfiable ranges", () => {
+    assert.deepEqual(parseDocumentRange("bytes=95-200", 100), { start: 95, end: 99 });
+    for (const value of ["items=0-1", "bytes=20-10", "bytes=100-101", "bytes=-0", "bytes=-"]) {
+      assert.throws(() => parseDocumentRange(value, 100), /DOCUMENT_RANGE_INVALID/);
+    }
   });
 });

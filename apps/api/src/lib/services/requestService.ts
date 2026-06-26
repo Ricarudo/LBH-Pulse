@@ -269,7 +269,8 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
         available,
         uploadedByName: document.uploadedByName,
         createdAt: document.createdAt.toISOString(),
-        downloadUrl: available ? `/api/documents/${document.id}/download` : null
+        downloadUrl: available ? `/api/documents/${document.id}/download` : null,
+        previewUrl: available ? `/api/documents/${document.id}/preview` : null
       };
     }),
     activity: request.activities.map((activity) => ({

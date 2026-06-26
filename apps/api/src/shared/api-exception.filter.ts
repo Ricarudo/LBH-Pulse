@@ -9,6 +9,7 @@ import { Prisma } from "@/generated/prisma/client";
 import type { Response } from "express";
 import { ZodError } from "zod";
 import { AuthError } from "@/shared/auth.service";
+import { DocumentRangeError } from "@/lib/services/documentService";
 
 type ErrorPayload = {
   status: number;
@@ -68,8 +69,7 @@ const errorMap: Record<string, ErrorPayload> = {
   QUOTE_NOT_APPROVED: { status: 400, body: { error: "Approve the quote before creating a project." } },
   QUOTE_CLIENT_REQUIRED: { status: 400, body: { error: "Select a client before creating a project from this quote." } },
   WORK_CLIENT_MISMATCH: { status: 400, body: { error: "The selected records must belong to the same client." } },
-  PROJECT_CANCELLED: { status: 400, body: { error: "Cancelled projects cannot create invoices." } }
-  ,
+  PROJECT_CANCELLED: { status: 400, body: { error: "Cancelled projects cannot create invoices." } },
   DOCUMENT_NOT_FOUND: { status: 404, body: { error: "Document not found." } },
   DOCUMENT_NOT_AVAILABLE: { status: 409, body: { error: "This legacy or unverified document is not available for download." } },
   DOCUMENT_FILE_REQUIRED: { status: 400, body: { error: "Select a file to upload." } },
@@ -81,7 +81,8 @@ const errorMap: Record<string, ErrorPayload> = {
   DOCUMENT_CATEGORY_INVALID: { status: 400, body: { error: "Select a valid document category for this lifecycle stage." } },
   DOCUMENT_MALWARE_DETECTED: { status: 422, body: { error: "The file failed malware inspection and was rejected." } },
   DOCUMENT_SCANNER_UNAVAILABLE: { status: 503, body: { error: "Document malware inspection is temporarily unavailable. Nothing was stored." } },
-  DOCUMENT_STORAGE_UNAVAILABLE: { status: 503, body: { error: "Private document storage is unavailable. Nothing was stored." } }
+  DOCUMENT_STORAGE_UNAVAILABLE: { status: 503, body: { error: "Private document storage is unavailable. Nothing was stored." } },
+  DOCUMENT_RANGE_INVALID: { status: 416, body: { error: "The requested document byte range is invalid." } }
 };
 
 function zodFieldErrors(error: ZodError) {
@@ -137,6 +138,13 @@ export function apiErrorPayload(error: unknown): ErrorPayload | null {
 export class ApiExceptionFilter implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<Response>();
+    if (error instanceof DocumentRangeError) {
+      response
+        .status(416)
+        .setHeader("Content-Range", `bytes */${error.byteSize}`)
+        .json({ error: "The requested document byte range is invalid." });
+      return;
+    }
     const mapped = apiErrorPayload(error);
 
     if (mapped) {

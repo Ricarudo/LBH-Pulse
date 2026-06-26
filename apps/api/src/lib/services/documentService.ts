@@ -197,7 +197,8 @@ async function listForStage(stage: Stage, id: string): Promise<LifecycleDocument
       available,
       uploadedByName: document.uploadedByName,
       createdAt: document.createdAt.toISOString(),
-      downloadUrl: available ? `/api/documents/${document.id}/download` : null
+      downloadUrl: available ? `/api/documents/${document.id}/download` : null,
+      previewUrl: available ? `/api/documents/${document.id}/preview` : null
     };
   });
 }
@@ -426,6 +427,92 @@ export async function getDocumentDownload(id: string, user: AuthenticatedUser) {
     fileName: document.originalFileName,
     mediaType: document.mediaType || "application/octet-stream",
     byteSize: Number(document.byteSize)
+  };
+}
+
+export type DocumentByteRange = {
+  start: number;
+  end: number;
+};
+
+export class DocumentRangeError extends Error {
+  constructor(readonly byteSize: number) {
+    super("DOCUMENT_RANGE_INVALID");
+  }
+}
+
+export function parseDocumentRange(
+  rangeHeader: string | undefined,
+  byteSize: number
+): DocumentByteRange | null {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match || byteSize <= 0) throw new DocumentRangeError(byteSize);
+  const [, startText, endText] = match;
+  if (!startText && !endText) throw new DocumentRangeError(byteSize);
+
+  let start: number;
+  let end: number;
+  if (!startText) {
+    const suffixLength = Number(endText);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+      throw new DocumentRangeError(byteSize);
+    }
+    start = Math.max(0, byteSize - suffixLength);
+    end = byteSize - 1;
+  } else {
+    start = Number(startText);
+    end = endText ? Number(endText) : byteSize - 1;
+    if (
+      !Number.isSafeInteger(start) ||
+      !Number.isSafeInteger(end) ||
+      start < 0 ||
+      end < start ||
+      start >= byteSize
+    ) {
+      throw new DocumentRangeError(byteSize);
+    }
+    end = Math.min(end, byteSize - 1);
+  }
+  return { start, end };
+}
+
+export async function getDocumentPreview(
+  id: string,
+  rangeHeader: string | undefined,
+  user: AuthenticatedUser
+) {
+  const document = await prisma.lifecycleDocument.findFirst({ where: { id, deletedAt: null } });
+  if (!document) throw new Error("DOCUMENT_NOT_FOUND");
+  if (document.scanStatus !== "Clean" || !document.objectKey) throw new Error("DOCUMENT_NOT_AVAILABLE");
+  const byteSize = Number(document.byteSize);
+  const range = parseDocumentRange(rangeHeader, byteSize);
+  const { client, bucket } = storageConfig();
+  const object = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: document.objectKey,
+      ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {})
+    })
+  );
+  if (!object.Body) throw new Error("DOCUMENT_NOT_AVAILABLE");
+  if (!range || range.start === 0) {
+    const origin = documentOrigin(document);
+    await recordActivity({
+      user,
+      relatedEntityType: origin.type,
+      relatedEntityId: origin.id,
+      type: "Document Previewed",
+      title: `${document.originalFileName} previewed`,
+      metadata: { documentId: document.id }
+    });
+  }
+  return {
+    body: object.Body,
+    fileName: document.originalFileName,
+    mediaType: document.mediaType || "application/octet-stream",
+    byteSize,
+    range
   };
 }
 
