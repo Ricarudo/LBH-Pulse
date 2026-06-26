@@ -29,6 +29,7 @@ import type { ActivityRecord } from "@/types/activity";
 import type { ClientRecord } from "@/types/client";
 import { RequestsMobileView } from "./RequestsMobileView";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
+import { RequestIntakeWizard } from "./RequestIntakeWizard";
 import {
   requestPriorities,
   requestSources,
@@ -278,9 +279,9 @@ function assigneeLabel(assignee: RequestAssignee) {
   return `${assignee.name} (${assignee.roleLabel})`;
 }
 
-export function RequestsModule() {
+export function RequestsModule({ openNewOnLoad = false }: { openNewOnLoad?: boolean }) {
   const router = useRouter();
-  const { user } = useCurrentUser();
+  const { user, isLoading: isUserLoading } = useCurrentUser();
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
   const [clients, setClients] = useState<ClientRecord[]>([]);
@@ -292,6 +293,8 @@ export function RequestsModule() {
   const [assigneeFilter, setAssigneeFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] =
     useState<"All" | RequestPriority>("All");
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [handledOpenNewOnLoad, setHandledOpenNewOnLoad] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
   const [formState, setFormState] = useState<RequestFormState>(createFormState());
   const [noteText, setNoteText] = useState("");
@@ -414,6 +417,29 @@ export function RequestsModule() {
 
     void loadRequests();
   }, []);
+
+  useEffect(() => {
+    // /requests?new=1 is the compatibility entry point for the old full-page
+    // create route. Once handled, replace the URL so refreshes do not reopen it.
+    if (!openNewOnLoad || handledOpenNewOnLoad) {
+      return;
+    }
+
+    if (isUserLoading) {
+      return;
+    }
+
+    setHandledOpenNewOnLoad(true);
+
+    if (!canWriteCrm) {
+      setToast("Your role does not allow creating requests.");
+      router.replace("/requests", { scroll: false });
+      return;
+    }
+
+    setIntakeOpen(true);
+    router.replace("/requests", { scroll: false });
+  }, [canWriteCrm, handledOpenNewOnLoad, isUserLoading, openNewOnLoad, router]);
 
   useEffect(() => {
     if (
@@ -570,8 +596,28 @@ export function RequestsModule() {
       return;
     }
 
-    setFormMode("create");
-    setFormState(createFormState(undefined, user?.id ?? ""));
+    // Create now uses the guided intake wizard; edit still uses the existing
+    // one-page modal below because it exposes the full request field surface.
+    setIntakeOpen(true);
+  }
+
+  function handleIntakeClientChanged(client: ClientRecord) {
+    // Client/PoC/site creation happens immediately inside the wizard, so keep
+    // the queue's local Directory cache fresh without reloading the whole page.
+    setClients((current) =>
+      current.some((item) => item.id === client.id)
+        ? current.map((item) => (item.id === client.id ? client : item))
+        : [client, ...current]
+    );
+  }
+
+  function handleIntakeCreated(request: RequestRecord) {
+    // Mirror the old create behavior: prepend the request, select it, and leave
+    // the user in the open intake queue.
+    setRequests((current) => [request, ...current]);
+    setSelectedRequestId(request.id);
+    setActiveView("All Open");
+    setToast(`${request.requestNumber} created.`);
   }
 
   function openEditForm(request: RequestRecord) {
@@ -894,10 +940,10 @@ export function RequestsModule() {
       <section className="requests-desktop-summary" aria-label="Request intake summary">
         <div className="requests-context-label">
           <span>Requests / Intake Queue</span>
-          <Link className="primary-button compact" href="/requests/new">
+          <button className="primary-button compact" type="button" onClick={openCreateForm}>
             <Plus size={17} />
             New Request
-          </Link>
+          </button>
         </div>
         <div className="requests-summary-grid">
           {desktopSummaryCards.map((card) => (
@@ -1345,6 +1391,16 @@ export function RequestsModule() {
       </section>
 
       <div className="lead-toast">{toast}</div>
+
+      <RequestIntakeWizard
+        isOpen={intakeOpen}
+        clients={clients}
+        assignees={assignees}
+        currentUser={user}
+        onClose={() => setIntakeOpen(false)}
+        onClientChanged={handleIntakeClientChanged}
+        onCreated={handleIntakeCreated}
+      />
 
       {formMode ? (
         <div className="lead-modal-backdrop" role="dialog" aria-modal="true">

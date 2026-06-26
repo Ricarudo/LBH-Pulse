@@ -1,7 +1,15 @@
 import { RequestsModule } from "@/modules/requests/RequestsModule";
 import { PulseShell } from "@/components/PulseShell";
 
-export default function RequestsPage() {
+type RequestsPageProps = {
+  searchParams?: Promise<{
+    new?: string;
+  }>;
+};
+
+export default async function RequestsPage({ searchParams }: RequestsPageProps) {
+  const params = await searchParams;
+
   return (
     <PulseShell
       activePage="requests"
@@ -9,7 +17,9 @@ export default function RequestsPage() {
       subtitle="Incoming calls, emails, RFPs, site visits, and quote requests."
       compactHeader
     >
-      <RequestsModule />
+      {/* The new request flow lives in the queue so its full-screen modal can sit
+          above the list/detail layout instead of replacing the page. */}
+      <RequestsModule openNewOnLoad={params?.new === "1"} />
     </PulseShell>
   );
 }

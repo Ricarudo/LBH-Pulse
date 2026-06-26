@@ -1,15 +1,7 @@
-import { PulseShell } from "@/components/PulseShell";
-import { RequestRouteWorkspace } from "@/modules/requests/RequestRouteWorkspace";
+import { redirect } from "next/navigation";
 
 export default function NewRequestPage() {
-  return (
-    <PulseShell
-      activePage="requests"
-      title="New Request"
-      subtitle="Capture a new intake record."
-      compactHeader
-    >
-      <RequestRouteWorkspace mode="new" />
-    </PulseShell>
-  );
+  // Preserve bookmarks and old links while routing users into the new queue
+  // modal experience.
+  redirect("/requests?new=1");
 }
