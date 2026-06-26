@@ -844,6 +844,16 @@ const sampleClients = [
 ];
 
 async function main() {
+  if (process.env.PULSE_ALLOW_DESTRUCTIVE_SEED !== "1") {
+    throw new Error(
+      [
+        "Destructive Pulse seed refused.",
+        "This command deletes and recreates users, document metadata, and demo records.",
+        "Use db:initialize for a pristine database or db:reset-demo only when an intentional reset was specifically requested."
+      ].join("\n")
+    );
+  }
+
   await prisma.activity.deleteMany();
   await prisma.requestChecklistItem.deleteMany();
   await prisma.lifecycleDocument.deleteMany();

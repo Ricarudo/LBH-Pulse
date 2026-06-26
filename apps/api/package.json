@@ -13,7 +13,9 @@
     "db:push:accept-data-loss": "prisma db push --accept-data-loss && tsx prisma/ensure-constraints.ts",
     "db:bootstrap": "npm run prisma:generate && tsx prisma/bootstrap.ts",
     "db:seed": "tsx prisma/seed.ts",
-    "db:setup": "npm run prisma:generate && npm run db:push:accept-data-loss && npm run db:seed",
+    "db:initialize": "tsx prisma/assert-uninitialized.ts && npm run prisma:generate && npm run db:push && PULSE_ALLOW_DESTRUCTIVE_SEED=1 npm run db:seed",
+    "db:setup": "npm run prisma:generate && npm run db:push",
+    "db:reset-demo": "npm run prisma:generate && npm run db:push:accept-data-loss && PULSE_ALLOW_DESTRUCTIVE_SEED=1 npm run db:seed",
     "legacy-leads:export": "npm run prisma:generate && tsx scripts/export-legacy-leads.ts",
     "legacy-leads:import": "npm run prisma:generate && tsx scripts/import-legacy-leads.ts"
   },

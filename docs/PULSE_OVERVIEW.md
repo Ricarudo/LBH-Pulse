@@ -75,10 +75,21 @@ Useful Prisma/database commands from the relevant app folder:
 ```bash
 npm run prisma:generate
 npm run db:push
-npm run db:seed
 ```
 
-Review Prisma data-loss warnings before accepting schema changes, and do not run destructive seeds against data that must be preserved.
+For a brand-new database, use the repository-level `./first-run.sh`. It refuses
+to run when Pulse is already initialized. Normal `db:setup` does not seed.
+
+The following commands are destructive and must be requested explicitly:
+
+```bash
+npm run db:reset-demo
+```
+
+Direct `npm run db:seed` refuses unless the deliberate
+`PULSE_ALLOW_DESTRUCTIVE_SEED=1` override is supplied. Review Prisma data-loss
+warnings before accepting schema changes, and never run destructive seeds
+against data that must be preserved.
 
 ## Local Accounts
 

@@ -14,11 +14,17 @@ The domain services and validation contracts were migrated from `apps/web` as th
 
 ## Local Development
 
+Use the repository-level `./first-run.sh` only for a brand-new Pulse database.
+It refuses to seed when the Pulse schema already exists.
+
 ```bash
 npm install
 npm run db:setup
 npm run dev
 ```
+
+`db:setup` generates Prisma and applies the schema without running the demo
+seed.
 
 Default API URL:
 
@@ -41,14 +47,22 @@ npm run prisma:generate
 npm run db:push
 npm run db:push:accept-data-loss
 npm run db:bootstrap
+npm run db:initialize
 npm run db:seed
 npm run db:setup
+npm run db:reset-demo
 npm run legacy-leads:export
 npm run legacy-leads:import -- --apply
 npm run typecheck
 npm run build
 npm test
 ```
+
+`db:initialize` is guarded and succeeds only when the Pulse schema has no
+tables. Direct `db:seed` is also guarded and requires the deliberate
+`PULSE_ALLOW_DESTRUCTIVE_SEED=1` override. `db:reset-demo` supplies that override
+and deletes/recreates demo application data, including users and document
+metadata.
 
 ## Legacy Lead Preservation
 

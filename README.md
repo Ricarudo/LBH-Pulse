@@ -69,6 +69,16 @@ docker-compose.legacy.yml Optional legacy Express compose service
 
 ## Default Pulse Stack
 
+For a brand-new workstation/database only, run:
+
+```bash
+./first-run.sh
+```
+
+`first-run.sh` refuses to continue when the Pulse schema already contains
+tables. It will not reseed an existing environment. After initialization, use
+the normal startup command:
+
 Start the full local stack:
 
 ```bash
@@ -83,7 +93,9 @@ API health: http://localhost:4300/api/health
 Direct API health: http://localhost:3000/api/health
 ```
 
-The API development command generates Prisma but does not push schema changes or seed automatically. For a disposable fresh local database, run `docker compose exec api npm run db:push` and then `docker compose exec api npm run db:seed`; review Prisma data-loss warnings before accepting any schema push, and do not run the copied seed against data that must be preserved.
+The API development command generates Prisma but does not push schema changes
+or seed automatically. `db:setup` updates the schema without seeding. The demo
+seed is destructive and is never part of normal setup or startup.
 
 ## Manual App Commands
 
@@ -124,12 +136,22 @@ From `apps/api` or `apps/web`:
 ```bash
 npm run prisma:generate
 npm run db:push
-npm run db:seed
 npm run db:setup
 npm run typecheck
 npm run build
 npm run dev
 ```
+
+Destructive demo data commands must be run explicitly:
+
+```bash
+npm run db:reset-demo  # accept schema data loss, then destructive seed
+```
+
+Direct `npm run db:seed` is guarded and refuses unless
+`PULSE_ALLOW_DESTRUCTIVE_SEED=1` is deliberately supplied. Do not run the reset
+or override against an environment containing users, uploaded documents, or
+other data that must be preserved.
 
 ## Compatibility Backend
 

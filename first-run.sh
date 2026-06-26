@@ -21,11 +21,39 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Starting PostgreSQL, private object storage, malware scanning, and API containers..."
-compose up -d --build postgres minio minio-init clamav api
+echo "Starting first-run infrastructure..."
+compose up -d postgres minio minio-init clamav
 
-echo "Applying Prisma schema and seeding the database..."
-compose exec -T api npm run db:setup
+INITIALIZED=$(compose exec -T postgres psql -U kuotesuite -d kuotesuite -Atqc \
+  "SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'pulse'
+      AND table_type = 'BASE TABLE'
+  );")
+
+if [ "$INITIALIZED" = "t" ]; then
+  cat >&2 <<'EOF'
+
+Pulse is already initialized. First-run stopped without changing the database
+or stored documents.
+
+Start the existing environment with:
+  docker compose up -d --build
+
+The destructive demo reset is intentionally separate and must be requested
+explicitly:
+  docker compose exec -T api npm run db:reset-demo
+
+EOF
+  exit 2
+fi
+
+echo "Building the API initialization image..."
+compose build api
+
+echo "Creating the initial schema and demo data..."
+compose run --rm -T api npm run db:initialize
 
 echo "Starting the full Pulse stack..."
 compose up -d --build
