@@ -3,6 +3,18 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { canRole } from "@/lib/auth/permissions";
+import {
+  buildQuickCreatePayload,
+  createBlankQuickCreateForm,
+  mapQuickCreateApiErrors,
+  quickCreateLimits,
+  validateQuickCreateForm,
+  type QuickCreateErrors,
+  type QuickCreateField
+} from "@/lib/forms/clientQuickCreate";
+// Directory and request intake share the same quick-create sanitation rules so
+// a new client behaves consistently no matter where it is created.
+import { FormRequestError, formJson } from "@/lib/forms/sanitization";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
   ArrowLeft,
@@ -18,7 +30,6 @@ import {
   clientOwners,
   clientStatuses,
   formatMoney,
-  type ClientCreatePayload,
   type ClientIndustry,
   type ClientRecord,
   type ClientStatus
@@ -31,63 +42,6 @@ type ClientListResponse = {
 type ClientCreateResponse = {
   client: ClientRecord;
 };
-
-type ApiIssue = {
-  path?: Array<string | number>;
-  message?: string;
-};
-
-type ApiErrorBody = {
-  error?: string;
-  fields?: Record<string, string>;
-  issues?: ApiIssue[];
-};
-
-class ClientRequestError extends Error {
-  fields: Record<string, string>;
-  issues: ApiIssue[];
-
-  constructor(message: string, fields?: Record<string, string>, issues?: ApiIssue[]) {
-    super(message);
-    this.name = "ClientRequestError";
-    this.fields = fields ?? {};
-    this.issues = issues ?? [];
-  }
-}
-
-type QuickCreateForm = {
-  clientName: string;
-  industry: string;
-  contactName: string;
-  contactEmail: string;
-  contactPhone: string;
-  contactRole: string;
-};
-
-type QuickCreateField = keyof QuickCreateForm;
-type QuickCreateErrors = Partial<Record<QuickCreateField | "form", string>>;
-
-const quickCreateLimits = {
-  clientName: 160,
-  contactName: 120,
-  contactEmail: 254,
-  contactPhone: 40,
-  contactRole: 120
-};
-
-const unsafeFreeTextPattern = /[<>]|javascript\s*:/i;
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function createBlankQuickCreateForm(): QuickCreateForm {
-  return {
-    clientName: "",
-    industry: "",
-    contactName: "",
-    contactEmail: "",
-    contactPhone: "",
-    contactRole: ""
-  };
-}
 
 function statusClass(status: ClientStatus) {
   if (status === "On Hold") {
@@ -132,271 +86,6 @@ function compactValue(value: string | number | null | undefined) {
   return value?.trim() || "Not captured";
 }
 
-function normalizeText(value: string, collapseSpaces = false) {
-  const trimmed = value.trim();
-  return collapseSpaces ? trimmed.replace(/\s+/g, " ") : trimmed;
-}
-
-function normalizeEmail(value: string) {
-  return normalizeText(value).toLowerCase();
-}
-
-function normalizePhone(value: string) {
-  return normalizeText(value, true);
-}
-
-function hasUnsafeFreeText(value: string) {
-  return unsafeFreeTextPattern.test(value);
-}
-
-function isClientIndustry(value: string): value is ClientIndustry {
-  return clientIndustries.includes(value as ClientIndustry);
-}
-
-function validateTextField(
-  errors: QuickCreateErrors,
-  field: QuickCreateField,
-  value: string,
-  limit: number
-) {
-  if (value.length > limit) {
-    errors[field] = `Must be ${limit} characters or less.`;
-    return;
-  }
-
-  if (hasUnsafeFreeText(value)) {
-    errors[field] = "Remove HTML or script content.";
-  }
-}
-
-function validateQuickCreateForm(form: QuickCreateForm) {
-  const normalized: QuickCreateForm = {
-    clientName: normalizeText(form.clientName, true),
-    industry: normalizeText(form.industry),
-    contactName: normalizeText(form.contactName, true),
-    contactEmail: normalizeEmail(form.contactEmail),
-    contactPhone: normalizePhone(form.contactPhone),
-    contactRole: normalizeText(form.contactRole, true)
-  };
-  const errors: QuickCreateErrors = {};
-
-  if (!normalized.clientName) {
-    errors.clientName = "Client Name is required.";
-  } else {
-    validateTextField(
-      errors,
-      "clientName",
-      normalized.clientName,
-      quickCreateLimits.clientName
-    );
-  }
-
-  if (!normalized.industry) {
-    errors.industry = "Client Industry is required.";
-  } else if (!isClientIndustry(normalized.industry)) {
-    errors.industry = "Select a valid client industry.";
-  }
-
-  validateTextField(
-    errors,
-    "contactName",
-    normalized.contactName,
-    quickCreateLimits.contactName
-  );
-  validateTextField(
-    errors,
-    "contactPhone",
-    normalized.contactPhone,
-    quickCreateLimits.contactPhone
-  );
-  validateTextField(
-    errors,
-    "contactRole",
-    normalized.contactRole,
-    quickCreateLimits.contactRole
-  );
-
-  const hasAnyContactField = Boolean(
-    normalized.contactName ||
-      normalized.contactEmail ||
-      normalized.contactPhone ||
-      normalized.contactRole
-  );
-
-  if (hasAnyContactField && !normalized.contactName) {
-    errors.contactName = "Point of Contact Name is required.";
-  }
-
-  if (
-    hasAnyContactField &&
-    !normalized.contactEmail &&
-    !normalized.contactPhone
-  ) {
-    errors.contactEmail = "Provide an email or phone for this contact.";
-  }
-
-  if (normalized.contactEmail.length > quickCreateLimits.contactEmail) {
-    errors.contactEmail = `Must be ${quickCreateLimits.contactEmail} characters or less.`;
-  } else if (
-    normalized.contactEmail &&
-    !emailPattern.test(normalized.contactEmail)
-  ) {
-    errors.contactEmail = "Enter a valid email address.";
-  }
-
-  return { normalized, errors };
-}
-
-function splitContactName(contactName: string) {
-  const [firstName = "", ...lastNameParts] = contactName.split(" ");
-  return {
-    firstName,
-    lastName: lastNameParts.join(" ")
-  };
-}
-
-function buildQuickCreatePayload(form: QuickCreateForm): ClientCreatePayload {
-  const contactProvided = Boolean(
-    form.contactName || form.contactEmail || form.contactPhone || form.contactRole
-  );
-  const contacts: ClientCreatePayload["contacts"] = [];
-
-  if (contactProvided) {
-    const { firstName, lastName } = splitContactName(form.contactName);
-
-    contacts.push({
-      name: form.contactName,
-      role: form.contactRole || "Primary",
-      firstName,
-      lastName,
-      title: form.contactRole,
-      department: "",
-      email: form.contactEmail,
-      phone: form.contactPhone,
-      mobile: "",
-      preferredContactMethod: form.contactEmail
-        ? "Email"
-        : form.contactPhone
-          ? "Phone"
-          : "Email",
-      isPrimary: true,
-      isBilling: false,
-      isPrimaryContact: true,
-      isBillingContact: false,
-      isTechnicalContact: false,
-      isDecisionMaker: false,
-      notes: ""
-    });
-  }
-
-  return {
-    legalName: form.clientName,
-    displayName: form.clientName,
-    industry: form.industry,
-    website: "",
-    status: "Prospect",
-    accountOwner: "Unassigned",
-    taxId: "",
-    paymentTerms: "",
-    preferredCurrency: "USD",
-    preferredLanguage: "English",
-    brandPreferences: "",
-    technologyPreferences: "",
-    generalNotes: "",
-    preferredVendors: "",
-    preferredCameraBrand: "",
-    preferredAccessControlBrand: "",
-    preferredNetworkBrand: "",
-    preferredCablingBrand: "",
-    standardTechnologies: "",
-    documentationRequirements: "",
-    invoiceRequirements: "",
-    insuranceRequirements: "",
-    purchaseOrderRequired: false,
-    sites: [],
-    contacts,
-    serviceProfile: []
-  };
-}
-
-function popupFieldFromApiPath(path: string): QuickCreateField | "form" {
-  if (path === "displayName" || path === "legalName") {
-    return "clientName";
-  }
-
-  if (path === "industry") {
-    return "industry";
-  }
-
-  if (path.startsWith("contacts.0.")) {
-    const contactField = path.replace("contacts.0.", "");
-
-    if (contactField === "name" || contactField === "firstName" || contactField === "lastName") {
-      return "contactName";
-    }
-
-    if (contactField === "email") {
-      return "contactEmail";
-    }
-
-    if (contactField === "phone" || contactField === "mobile") {
-      return "contactPhone";
-    }
-
-    if (contactField === "title" || contactField === "role") {
-      return "contactRole";
-    }
-  }
-
-  return "form";
-}
-
-function mapApiErrorsToPopup(error: ClientRequestError): QuickCreateErrors {
-  const mapped: QuickCreateErrors = {};
-
-  for (const [path, message] of Object.entries(error.fields)) {
-    const field = popupFieldFromApiPath(path);
-    mapped[field] ??= message;
-  }
-
-  for (const issue of error.issues) {
-    if (!issue.message || !issue.path) {
-      continue;
-    }
-
-    const field = popupFieldFromApiPath(issue.path.map(String).join("."));
-    mapped[field] ??= issue.message;
-  }
-
-  if (!Object.keys(mapped).length) {
-    mapped.form = error.message;
-  }
-
-  return mapped;
-}
-
-async function requestJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers
-    }
-  });
-
-  const data = (await response.json().catch(() => ({}))) as ApiErrorBody;
-
-  if (!response.ok) {
-    throw new ClientRequestError(
-      typeof data.error === "string" ? data.error : "Client request failed.",
-      data.fields,
-      data.issues
-    );
-  }
-
-  return data as T;
-}
-
 export function ClientsModule() {
   const router = useRouter();
   const { user } = useCurrentUser();
@@ -426,9 +115,11 @@ export function ClientsModule() {
       try {
         setIsLoading(true);
         setLoadError("");
-        const data = await requestJson<ClientListResponse>("/api/clients", {
-          cache: "no-store"
-        });
+        const data = await formJson<ClientListResponse>(
+          "/api/clients",
+          { cache: "no-store" },
+          "Unable to load clients from the API."
+        );
         setClients(data.clients);
       } catch (error) {
         setLoadError(
@@ -561,6 +252,8 @@ export function ClientsModule() {
   async function handleQuickCreateSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    // Normalize before validating, then store normalized values back into the
+    // form so the user sees the exact payload that will be submitted.
     const { normalized, errors } = validateQuickCreateForm(quickCreateForm);
     setQuickCreateForm(normalized);
 
@@ -572,15 +265,19 @@ export function ClientsModule() {
     try {
       setIsCreatingClient(true);
       setQuickCreateErrors({});
-      const data = await requestJson<ClientCreateResponse>("/api/clients", {
-        method: "POST",
-        body: JSON.stringify(buildQuickCreatePayload(normalized))
-      });
+      const data = await formJson<ClientCreateResponse>(
+        "/api/clients",
+        {
+          method: "POST",
+          body: JSON.stringify(buildQuickCreatePayload(normalized))
+        },
+        "Unable to create this client."
+      );
 
       router.push(`/clients/${data.client.id}`);
     } catch (error) {
-      if (error instanceof ClientRequestError) {
-        setQuickCreateErrors(mapApiErrorsToPopup(error));
+      if (error instanceof FormRequestError) {
+        setQuickCreateErrors(mapQuickCreateApiErrors(error));
       } else {
         setQuickCreateErrors({
           form:
