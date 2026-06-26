@@ -16,6 +16,7 @@ export type LifecycleDocumentRecord = {
   uploadedByName: string;
   createdAt: string;
   downloadUrl: string | null;
+  previewUrl: string | null;
 };
 
 export const requestDocumentCategories = [
