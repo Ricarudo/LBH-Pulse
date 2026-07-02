@@ -53,7 +53,7 @@ echo "Building the API initialization image..."
 compose build api
 
 echo "Creating the initial schema and demo data..."
-compose run --rm -T api npm run db:initialize
+compose run --rm -T api sh -c "npm ci && npm run db:initialize"
 
 echo "Starting the full Pulse stack..."
 compose up -d --build

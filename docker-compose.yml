@@ -69,7 +69,7 @@ services:
     build:
       context: ./apps/api
       target: dev
-    command: sh -c "npm run prisma:generate && npm run dev"
+    command: sh -c "npm ci && npm run dev"
     ports:
       - "3000:3000"
     environment:
