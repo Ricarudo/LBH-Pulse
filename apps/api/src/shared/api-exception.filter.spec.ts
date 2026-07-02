@@ -18,6 +18,10 @@ describe("apiErrorPayload", () => {
       status: 404,
       body: { error: "Client not found." }
     });
+    assert.deepEqual(apiErrorPayload(new Error("CONTACT_NOT_FOUND")), {
+      status: 404,
+      body: { error: "Contact not found." }
+    });
   });
 
   it("maps Zod validation errors", () => {

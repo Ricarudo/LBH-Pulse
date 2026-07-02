@@ -11,10 +11,12 @@ import {
   Globe,
   Mail,
   MapPin,
+  MoreHorizontal,
   Phone,
-  Plus,
   ReceiptText,
   Save,
+  Search,
+  SlidersHorizontal,
   StickyNote,
   Upload,
   UserRound
@@ -67,6 +69,18 @@ const closedRequestStatuses = new Set<RequestStatus>([
   "Cancelled",
   "Duplicate"
 ]);
+
+const closedQuoteStatuses = new Set(["Accepted", "Won", "Lost", "Expired", "Cancelled", "Rejected"]);
+
+const clientWorkFilters = [
+  "All Records",
+  "Open Requests",
+  "Closed Requests",
+  "Draft Quotes",
+  "Other Quotes"
+] as const;
+
+type ClientWorkFilter = (typeof clientWorkFilters)[number];
 
 function clientStatusClass(status: ClientStatus) {
   if (status === "On Hold") {
@@ -125,6 +139,23 @@ function websiteHref(website: string) {
   return website.startsWith("http") ? website : `https://${website}`;
 }
 
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function matchesSearch(values: Array<string | number | null | undefined>, searchTerm: string) {
+  if (!searchTerm) {
+    return true;
+  }
+
+  return values.some((value) => String(value ?? "").toLowerCase().includes(searchTerm));
+}
+
 async function requestJson<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -142,7 +173,27 @@ async function requestJson<T>(url: string, init?: RequestInit) {
   return data as T;
 }
 
-function SummaryCard({
+function ClientMetricCard({
+  label,
+  value,
+  icon
+}: {
+  label: string;
+  value: string | number;
+  icon: ReactNode;
+}) {
+  return (
+    <article className="client-360-metric-card">
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </div>
+      <div className="client-360-metric-icon">{icon}</div>
+    </article>
+  );
+}
+
+function ProfileSection({
   title,
   icon,
   children
@@ -152,8 +203,8 @@ function SummaryCard({
   children: ReactNode;
 }) {
   return (
-    <section className="client-360-summary-card">
-      <div className="client-360-card-heading">
+    <section className="client-360-profile-section">
+      <div className="client-360-section-heading">
         {icon}
         <h3>{title}</h3>
       </div>
@@ -184,8 +235,8 @@ function FieldList({
 
 function ContactFlags({ contact }: { contact: ClientContact }) {
   const flags = [
-    contact.isPrimaryContact ? "Primary" : "",
-    contact.isBillingContact ? "Billing" : "",
+    contact.isPrimary || contact.isPrimaryContact ? "Primary" : "",
+    contact.isBilling || contact.isBillingContact ? "Billing" : "",
     contact.isTechnicalContact ? "Technical" : "",
     contact.isDecisionMaker ? "Decision Maker" : ""
   ].filter(Boolean);
@@ -309,19 +360,27 @@ function ClientActivityTimeline({ activities }: { activities: ClientActivity[] }
 
 function EmptyPanel({ title, detail }: { title: string; detail: string }) {
   return (
-    <div className="lead-empty-state client-360-empty">
+    <div className="client-360-compact-empty">
       <strong>{title}</strong>
       <span>{detail}</span>
     </div>
   );
 }
 
-function RequestsTable({ requests }: { requests: RequestRecord[] }) {
+function RequestsTable({
+  requests,
+  emptyTitle = "No requests are linked to this client yet.",
+  emptyDetail = "Client-linked requests will appear here once intake records use the Directory client relationship."
+}: {
+  requests: RequestRecord[];
+  emptyTitle?: string;
+  emptyDetail?: string;
+}) {
   if (!requests.length) {
     return (
       <EmptyPanel
-        title="No requests are linked to this client yet."
-        detail="Client-linked requests will appear here once intake records use the Directory client relationship."
+        title={emptyTitle}
+        detail={emptyDetail}
       />
     );
   }
@@ -366,12 +425,20 @@ function RequestsTable({ requests }: { requests: RequestRecord[] }) {
   );
 }
 
-function QuotesTable({ quotes }: { quotes: ClientQuoteSummary[] }) {
+function QuotesTable({
+  quotes,
+  emptyTitle = "No converted quote work is linked yet.",
+  emptyDetail = "Quotes will appear here when client-linked requests are converted into quote workspaces."
+}: {
+  quotes: ClientQuoteSummary[];
+  emptyTitle?: string;
+  emptyDetail?: string;
+}) {
   if (!quotes.length) {
     return (
       <EmptyPanel
-        title="No converted quote work is linked yet."
-        detail="Quotes will appear here when client-linked requests are converted into quote workspaces."
+        title={emptyTitle}
+        detail={emptyDetail}
       />
     );
   }
@@ -426,8 +493,11 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   const [loadError, setLoadError] = useState("");
   const [relatedWorkError, setRelatedWorkError] = useState("");
   const [activityDetail, setActivityDetail] = useState("");
+  const [profileSearch, setProfileSearch] = useState("");
+  const [workspaceFilter, setWorkspaceFilter] = useState<ClientWorkFilter>("All Records");
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
 
-  const canWriteCrm = canRole(user?.role, "crm:write");
+  const canEditClients = user?.role === "Admin";
   const canWriteActivity = canRole(user?.role, "crm:activity:write");
 
   useEffect(() => {
@@ -478,6 +548,159 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     [requests]
   );
 
+  const activeQuotes = useMemo(
+    () => quotes.filter((quote) => !closedQuoteStatuses.has(quote.status)),
+    [quotes]
+  );
+
+  const normalizedSearch = profileSearch.trim().toLowerCase();
+
+  const filteredRequests = useMemo(
+    () =>
+      requests.filter((request) => {
+        const matchesFilter =
+          workspaceFilter === "Open Requests"
+            ? !closedRequestStatuses.has(request.status)
+            : workspaceFilter === "Closed Requests"
+              ? closedRequestStatuses.has(request.status)
+              : true;
+
+        return (
+          matchesFilter &&
+          matchesSearch(
+            [
+              request.requestNumber,
+              request.title,
+              request.status,
+              request.requestType,
+              request.serviceCategory,
+              request.assignedToName,
+              request.receivedDate
+            ],
+            normalizedSearch
+          )
+        );
+      }),
+    [normalizedSearch, requests, workspaceFilter]
+  );
+
+  const filteredQuotes = useMemo(
+    () =>
+      quotes.filter((quote) => {
+        const matchesFilter =
+          workspaceFilter === "Draft Quotes"
+            ? quote.status === "Draft"
+            : workspaceFilter === "Other Quotes"
+              ? quote.status !== "Draft"
+              : true;
+
+        return (
+          matchesFilter &&
+          matchesSearch(
+            [
+              quote.quoteNumber,
+              quote.title,
+              quote.status,
+              quote.owner,
+              quote.requestNumber,
+              quote.total
+            ],
+            normalizedSearch
+          )
+        );
+      }),
+    [normalizedSearch, quotes, workspaceFilter]
+  );
+
+  const filteredActiveRequests = useMemo(
+    () => filteredRequests.filter((request) => !closedRequestStatuses.has(request.status)),
+    [filteredRequests]
+  );
+
+  const filteredContacts = useMemo(
+    () =>
+      (client?.contacts ?? []).filter((contact) =>
+        matchesSearch(
+          [
+            contact.name,
+            contact.title,
+            contact.department,
+            contact.email,
+            contact.phone,
+            contact.mobile,
+            contact.siteName,
+            contact.notes
+          ],
+          normalizedSearch
+        )
+      ),
+    [client?.contacts, normalizedSearch]
+  );
+
+  const filteredSites = useMemo(
+    () =>
+      (client?.sites ?? []).filter((site) =>
+        matchesSearch(
+          [
+            site.siteName,
+            site.siteType,
+            site.address,
+            site.city,
+            site.state,
+            site.country,
+            site.operationalHours,
+            site.accessInstructions,
+            site.siteNotes
+          ],
+          normalizedSearch
+        )
+      ),
+    [client?.sites, normalizedSearch]
+  );
+
+  const filteredActivities = useMemo(
+    () =>
+      (client?.recentActivity ?? []).filter((activity) =>
+        matchesSearch(
+          [activity.title, activity.type, activity.detail, activity.actor, activity.date],
+          normalizedSearch
+        )
+      ),
+    [client?.recentActivity, normalizedSearch]
+  );
+
+  const workspaceResultLabel = useMemo(() => {
+    if (activeTab === "Requests") {
+      return `${filteredRequests.length} requests`;
+    }
+
+    if (activeTab === "Quotes") {
+      return `${filteredQuotes.length} quotes`;
+    }
+
+    if (activeTab === "Contacts & Sites") {
+      return `${filteredContacts.length + filteredSites.length} records`;
+    }
+
+    if (activeTab === "Activity") {
+      return `${filteredActivities.length} activities`;
+    }
+
+    if (activeTab === "Overview") {
+      return `${filteredActiveRequests.length + filteredQuotes.length + filteredActivities.length} related items`;
+    }
+
+    return "Profile data";
+  }, [
+    activeTab,
+    filteredActivities.length,
+    filteredActiveRequests.length,
+    filteredContacts.length,
+    filteredQuotes.length,
+    filteredRequests.length,
+    filteredSites.length
+  ]);
+
   const website = client?.website ? websiteHref(client.website) : "";
 
   async function importClientInfo() {
@@ -486,6 +709,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     }
 
     try {
+      setMoreActionsOpen(false);
       const data = await requestJson<ClientResponse>(`/api/clients/${client.id}/import`, {
         method: "POST",
         body: JSON.stringify({
@@ -544,8 +768,15 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   }
 
   const primarySite = client.sites.find((site) => site.isPrimarySite) ?? client.sites[0];
-  const primaryContact =
-    client.contacts.find((contact) => contact.isPrimaryContact) ?? client.contacts[0];
+  const primarySiteName = primarySite?.siteName || client.primarySite;
+  const primaryContact = client.contacts.find(
+    (contact) => contact.isPrimary || contact.isPrimaryContact
+  );
+  const billingContact = client.contacts.find(
+    (contact) => contact.isBilling || contact.isBillingContact
+  );
+  const importantNotes = client.importantNotes || client.generalNotes;
+  const serviceProfile = client.serviceProfile.filter(Boolean);
 
   return (
     <section className="client-360-page">
@@ -559,49 +790,39 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
           <h1>{client.displayName}</h1>
           <div className="request-preview-badges">
             <span className={clientStatusClass(client.status)}>{client.status}</span>
-            <span className="request-inline-flags">{client.clientType}</span>
+            <span className="request-inline-flags">{compactValue(client.industry)}</span>
             <span className="request-inline-flags">{client.accountOwner}</span>
           </div>
         </div>
         <div className="client-360-actions">
-          <button
-            className="toolbar-button compact"
-            type="button"
-            onClick={() =>
-              setMessage(
-                `Edit workflow placeholder: ${client.displayName} can be updated through the client API.`
-              )
-            }
-            disabled={!canWriteCrm}
-          >
-            <Edit3 size={16} />
-            Edit Client
-          </button>
-          <Link className="primary-button compact" href="/requests/new">
-            <Plus size={17} />
-            New Request
-          </Link>
-          <button className="toolbar-button compact" type="button" disabled>
-            <FileText size={16} />
-            New Quote
-          </button>
-          <button className="toolbar-button compact" type="button" disabled>
-            <FolderKanban size={16} />
-            New Project
-          </button>
-          <button className="toolbar-button compact" type="button" disabled>
-            <ReceiptText size={16} />
-            Create Invoice
-          </button>
-          <button
-            className="toolbar-button compact"
-            type="button"
-            onClick={importClientInfo}
-            disabled={!canWriteActivity}
-          >
-            <Upload size={16} />
-            Import
-          </button>
+          {canEditClients ? (
+            <Link className="toolbar-button compact" href={`/directory/clients/${client.id}/edit`}>
+              <Edit3 size={16} />
+              Edit Client
+            </Link>
+          ) : null}
+          {canWriteActivity ? (
+            <div className="client-360-more-actions">
+              <button
+                className="toolbar-button compact"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={moreActionsOpen}
+                onClick={() => setMoreActionsOpen((isOpen) => !isOpen)}
+              >
+                <MoreHorizontal size={16} />
+                More
+              </button>
+              {moreActionsOpen ? (
+                <div className="mini-popover client-360-actions-menu" role="menu">
+                  <button type="button" role="menuitem" onClick={importClientInfo}>
+                    <Upload size={15} />
+                    Record import
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -612,303 +833,388 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
         </div>
       ) : null}
 
-      <section className="client-360-identity-strip" aria-label="Client identity">
-        <div>
-          <span>Main Phone</span>
-          <strong>
-            <Phone size={14} />
-            {compactValue(client.mainPhone)}
-          </strong>
-        </div>
-        <div>
-          <span>Main Email</span>
-          <strong>
-            <Mail size={14} />
-            {compactValue(client.mainEmail)}
-          </strong>
-        </div>
-        <div>
-          <span>Website</span>
-          <strong>
-            <Globe size={14} />
-            {website ? (
-              <a href={website} target="_blank" rel="noreferrer">
-                {client.website}
-              </a>
+      <div className="client-360-layout">
+        <aside className="client-360-profile-panel" aria-label="Client profile">
+          <div className="client-360-profile-header">
+            <div className="client-360-avatar" aria-hidden="true">
+              {getInitials(client.displayName) || "CL"}
+            </div>
+            <div>
+              <span>{client.clientNumber}</span>
+              <h2>{client.displayName}</h2>
+              <div className="client-360-profile-badges">
+                <span className={clientStatusClass(client.status)}>{client.status}</span>
+                <span className="request-inline-flags">{compactValue(client.industry)}</span>
+              </div>
+            </div>
+          </div>
+
+          <ProfileSection title="Client Details" icon={<Building2 size={17} />}>
+            <FieldList
+              items={[
+                { label: "Legal Name", value: client.legalName },
+                { label: "Industry", value: client.industry },
+                { label: "Owner", value: client.accountOwner },
+                { label: "Source", value: client.source },
+                { label: "Language", value: client.preferredLanguage }
+              ]}
+            />
+          </ProfileSection>
+
+          <ProfileSection title="Contact Channels" icon={<Phone size={17} />}>
+            <div className="client-360-channel-list">
+              <span>
+                <Phone size={14} />
+                {primaryContact ? compactValue(primaryContact.phone || primaryContact.mobile) : "No primary contact selected."}
+              </span>
+              <span>
+                <Mail size={14} />
+                {primaryContact ? compactValue(primaryContact.email) : "No primary contact selected."}
+              </span>
+              <span>
+                <Globe size={14} />
+                {website ? (
+                  <a href={website} target="_blank" rel="noreferrer">
+                    {client.website}
+                  </a>
+                ) : (
+                  "Not captured"
+                )}
+              </span>
+            </div>
+          </ProfileSection>
+
+          <ProfileSection title="Primary Contact" icon={<UserRound size={17} />}>
+            {primaryContact?.name ? (
+              <ContactSummary contact={primaryContact} />
             ) : (
-              "Not captured"
+              <p className="lead-notes">No primary contact selected.</p>
             )}
-          </strong>
-        </div>
-        <div>
-          <span>Payment Terms</span>
-          <strong>{compactValue(client.paymentTerms)}</strong>
-        </div>
-        <div>
-          <span>Outstanding</span>
-          <strong>{formatMoney(client.outstandingBalance)}</strong>
-        </div>
-        <div>
-          <span>Lifetime Value</span>
-          <strong>{formatMoney(client.lifetimeValue)}</strong>
-        </div>
-        <div>
-          <span>Last Activity</span>
-          <strong>{displayDate(client.lastActivity)}</strong>
-        </div>
-      </section>
+          </ProfileSection>
 
-      <div className="client-360-summary-grid">
-        <SummaryCard title="Client Snapshot" icon={<Building2 size={17} />}>
-          <FieldList
-            items={[
-              { label: "Legal Name", value: client.legalName },
-              { label: "Industry", value: client.industry },
-              { label: "Source", value: client.source },
-              { label: "Language", value: client.preferredLanguage }
-            ]}
-          />
-        </SummaryCard>
-        <SummaryCard title="Primary Contact" icon={<UserRound size={17} />}>
-          {primaryContact ? (
-            <ContactSummary contact={primaryContact} />
-          ) : (
-            <p className="lead-notes">No contact captured yet.</p>
-          )}
-        </SummaryCard>
-        <SummaryCard title="Primary Site" icon={<MapPin size={17} />}>
-          {primarySite ? <SiteSummary site={primarySite} /> : <p className="lead-notes">No site captured yet.</p>}
-        </SummaryCard>
-        <SummaryCard title="Billing Details" icon={<CreditCard size={17} />}>
-          <FieldList
-            items={[
-              { label: "Billing Email", value: client.billingEmail },
-              { label: "Currency", value: client.preferredCurrency },
-              { label: "Tax ID", value: client.taxId },
-              { label: "PO Required", value: client.purchaseOrderRequired ? "Yes" : "No" }
-            ]}
-          />
-        </SummaryCard>
-      </div>
+          <ProfileSection title="Primary Site" icon={<MapPin size={17} />}>
+            {primarySite ? (
+              <SiteSummary site={primarySite} />
+            ) : (
+              <p className="lead-notes">{primarySiteName || "No primary site captured."}</p>
+            )}
+          </ProfileSection>
 
-      <div className="client-360-summary-grid secondary">
-        <SummaryCard title="Important Notes" icon={<StickyNote size={17} />}>
-          <p className="lead-notes">{client.importantNotes || client.generalNotes || "No important notes captured."}</p>
-        </SummaryCard>
-        <SummaryCard title="Technology Preferences" icon={<FolderKanban size={17} />}>
-          <FieldList
-            items={[
-              { label: "Camera", value: client.preferredCameraBrand },
-              { label: "Access Control", value: client.preferredAccessControlBrand },
-              { label: "Network", value: client.preferredNetworkBrand },
-              { label: "Cabling", value: client.preferredCablingBrand }
-            ]}
-          />
-        </SummaryCard>
-        <SummaryCard title="Documentation" icon={<FileText size={17} />}>
-          <p className="lead-notes">{client.documentationRequirements || "No documentation requirements captured."}</p>
-        </SummaryCard>
-        <SummaryCard title="Invoice & Insurance" icon={<ReceiptText size={17} />}>
-          <FieldList
-            items={[
-              { label: "Invoice", value: client.invoiceRequirements },
-              { label: "Insurance", value: client.insuranceRequirements },
-              { label: "Purchase Order", value: client.purchaseOrderRequired ? "Required" : "Not required" }
-            ]}
-          />
-        </SummaryCard>
-      </div>
+          <ProfileSection title="Important Notes" icon={<StickyNote size={17} />}>
+            <p className="lead-notes">{importantNotes || "No important notes captured."}</p>
+          </ProfileSection>
 
-      <section className="client-360-tabs-panel">
-        <div className="lead-view-tabs client-360-tabs" role="tablist" aria-label="Client profile sections">
-          {clientProfileTabs.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              className={activeTab === tab ? "lead-view-tab active" : "lead-view-tab"}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+          <ProfileSection title="Documentation" icon={<FileText size={17} />}>
+            <p className="lead-notes">
+              {client.documentationRequirements || "No documentation requirements captured."}
+            </p>
+          </ProfileSection>
+        </aside>
 
-        {activeTab === "Overview" ? (
-          <div className="client-360-tab-content">
-            <section className="metric-grid" aria-label="Client profile metrics">
-              <article className="metric-card">
-                <p className="metric-label">Open Requests</p>
-                <p className="metric-value">{activeRequests.length}</p>
-              </article>
-              <article className="metric-card">
-                <p className="metric-label">Active Quotes</p>
-                <p className="metric-value">{quotes.length}</p>
-              </article>
-              <article className="metric-card">
-                <p className="metric-label">Active Projects</p>
-                <p className="metric-value">{client.activeProjects}</p>
-              </article>
-              <article className="metric-card">
-                <p className="metric-label">Outstanding Balance</p>
-                <p className="metric-value metric-text">{formatMoney(client.outstandingBalance)}</p>
-              </article>
-              <article className="metric-card">
-                <p className="metric-label">Lifetime Value</p>
-                <p className="metric-value metric-text">{formatMoney(client.lifetimeValue)}</p>
-              </article>
-              <article className="metric-card">
-                <p className="metric-label">Last Activity</p>
-                <p className="metric-value metric-text">{displayDate(client.lastActivity)}</p>
-              </article>
-            </section>
+        <main className="client-360-main-workspace">
+          <section className="client-360-toolbar" aria-label="Search and filter client workspace">
+            <label className="lead-search client-360-search">
+              <Search size={17} />
+              <input
+                aria-label="Search client workspace"
+                placeholder="Search work, contacts, sites, activity..."
+                value={profileSearch}
+                onChange={(event) => setProfileSearch(event.target.value)}
+              />
+            </label>
+            <label className="client-360-filter-control">
+              <SlidersHorizontal size={16} />
+              <select
+                aria-label="Filter client workspace"
+                value={workspaceFilter}
+                onChange={(event) => setWorkspaceFilter(event.target.value as ClientWorkFilter)}
+              >
+                {clientWorkFilters.map((filter) => (
+                  <option key={filter} value={filter}>
+                    {filter}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="client-360-result-count">{workspaceResultLabel}</span>
+          </section>
 
-            <div className="client-360-overview-grid">
-              <section className="lead-section">
-                <h3>Active Requests</h3>
-                <RequestsTable requests={activeRequests.slice(0, 5)} />
-              </section>
-              <section className="lead-section">
-                <h3>Converted Quotes</h3>
-                <QuotesTable quotes={quotes.slice(0, 5)} />
-              </section>
-              <section className="lead-section">
-                <h3>Projects</h3>
-                <EmptyPanel
-                  title="No database-backed projects yet."
-                  detail="Project records are still a starter workspace and are not linked to clients in v1."
-                />
-              </section>
-              <section className="lead-section">
-                <h3>Invoices</h3>
-                <EmptyPanel
-                  title="No database-backed invoices yet."
-                  detail="Invoice records are still a starter workspace and are not linked to clients in v1."
-                />
-              </section>
-              <section className="lead-section client-360-wide-section">
-                <h3>Recent Activity</h3>
-                <ClientActivityTimeline activities={client.recentActivity.slice(0, 5)} />
-              </section>
-            </div>
-          </div>
-        ) : null}
-
-        {activeTab === "Requests" ? (
-          <div className="client-360-tab-content">
-            <RequestsTable requests={requests} />
-          </div>
-        ) : null}
-
-        {activeTab === "Quotes" ? (
-          <div className="client-360-tab-content">
-            <QuotesTable quotes={quotes} />
-          </div>
-        ) : null}
-
-        {activeTab === "Projects" ? (
-          <div className="client-360-tab-content">
-            <EmptyPanel
-              title="Projects are not database-backed yet."
-              detail="This tab is reserved for future client-linked project records once the Projects module has a real model."
+          <section className="client-360-metric-grid" aria-label="Client profile metrics">
+            <ClientMetricCard
+              label="Open Requests"
+              value={activeRequests.length}
+              icon={<FileText size={18} />}
             />
-          </div>
-        ) : null}
-
-        {activeTab === "Invoices" ? (
-          <div className="client-360-tab-content">
-            <EmptyPanel
-              title="Invoices are not database-backed yet."
-              detail="This tab is reserved for future client-linked invoice records once Billing has a real invoice model."
+            <ClientMetricCard
+              label="Active Quotes"
+              value={activeQuotes.length}
+              icon={<ReceiptText size={18} />}
             />
-          </div>
-        ) : null}
+            <ClientMetricCard
+              label="Active Projects"
+              value={client.activeProjects}
+              icon={<FolderKanban size={18} />}
+            />
+            <ClientMetricCard
+              label="Outstanding Balance"
+              value={formatMoney(client.outstandingBalance)}
+              icon={<CreditCard size={18} />}
+            />
+            <ClientMetricCard
+              label="Lifetime Value"
+              value={formatMoney(client.lifetimeValue)}
+              icon={<Building2 size={18} />}
+            />
+            <ClientMetricCard
+              label="Last Activity"
+              value={displayDate(client.lastActivity)}
+              icon={<CalendarClock size={18} />}
+            />
+          </section>
 
-        {activeTab === "Contacts & Sites" ? (
-          <div className="client-360-tab-content">
-            <div className="client-360-two-column">
-              <section className="lead-section">
-                <h3>Contacts</h3>
-                <div className="client-360-list-stack">
-                  {client.contacts.length ? (
-                    client.contacts.map((contact) => <ContactCard contact={contact} key={contact.id || contact.name} />)
-                  ) : (
-                    <p className="lead-notes">No contacts captured yet.</p>
-                  )}
-                </div>
-              </section>
-              <section className="lead-section">
-                <h3>Sites</h3>
-                <div className="client-360-list-stack">
-                  {client.sites.length ? (
-                    client.sites.map((site) => <SiteCard site={site} key={site.id || site.siteName} />)
-                  ) : (
-                    <p className="lead-notes">No sites captured yet.</p>
-                  )}
-                </div>
-              </section>
-            </div>
-          </div>
-        ) : null}
-
-        {activeTab === "Activity" ? (
-          <div className="client-360-tab-content">
-            <section className="lead-section">
-              <h3>Add Activity</h3>
-              <form className="client-360-activity-form" onSubmit={addActivity}>
-                <textarea
-                  placeholder="Add a client note..."
-                  value={activityDetail}
-                  onChange={(event) => setActivityDetail(event.target.value)}
-                  disabled={!canWriteActivity}
-                />
+          <section className="client-360-tabs-panel">
+            <div className="lead-view-tabs client-360-tabs" role="tablist" aria-label="Client profile sections">
+              {clientProfileTabs.map((tab) => (
                 <button
-                  className="primary-button compact"
-                  type="submit"
-                  disabled={!canWriteActivity || !activityDetail.trim() || isSavingActivity}
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  className={activeTab === tab ? "lead-view-tab active" : "lead-view-tab"}
+                  onClick={() => setActiveTab(tab)}
                 >
-                  <Save size={16} />
-                  {isSavingActivity ? "Saving..." : "Add Activity"}
+                  {tab}
                 </button>
-              </form>
-            </section>
-            <section className="lead-section">
-              <h3>Activity Timeline</h3>
-              <ClientActivityTimeline activities={client.recentActivity} />
-            </section>
-          </div>
-        ) : null}
-
-        {activeTab === "Preferences" ? (
-          <div className="client-360-tab-content">
-            <div className="client-360-two-column">
-              <section className="lead-section">
-                <h3>Brand & Technology</h3>
-                <FieldList
-                  items={[
-                    { label: "Brand Preferences", value: client.brandPreferences },
-                    { label: "Technology Preferences", value: client.technologyPreferences },
-                    { label: "Preferred Vendors", value: client.preferredVendors },
-                    { label: "Standard Technologies", value: client.standardTechnologies }
-                  ]}
-                />
-              </section>
-              <section className="lead-section">
-                <h3>Requirements</h3>
-                <FieldList
-                  items={[
-                    { label: "Documentation", value: client.documentationRequirements },
-                    { label: "Invoice", value: client.invoiceRequirements },
-                    { label: "Insurance", value: client.insuranceRequirements },
-                    { label: "PO Required", value: client.purchaseOrderRequired ? "Yes" : "No" }
-                  ]}
-                />
-              </section>
+              ))}
             </div>
-          </div>
-        ) : null}
-      </section>
+
+            {activeTab === "Overview" ? (
+              <div className="client-360-tab-content">
+                <div className="client-360-overview-grid">
+                  <section className="client-360-tab-card">
+                    <h3>Relationship</h3>
+                    <FieldList
+                      items={[
+                        { label: "Industry", value: client.industry },
+                        { label: "Source", value: client.source },
+                        { label: "Payment Terms", value: client.paymentTerms },
+                        { label: "Open Opportunities", value: client.openOpportunities },
+                        { label: "Created", value: displayDate(client.createdAt) },
+                        { label: "Updated", value: displayDate(client.updatedAt) }
+                      ]}
+                    />
+                  </section>
+                  <section className="client-360-tab-card">
+                    <h3>Billing</h3>
+                    <FieldList
+                      items={[
+                        { label: "Billing Contact", value: billingContact?.name },
+                        { label: "Billing Email", value: billingContact?.email },
+                        { label: "Currency", value: client.preferredCurrency },
+                        { label: "Tax ID", value: client.taxId },
+                        { label: "PO Required", value: client.purchaseOrderRequired ? "Yes" : "No" },
+                        { label: "Invoice", value: client.invoiceRequirements }
+                      ]}
+                    />
+                  </section>
+                  <section className="client-360-tab-card">
+                    <h3>Service Profile</h3>
+                    {serviceProfile.length ? (
+                      <div className="client-360-pill-row">
+                        {serviceProfile.map((service) => (
+                          <span className="request-inline-flags" key={service}>
+                            {service}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="lead-notes">No service profile captured.</p>
+                    )}
+                  </section>
+                  <section className="client-360-tab-card">
+                    <h3>Billing Contact</h3>
+                    {billingContact?.name ? (
+                      <ContactSummary contact={billingContact} />
+                    ) : (
+                      <p className="lead-notes">No billing contact captured.</p>
+                    )}
+                  </section>
+                  <section className="client-360-tab-card client-360-wide-section">
+                    <h3>Active Requests</h3>
+                    <RequestsTable
+                      requests={filteredActiveRequests.slice(0, 5)}
+                      emptyTitle={
+                        profileSearch || workspaceFilter !== "All Records"
+                          ? "No active requests match the current search."
+                          : "No active requests are linked to this client."
+                      }
+                      emptyDetail="Client-linked open intake work will appear here."
+                    />
+                  </section>
+                  <section className="client-360-tab-card client-360-wide-section">
+                    <h3>Related Quotes</h3>
+                    <QuotesTable
+                      quotes={filteredQuotes.slice(0, 5)}
+                      emptyTitle={
+                        profileSearch || workspaceFilter !== "All Records"
+                          ? "No quotes match the current search."
+                          : "No converted quote work is linked yet."
+                      }
+                      emptyDetail="Quotes will appear here when client-linked requests are converted."
+                    />
+                  </section>
+                  <section className="client-360-tab-card client-360-wide-section">
+                    <h3>Recent Activity</h3>
+                    <ClientActivityTimeline activities={filteredActivities.slice(0, 5)} />
+                  </section>
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === "Requests" ? (
+              <div className="client-360-tab-content">
+                <RequestsTable
+                  requests={filteredRequests}
+                  emptyTitle={
+                    profileSearch || workspaceFilter !== "All Records"
+                      ? "No requests match the current search."
+                      : "No requests are linked to this client yet."
+                  }
+                  emptyDetail="Adjust the search or filter to broaden the client request list."
+                />
+              </div>
+            ) : null}
+
+            {activeTab === "Quotes" ? (
+              <div className="client-360-tab-content">
+                <QuotesTable
+                  quotes={filteredQuotes}
+                  emptyTitle={
+                    profileSearch || workspaceFilter !== "All Records"
+                      ? "No quotes match the current search."
+                      : "No converted quote work is linked yet."
+                  }
+                  emptyDetail="Adjust the search or filter to broaden the client quote list."
+                />
+              </div>
+            ) : null}
+
+            {activeTab === "Projects" ? (
+              <div className="client-360-tab-content client-360-compact-tab">
+                <EmptyPanel
+                  title="No client-linked project records yet."
+                  detail="The active project count is preserved on the profile; detailed project records are not linked in this workspace yet."
+                />
+              </div>
+            ) : null}
+
+            {activeTab === "Invoices" ? (
+              <div className="client-360-tab-content client-360-compact-tab">
+                <EmptyPanel
+                  title="No client-linked invoice records yet."
+                  detail="Outstanding balance and invoice requirements are preserved; detailed invoice records are not linked in this workspace yet."
+                />
+              </div>
+            ) : null}
+
+            {activeTab === "Contacts & Sites" ? (
+              <div className="client-360-tab-content">
+                <div className="client-360-two-column">
+                  <section className="client-360-tab-card">
+                    <h3>Contacts</h3>
+                    <div className="client-360-list-stack">
+                      {filteredContacts.length ? (
+                        filteredContacts.map((contact) => (
+                          <ContactCard contact={contact} key={contact.id || contact.name} />
+                        ))
+                      ) : (
+                        <EmptyPanel
+                          title={client.contacts.length ? "No contacts match the current search." : "No contacts captured yet."}
+                          detail="Client contacts from this Directory record appear here."
+                        />
+                      )}
+                    </div>
+                  </section>
+                  <section className="client-360-tab-card">
+                    <h3>Sites</h3>
+                    <div className="client-360-list-stack">
+                      {filteredSites.length ? (
+                        filteredSites.map((site) => <SiteCard site={site} key={site.id || site.siteName} />)
+                      ) : (
+                        <EmptyPanel
+                          title={client.sites.length ? "No sites match the current search." : "No sites captured yet."}
+                          detail="Client sites from this Directory record appear here."
+                        />
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === "Activity" ? (
+              <div className="client-360-tab-content">
+                <section className="client-360-tab-card">
+                  <h3>Add Activity</h3>
+                  <form className="client-360-activity-form" onSubmit={addActivity}>
+                    <textarea
+                      placeholder="Add a client note..."
+                      value={activityDetail}
+                      onChange={(event) => setActivityDetail(event.target.value)}
+                      disabled={!canWriteActivity}
+                    />
+                    <button
+                      className="primary-button compact"
+                      type="submit"
+                      disabled={!canWriteActivity || !activityDetail.trim() || isSavingActivity}
+                    >
+                      <Save size={16} />
+                      {isSavingActivity ? "Saving..." : "Add Activity"}
+                    </button>
+                  </form>
+                </section>
+                <section className="client-360-tab-card">
+                  <h3>Activity Timeline</h3>
+                  <ClientActivityTimeline activities={filteredActivities} />
+                </section>
+              </div>
+            ) : null}
+
+            {activeTab === "Preferences" ? (
+              <div className="client-360-tab-content">
+                <div className="client-360-two-column">
+                  <section className="client-360-tab-card">
+                    <h3>Brand & Technology</h3>
+                    <FieldList
+                      items={[
+                        { label: "Brand Preferences", value: client.brandPreferences },
+                        { label: "Technology Preferences", value: client.technologyPreferences },
+                        { label: "Preferred Vendors", value: client.preferredVendors },
+                        { label: "Camera", value: client.preferredCameraBrand },
+                        { label: "Access Control", value: client.preferredAccessControlBrand },
+                        { label: "Network", value: client.preferredNetworkBrand },
+                        { label: "Cabling", value: client.preferredCablingBrand },
+                        { label: "Standard Technologies", value: client.standardTechnologies }
+                      ]}
+                    />
+                  </section>
+                  <section className="client-360-tab-card">
+                    <h3>Requirements</h3>
+                    <FieldList
+                      items={[
+                        { label: "Documentation", value: client.documentationRequirements },
+                        { label: "Invoice", value: client.invoiceRequirements },
+                        { label: "Insurance", value: client.insuranceRequirements },
+                        { label: "PO Required", value: client.purchaseOrderRequired ? "Yes" : "No" }
+                      ]}
+                    />
+                  </section>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </main>
+      </div>
     </section>
   );
 }

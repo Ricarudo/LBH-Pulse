@@ -1,9 +1,11 @@
 export {
   clientIndustries,
+  clientLanguages,
   clientOwners,
+  clientPaymentTerms,
   clientSiteTypes,
+  clientSources,
   clientStatuses,
-  clientTypes,
   formatMoney,
   preferredContactMethods,
   type ClientActivity,
@@ -17,6 +19,5 @@ export {
   type ClientSiteInput,
   type ClientSiteType,
   type ClientStatus,
-  type ClientType,
   type PreferredContactMethod
 } from "@/types/client";

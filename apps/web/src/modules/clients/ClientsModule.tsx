@@ -17,13 +17,11 @@ import {
   clientIndustries,
   clientOwners,
   clientStatuses,
-  clientTypes,
   formatMoney,
   type ClientCreatePayload,
   type ClientIndustry,
   type ClientRecord,
-  type ClientStatus,
-  type ClientType
+  type ClientStatus
 } from "./clientData";
 
 type ClientListResponse = {
@@ -218,6 +216,25 @@ function validateQuickCreateForm(form: QuickCreateForm) {
     quickCreateLimits.contactRole
   );
 
+  const hasAnyContactField = Boolean(
+    normalized.contactName ||
+      normalized.contactEmail ||
+      normalized.contactPhone ||
+      normalized.contactRole
+  );
+
+  if (hasAnyContactField && !normalized.contactName) {
+    errors.contactName = "Point of Contact Name is required.";
+  }
+
+  if (
+    hasAnyContactField &&
+    !normalized.contactEmail &&
+    !normalized.contactPhone
+  ) {
+    errors.contactEmail = "Provide an email or phone for this contact.";
+  }
+
   if (normalized.contactEmail.length > quickCreateLimits.contactEmail) {
     errors.contactEmail = `Must be ${quickCreateLimits.contactEmail} characters or less.`;
   } else if (
@@ -248,6 +265,8 @@ function buildQuickCreatePayload(form: QuickCreateForm): ClientCreatePayload {
     const { firstName, lastName } = splitContactName(form.contactName);
 
     contacts.push({
+      name: form.contactName,
+      role: form.contactRole || "Primary",
       firstName,
       lastName,
       title: form.contactRole,
@@ -260,6 +279,8 @@ function buildQuickCreatePayload(form: QuickCreateForm): ClientCreatePayload {
         : form.contactPhone
           ? "Phone"
           : "Email",
+      isPrimary: true,
+      isBilling: false,
       isPrimaryContact: true,
       isBillingContact: false,
       isTechnicalContact: false,
@@ -271,16 +292,12 @@ function buildQuickCreatePayload(form: QuickCreateForm): ClientCreatePayload {
   return {
     legalName: form.clientName,
     displayName: form.clientName,
-    clientType: "Commercial",
     industry: form.industry,
     website: "",
     status: "Prospect",
     accountOwner: "Unassigned",
-    mainPhone: "",
-    mainEmail: "",
     taxId: "",
     paymentTerms: "",
-    billingEmail: "",
     preferredCurrency: "USD",
     preferredLanguage: "English",
     brandPreferences: "",
@@ -314,7 +331,7 @@ function popupFieldFromApiPath(path: string): QuickCreateField | "form" {
   if (path.startsWith("contacts.0.")) {
     const contactField = path.replace("contacts.0.", "");
 
-    if (contactField === "firstName" || contactField === "lastName") {
+    if (contactField === "name" || contactField === "firstName" || contactField === "lastName") {
       return "contactName";
     }
 
@@ -326,7 +343,7 @@ function popupFieldFromApiPath(path: string): QuickCreateField | "form" {
       return "contactPhone";
     }
 
-    if (contactField === "title") {
+    if (contactField === "title" || contactField === "role") {
       return "contactRole";
     }
   }
@@ -386,7 +403,7 @@ export function ClientsModule() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | ClientStatus>("All");
-  const [typeFilter, setTypeFilter] = useState<"All" | ClientType>("All");
+  const [industryFilter, setIndustryFilter] = useState<"All" | ClientIndustry>("All");
   const [ownerFilter, setOwnerFilter] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -401,7 +418,7 @@ export function ClientsModule() {
   const hasActiveFilters =
     searchTerm.trim() !== "" ||
     statusFilter !== "All" ||
-    typeFilter !== "All" ||
+    industryFilter !== "All" ||
     ownerFilter !== "All";
 
   useEffect(() => {
@@ -466,13 +483,21 @@ export function ClientsModule() {
         client.displayName,
         client.legalName,
         client.companyName,
-        client.clientType,
+        client.industry,
         client.status,
         client.accountOwner,
         client.primaryContact.name,
         client.primaryContact.email,
-        client.mainPhone,
-        client.mainEmail,
+        client.primaryContact.phone,
+        client.primaryContact.mobile,
+        ...client.contacts.flatMap((contact) => [
+          contact.name,
+          contact.role,
+          contact.title,
+          contact.email,
+          contact.phone,
+          contact.mobile
+        ]),
         client.primarySite,
         client.city,
         client.state,
@@ -485,19 +510,19 @@ export function ClientsModule() {
         !normalizedSearch || haystack.includes(normalizedSearch);
       const matchesStatus =
         statusFilter === "All" || client.status === statusFilter;
-      const matchesType =
-        typeFilter === "All" || client.clientType === typeFilter;
+      const matchesIndustry =
+        industryFilter === "All" || client.industry === industryFilter;
       const matchesOwner =
         ownerFilter === "All" || client.accountOwner === ownerFilter;
 
-      return matchesSearch && matchesStatus && matchesType && matchesOwner;
+      return matchesSearch && matchesStatus && matchesIndustry && matchesOwner;
     });
-  }, [clients, ownerFilter, searchTerm, statusFilter, typeFilter]);
+  }, [clients, industryFilter, ownerFilter, searchTerm, statusFilter]);
 
   function clearFilters() {
     setSearchTerm("");
     setStatusFilter("All");
-    setTypeFilter("All");
+    setIndustryFilter("All");
     setOwnerFilter("All");
   }
 
@@ -618,15 +643,15 @@ export function ClientsModule() {
                 ))}
               </select>
               <select
-                value={typeFilter}
+                value={industryFilter}
                 onChange={(event) =>
-                  setTypeFilter(event.target.value as "All" | ClientType)
+                  setIndustryFilter(event.target.value as "All" | ClientIndustry)
                 }
               >
-                <option value="All">All types</option>
-                {clientTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
+                <option value="All">All industries</option>
+                {clientIndustries.map((industry) => (
+                  <option key={industry} value={industry}>
+                    {industry}
                   </option>
                 ))}
               </select>
@@ -693,7 +718,7 @@ export function ClientsModule() {
                         <small>
                           {legalNameIsDifferent
                             ? client.legalName
-                            : `${client.clientType} account`}
+                            : `${client.industry || "Unclassified"} account`}
                         </small>
                         <span className={statusClass(client.status)}>
                           {client.status}
@@ -711,8 +736,8 @@ export function ClientsModule() {
                         </small>
                       </span>
                       <span>
-                        <strong>{compactValue(client.mainPhone)}</strong>
-                        <small>{compactValue(client.mainEmail)}</small>
+                        <strong>{compactValue(client.primaryContact.phone)}</strong>
+                        <small>{compactValue(client.primaryContact.email)}</small>
                       </span>
                       <span>
                         <strong>{client.accountOwner}</strong>

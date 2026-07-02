@@ -572,11 +572,9 @@ const sampleClients = [
   {
     clientNumber: "CL-1001",
     companyName: "San Juan Medical Center",
-    clientType: "Healthcare",
+    industry: "Healthcare",
     status: "Active",
     accountOwner: "Alex Morgan",
-    mainPhone: "787-555-0100",
-    mainEmail: "facilities@sjmc.example",
     source: "Existing Customer",
     importantNotes:
       "Badge access work requires hospital security approval before scheduling. Avoid noisy work before 6 PM in patient areas.",
@@ -640,11 +638,9 @@ const sampleClients = [
   {
     clientNumber: "CL-1002",
     companyName: "Caribbean Logistics",
-    clientType: "Industrial",
+    industry: "Manufacturing",
     status: "Active",
     accountOwner: "Project Manager User",
-    mainPhone: "787-555-0110",
-    mainEmail: "ops@cariblog.example",
     source: "Referral",
     importantNotes:
       "Warehouse access requires 24-hour notice and safety vest sign-in. Fiber backbone work likely needs a weekend window.",
@@ -694,11 +690,9 @@ const sampleClients = [
   {
     clientNumber: "CL-1003",
     companyName: "Metro Retail Group",
-    clientType: "Commercial",
+    industry: "Retail",
     status: "Prospect",
     accountOwner: "Sales User",
-    mainPhone: "787-555-0170",
-    mainEmail: "admin@metroretail.example",
     source: "Phone",
     importantNotes:
       "Likely multi-site opportunity if the first camera replacement walk-through goes well.",
@@ -748,11 +742,9 @@ const sampleClients = [
   {
     clientNumber: "CL-1004",
     companyName: "Banco Popular Tower",
-    clientType: "Commercial",
+    industry: "Finance",
     status: "Active",
     accountOwner: "Alex Morgan",
-    mainPhone: "787-555-0188",
-    mainEmail: "workplace@bancopopular.example",
     source: "Existing Customer",
     importantNotes:
       "Procurement prefers formal proposal documents and clear milestone billing schedules.",
@@ -802,11 +794,9 @@ const sampleClients = [
   {
     clientNumber: "CL-1005",
     companyName: "Coastal Hospitality Group",
-    clientType: "Hospitality",
+    industry: "Hospitality",
     status: "On Hold",
     accountOwner: "Sales User",
-    mainPhone: "787-555-0160",
-    mainEmail: "it@coastalhospitality.example",
     source: "Phone",
     importantNotes:
       "Payment follow-up is needed before new work is scheduled. Customer still wants a network refresh proposal.",
@@ -872,7 +862,7 @@ async function main() {
   await prisma.clientActivity.deleteMany();
   await prisma.clientService.deleteMany();
   await prisma.clientSite.deleteMany();
-  await prisma.clientContact.deleteMany();
+  await prisma.pointOfContact.deleteMany();
   await prisma.client.deleteMany();
 
   const seededUsers = await Promise.all(
@@ -957,16 +947,12 @@ async function main() {
         clientNumber: client.clientNumber,
         legalName: client.legalName ?? client.companyName,
         displayName: client.displayName ?? client.companyName,
-        clientType: client.clientType,
-        industry: client.industry ?? client.clientType,
+        industry: client.industry,
         website: client.website ?? null,
         status: client.status,
         accountOwner: client.accountOwner,
-        mainPhone: client.mainPhone,
-        mainEmail: client.mainEmail,
         taxId: client.taxId ?? null,
         paymentTerms: client.paymentTerms ?? "Net 30",
-        billingEmail: client.billingEmail ?? client.mainEmail,
         preferredCurrency: client.preferredCurrency ?? "USD",
         preferredLanguage: client.preferredLanguage ?? "English",
         brandPreferences: client.brandPreferences ?? null,
@@ -988,27 +974,6 @@ async function main() {
         lifetimeValue: client.lifetimeValue,
         outstandingBalance: client.outstandingBalance,
         lastActivityAt: client.lastActivityAt,
-        contacts: {
-          create: client.contacts.map((contact, index) => {
-            const [firstName, ...rest] = contact.name.split(" ");
-
-            return {
-              firstName: firstName || "Unknown",
-              lastName: rest.join(" "),
-              title: contact.title,
-              department: contact.department ?? null,
-              email: contact.email,
-              phone: contact.phone,
-              mobile: contact.mobile ?? null,
-              preferredContactMethod: contact.preferredContactMethod ?? "Email",
-              isPrimaryContact: contact.isPrimary ?? index === 0,
-              isBillingContact: contact.isBilling ?? false,
-              isTechnicalContact: contact.isTechnicalContact ?? false,
-              isDecisionMaker: contact.isDecisionMaker ?? false,
-              notes: contact.notes ?? null
-            };
-          })
-        },
         sites: {
           create: client.sites.map((site, index) => ({
             siteName: site.name,
@@ -1034,6 +999,37 @@ async function main() {
         }
       }
     });
+
+    await Promise.all(
+      client.contacts.map((contact, index) => {
+        const [firstName, ...rest] = contact.name.split(" ");
+
+        return prisma.pointOfContact.create({
+          data: {
+            ownerType: "Client",
+            ownerId: createdClient.id,
+            clientId: createdClient.id,
+            role: contact.role,
+            name: contact.name,
+            firstName: firstName || "Unknown",
+            lastName: rest.join(" "),
+            title: contact.title,
+            department: contact.department ?? null,
+            email: contact.email,
+            phone: contact.phone,
+            mobile: contact.mobile ?? null,
+            preferredContactMethod: contact.preferredContactMethod ?? "Email",
+            isPrimary: contact.isPrimary ?? index === 0,
+            isBilling: contact.isBilling ?? false,
+            isPrimaryContact: contact.isPrimary ?? index === 0,
+            isBillingContact: contact.isBilling ?? false,
+            isTechnicalContact: contact.isTechnicalContact ?? false,
+            isDecisionMaker: contact.isDecisionMaker ?? false,
+            notes: contact.notes ?? null
+          }
+        });
+      })
+    );
 
     await createActivity({
       relatedEntityType: "Client",

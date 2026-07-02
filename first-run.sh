@@ -25,7 +25,7 @@ echo "Starting PostgreSQL and API containers..."
 compose up -d --build postgres api
 
 echo "Applying Prisma schema and seeding the database..."
-compose exec api npm run db:setup
+compose exec -T api npm run db:setup
 
 echo "Starting the full Pulse stack..."
 compose up -d --build

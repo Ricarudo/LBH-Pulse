@@ -112,6 +112,20 @@ export function apiError(error: unknown) {
     return NextResponse.json({ error: "Client not found." }, { status: 404 });
   }
 
+  if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
+    return NextResponse.json({ error: "Contact not found." }, { status: 404 });
+  }
+
+  if (error instanceof Error && error.message === "CLIENT_VERSION_CONFLICT") {
+    return NextResponse.json(
+      {
+        error:
+          "This client was updated by someone else. Refresh the profile before saving again."
+      },
+      { status: 409 }
+    );
+  }
+
   console.error(error);
   return NextResponse.json(
     { error: "Unexpected server error." },

@@ -9,13 +9,11 @@ import {
   clientIndustries,
   clientOwners,
   clientStatuses,
-  clientTypes,
   type ClientContactInput,
   type ClientCreatePayload,
   type ClientRecord,
   type ClientSiteInput,
-  type ClientStatus,
-  type ClientType
+  type ClientStatus
 } from "@/types/client";
 import { ClientContactForm } from "./ClientContactForm";
 import { ClientSiteForm } from "./ClientSiteForm";
@@ -29,16 +27,12 @@ type ClientResponse = {
 type ClientOverviewState = {
   legalName: string;
   displayName: string;
-  clientType: ClientType;
   industry: string;
   website: string;
   status: ClientStatus;
   accountOwner: string;
-  mainPhone: string;
-  mainEmail: string;
   taxId: string;
   paymentTerms: string;
-  billingEmail: string;
   preferredCurrency: string;
   preferredLanguage: string;
   brandPreferences: string;
@@ -92,16 +86,12 @@ const wizardSteps: WizardStep[] = [
 const initialOverview: ClientOverviewState = {
   legalName: "",
   displayName: "",
-  clientType: "Commercial",
   industry: "",
   website: "",
   status: "Prospect",
   accountOwner: "Alex Morgan",
-  mainPhone: "",
-  mainEmail: "",
   taxId: "",
   paymentTerms: "Net 30",
-  billingEmail: "",
   preferredCurrency: "USD",
   preferredLanguage: "English",
   brandPreferences: "",
@@ -147,6 +137,8 @@ function createBlankSite(primary = false): ClientSiteInput {
 
 function createBlankContact(primary = false): ClientContactInput {
   return {
+    name: "",
+    role: "Primary",
     firstName: "",
     lastName: "",
     title: "",
@@ -156,6 +148,8 @@ function createBlankContact(primary = false): ClientContactInput {
     mobile: "",
     preferredContactMethod: "Email",
     siteLocalId: "",
+    isPrimary: primary,
+    isBilling: false,
     isPrimaryContact: primary,
     isBillingContact: false,
     isTechnicalContact: false,
@@ -179,6 +173,8 @@ function hasSiteContent(site: ClientSiteInput) {
 
 function hasContactContent(contact: ClientContactInput) {
   return [
+    contact.name,
+    contact.role,
     contact.firstName,
     contact.lastName,
     contact.title,
@@ -187,16 +183,6 @@ function hasContactContent(contact: ClientContactInput) {
     contact.phone,
     contact.mobile,
     contact.notes
-  ].some((value) => value?.trim());
-}
-
-function hasContactIdentity(contact: ClientContactInput) {
-  return [
-    contact.firstName,
-    contact.lastName,
-    contact.email,
-    contact.phone,
-    contact.mobile
   ].some((value) => value?.trim());
 }
 
@@ -274,6 +260,7 @@ export function ClientCreateForm() {
     setContacts((current) =>
       current.map((contact, itemIndex) => ({
         ...contact,
+        isPrimary: itemIndex === index,
         isPrimaryContact: itemIndex === index
       }))
     );
@@ -298,14 +285,6 @@ export function ClientCreateForm() {
       if (!overview.industry.trim()) {
         return { message: "Industry is required.", step };
       }
-
-      if (!isEmailValid(overview.mainEmail)) {
-        return { message: "Main email needs a valid email format.", step };
-      }
-    }
-
-    if (step === 1 && !isEmailValid(overview.billingEmail)) {
-      return { message: "Billing email needs a valid email format.", step };
     }
 
     if (step === 2) {
@@ -322,11 +301,14 @@ export function ClientCreateForm() {
 
     if (step === 3) {
       const incompleteContact = usefulContacts.find(
-        (contact) => !hasContactIdentity(contact)
+        (contact) =>
+          ![contact.name, contact.firstName, contact.lastName]
+            .some((value) => value?.trim()) ||
+          ![contact.email, contact.phone, contact.mobile].some((value) => value?.trim())
       );
       if (incompleteContact) {
         return {
-          message: "Every entered contact needs a name, email, phone, or mobile number.",
+          message: "Every entered contact needs a name and at least one email or phone.",
           step
         };
       }
@@ -339,7 +321,7 @@ export function ClientCreateForm() {
       }
 
       const primaryContactCount = usefulContacts.filter(
-        (contact) => contact.isPrimaryContact
+        (contact) => contact.isPrimary || contact.isPrimaryContact
       ).length;
       if (primaryContactCount > 1) {
         return { message: "Only one primary contact is allowed.", step };
@@ -406,16 +388,12 @@ export function ClientCreateForm() {
     return {
       legalName: overview.legalName,
       displayName: overview.displayName,
-      clientType: overview.clientType,
       industry: overview.industry,
       website: overview.website,
       status: overview.status,
       accountOwner: overview.accountOwner,
-      mainPhone: overview.mainPhone,
-      mainEmail: overview.mainEmail,
       taxId: overview.taxId,
       paymentTerms: overview.paymentTerms,
-      billingEmail: overview.billingEmail,
       preferredCurrency: overview.preferredCurrency,
       preferredLanguage: overview.preferredLanguage,
       brandPreferences: overview.brandPreferences,
@@ -438,6 +416,14 @@ export function ClientCreateForm() {
       sites: usefulSites,
       contacts: usefulContacts.map((contact) => ({
         ...contact,
+        name:
+          contact.name ||
+          [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+        role: contact.role || "Primary",
+        isPrimary: contact.isPrimary || contact.isPrimaryContact,
+        isPrimaryContact: contact.isPrimary || contact.isPrimaryContact,
+        isBilling: contact.isBilling || contact.isBillingContact,
+        isBillingContact: contact.isBilling || contact.isBillingContact,
         siteLocalId:
           contact.siteLocalId && validSiteLocalIds.has(contact.siteLocalId)
             ? contact.siteLocalId
@@ -513,24 +499,6 @@ export function ClientCreateForm() {
             />
           </label>
           <label>
-            Client type
-            <select
-              value={overview.clientType}
-              onChange={(event) =>
-                setOverview({
-                  ...overview,
-                  clientType: event.target.value as ClientType
-                })
-              }
-            >
-              {clientTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
             Industry <span className="required-hint">Required</span>
             <select
               value={overview.industry}
@@ -552,25 +520,6 @@ export function ClientCreateForm() {
               value={overview.website}
               onChange={(event) =>
                 setOverview({ ...overview, website: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Main phone
-            <input
-              value={overview.mainPhone}
-              onChange={(event) =>
-                setOverview({ ...overview, mainPhone: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Main email
-            <input
-              type="email"
-              value={overview.mainEmail}
-              onChange={(event) =>
-                setOverview({ ...overview, mainEmail: event.target.value })
               }
             />
           </label>
@@ -640,16 +589,6 @@ export function ClientCreateForm() {
               value={overview.paymentTerms}
               onChange={(event) =>
                 setOverview({ ...overview, paymentTerms: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Billing email
-            <input
-              type="email"
-              value={overview.billingEmail}
-              onChange={(event) =>
-                setOverview({ ...overview, billingEmail: event.target.value })
               }
             />
           </label>
@@ -967,14 +906,12 @@ export function ClientCreateForm() {
               <dd>{cleanValue(overview.displayName || overview.legalName)}</dd>
               <dt>Legal name</dt>
               <dd>{cleanValue(overview.legalName)}</dd>
-              <dt>Type</dt>
-              <dd>{overview.clientType}</dd>
+              <dt>Industry</dt>
+              <dd>{cleanValue(overview.industry)}</dd>
               <dt>Status</dt>
               <dd>{overview.status}</dd>
               <dt>Owner</dt>
               <dd>{overview.accountOwner}</dd>
-              <dt>Email</dt>
-              <dd>{cleanValue(overview.mainEmail)}</dd>
             </dl>
           </article>
 
@@ -988,8 +925,6 @@ export function ClientCreateForm() {
             <dl>
               <dt>Payment</dt>
               <dd>{cleanValue(overview.paymentTerms)}</dd>
-              <dt>Billing email</dt>
-              <dd>{cleanValue(overview.billingEmail)}</dd>
               <dt>Currency</dt>
               <dd>{cleanValue(overview.preferredCurrency)}</dd>
               <dt>PO required</dt>
@@ -1037,13 +972,14 @@ export function ClientCreateForm() {
                 {usefulContacts.map((contact, index) => (
                   <li key={`${contact.email}-${index}`}>
                     <span>
-                      {[contact.firstName, contact.lastName].filter(Boolean).join(" ") ||
+                      {contact.name ||
+                        [contact.firstName, contact.lastName].filter(Boolean).join(" ") ||
                         contact.email ||
                         "Unnamed contact"}
-                      {contact.isPrimaryContact ? " (Primary)" : ""}
+                      {contact.isPrimary || contact.isPrimaryContact ? " (Primary)" : ""}
                     </span>
                     <small>
-                      {cleanValue(contact.title)} / {findSiteName(contact.siteLocalId)}
+                      {cleanValue(contact.role || contact.title)} / {findSiteName(contact.siteLocalId)}
                     </small>
                   </li>
                 ))}
