@@ -4,6 +4,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { apiErrorPayload } from "@/shared/api-exception.filter";
 import { AuthError } from "@/shared/auth.service";
+import { changeRequestStatusSchema } from "@/lib/validations/request";
 
 describe("apiErrorPayload", () => {
   it("maps authentication failures to their status code", () => {
@@ -22,6 +23,28 @@ describe("apiErrorPayload", () => {
       status: 404,
       body: { error: "Contact not found." }
     });
+    assert.deepEqual(apiErrorPayload(new Error("REQUEST_CONVERTED_LOCKED")), {
+      status: 409,
+      body: { error: "Converted requests cannot be reopened or closed again." }
+    });
+  });
+
+  it("requires reasons for terminal request outcomes", () => {
+    const noReason = changeRequestStatusSchema.safeParse({
+      status: "No Bid"
+    });
+    assert.equal(noReason.success, false);
+
+    const withReason = changeRequestStatusSchema.safeParse({
+      status: "Cancelled",
+      reason: "Client postponed the project."
+    });
+    assert.equal(withReason.success, true);
+
+    const reopen = changeRequestStatusSchema.safeParse({
+      status: "Reviewing"
+    });
+    assert.equal(reopen.success, true);
   });
 
   it("maps Zod validation errors", () => {

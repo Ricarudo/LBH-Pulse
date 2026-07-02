@@ -47,6 +47,27 @@ export function apiError(error: unknown) {
     );
   }
 
+  if (error instanceof Error && error.message === "REQUEST_CONVERTED_LOCKED") {
+    return NextResponse.json(
+      { error: "Converted requests cannot be reopened or closed again." },
+      { status: 409 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "REQUEST_CONVERSION_REQUIRED") {
+    return NextResponse.json(
+      { error: "Use the quote handoff to convert this request." },
+      { status: 400 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "REQUEST_CLOSE_REASON_REQUIRED") {
+    return NextResponse.json(
+      { error: "Add a reason before closing this request." },
+      { status: 400 }
+    );
+  }
+
   if (error instanceof Error && error.message === "REQUEST_CHECKLIST_TEMPLATE_NOT_FOUND") {
     return NextResponse.json({ error: "Request checklist template not found." }, { status: 404 });
   }

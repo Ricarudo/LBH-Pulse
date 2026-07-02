@@ -790,24 +790,54 @@ export async function archiveRequest(id: string, user?: AuthenticatedUser) {
 export async function changeRequestStatus(
   id: string,
   status: string,
-  user?: AuthenticatedUser
+  user?: AuthenticatedUser,
+  reason = ""
 ) {
   const existingRequest = await getRequestOrThrow(id);
+  const terminalStatuses = ["No Bid", "Cancelled", "Duplicate"];
+  const normalizedReason = reason.trim();
+
+  if (terminalStatuses.includes(status) && !normalizedReason) {
+    throw new Error("REQUEST_CLOSE_REASON_REQUIRED");
+  }
+
+  if (
+    existingRequest.status === "Converted to Quote" &&
+    status !== "Converted to Quote"
+  ) {
+    throw new Error("REQUEST_CONVERTED_LOCKED");
+  }
+
+  if (
+    status === "Converted to Quote" &&
+    existingRequest.status !== "Converted to Quote"
+  ) {
+    throw new Error("REQUEST_CONVERSION_REQUIRED");
+  }
 
   if (status === "Ready for Quote" && !buildChecklistSummary(existingRequest).readyForQuote) {
     throw new Error("REQUEST_NOT_READY_FOR_QUOTE");
   }
 
+  const isReopening =
+    terminalStatuses.includes(existingRequest.status) &&
+    !terminalStatuses.includes(status);
+  const nextStatus = isReopening
+    ? deriveIntakeStatus({ ...existingRequest, status: "Reviewing" })
+    : status;
   const now = new Date();
   const request = await prisma.request.update({
     where: { id },
     data: {
-      status,
+      status: nextStatus,
       lastActivityAt: now,
       activities: {
         create: {
           type: "Status",
-          title: `Status changed to ${status}`,
+          title: isReopening
+            ? `Request reopened as ${nextStatus}`
+            : `Status changed to ${nextStatus}`,
+          body: normalizedReason || (isReopening ? "Request returned to active intake." : null),
           actor: user?.name ?? "Pulse System",
           createdAt: now
         }
@@ -821,9 +851,15 @@ export async function changeRequestStatus(
     relatedEntityType: "Request",
     relatedEntityId: request.id,
     type: "Status Changed",
-    title: `${request.requestNumber} moved to ${status}`,
-    detail: request.title,
-    metadata: { status }
+    title: isReopening
+      ? `${request.requestNumber} reopened`
+      : `${request.requestNumber} moved to ${nextStatus}`,
+    detail: normalizedReason || request.title,
+    metadata: {
+      status: nextStatus,
+      requestedStatus: status,
+      reason: normalizedReason || undefined
+    }
   });
 
   return toRequestRecord(request);

@@ -26,6 +26,18 @@ const errorMap: Record<string, ErrorPayload> = {
     status: 400,
     body: { error: "Complete required intake checklist items before creating a quote workspace." }
   },
+  REQUEST_CONVERTED_LOCKED: {
+    status: 409,
+    body: { error: "Converted requests cannot be reopened or closed again." }
+  },
+  REQUEST_CONVERSION_REQUIRED: {
+    status: 400,
+    body: { error: "Use the quote handoff to convert this request." }
+  },
+  REQUEST_CLOSE_REASON_REQUIRED: {
+    status: 400,
+    body: { error: "Add a reason before closing this request." }
+  },
   REQUEST_CHECKLIST_TEMPLATE_NOT_FOUND: {
     status: 404,
     body: { error: "Request checklist template not found." }

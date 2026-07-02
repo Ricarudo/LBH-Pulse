@@ -17,7 +17,12 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     const user = await requireUser("crm:write");
     const { id } = await params;
     const payload = changeRequestStatusSchema.parse(await request.json());
-    const requestRecord = await changeRequestStatus(id, payload.status, user);
+    const requestRecord = await changeRequestStatus(
+      id,
+      payload.status,
+      user,
+      payload.reason
+    );
     return NextResponse.json({ request: requestRecord });
   } catch (error) {
     return apiError(error);

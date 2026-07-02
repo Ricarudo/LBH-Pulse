@@ -1,14 +1,27 @@
 import { PulseShell } from "@/components/PulseShell";
-import { RequestRouteWorkspace } from "@/modules/requests/RequestRouteWorkspace";
+import { RequestEditWorkspace } from "@/modules/requests/RequestEditWorkspace";
 
 type EditRequestPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams?: Promise<{
+    returnTo?: string;
+  }>;
 };
 
-export default async function EditRequestPage({ params }: EditRequestPageProps) {
+function safeReturnTo(value?: string) {
+  return value?.startsWith("/requests") && !value.startsWith("//")
+    ? value
+    : "/requests";
+}
+
+export default async function EditRequestPage({
+  params,
+  searchParams
+}: EditRequestPageProps) {
   const { id } = await params;
+  const query = await searchParams;
 
   return (
     <PulseShell
@@ -17,7 +30,10 @@ export default async function EditRequestPage({ params }: EditRequestPageProps) 
       subtitle="Update intake details."
       compactHeader
     >
-      <RequestRouteWorkspace mode="edit" requestId={id} />
+      <RequestEditWorkspace
+        requestId={id}
+        returnTo={safeReturnTo(query?.returnTo)}
+      />
     </PulseShell>
   );
 }

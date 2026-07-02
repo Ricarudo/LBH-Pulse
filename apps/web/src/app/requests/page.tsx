@@ -1,4 +1,4 @@
-import { RequestsModule } from "@/modules/requests/RequestsModule";
+import { RequestsQueueModule } from "@/modules/requests/RequestsQueueModule";
 import { PulseShell } from "@/components/PulseShell";
 
 type RequestsPageProps = {
@@ -17,9 +17,8 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
       subtitle="Incoming calls, emails, RFPs, site visits, and quote requests."
       compactHeader
     >
-      {/* The new request flow lives in the queue so its full-screen modal can sit
-          above the list/detail layout instead of replacing the page. */}
-      <RequestsModule openNewOnLoad={params?.new === "1"} />
+      {/* Keep the guided intake flow above the queue instead of replacing it. */}
+      <RequestsQueueModule openNewOnLoad={params?.new === "1"} />
     </PulseShell>
   );
 }

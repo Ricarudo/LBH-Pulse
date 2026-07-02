@@ -90,7 +90,12 @@ export class RequestsController {
   ) {
     const user = await this.auth.requireUser(request, "crm:write");
     const payload = changeRequestStatusSchema.parse(body);
-    const requestRecord = await changeRequestStatus(id, payload.status, user);
+    const requestRecord = await changeRequestStatus(
+      id,
+      payload.status,
+      user,
+      payload.reason
+    );
     return { request: requestRecord };
   }
 
