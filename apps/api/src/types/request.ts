@@ -1,4 +1,5 @@
 import type { LocalRole } from "@/lib/auth/permissions";
+import type { LifecycleDocumentRecord } from "@/types/document";
 
 export const requestStatuses = [
   "Received",
@@ -158,7 +159,7 @@ export type RequestRecord = {
   archivedAt?: string;
   createdAt: string;
   updatedAt: string;
-  files: string[];
+  documents: LifecycleDocumentRecord[];
   activity: RequestActivity[];
   tasks: RequestTask[];
   checklistItems: RequestChecklistItem[];

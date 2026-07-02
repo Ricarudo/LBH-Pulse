@@ -3,9 +3,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { scryptSync } from "node:crypto";
 import { PrismaClient } from "../src/generated/prisma/client";
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL
-});
+const adapter = new PrismaPg(
+  { connectionString: process.env.DATABASE_URL },
+  { schema: "pulse" }
+);
 const prisma = new PrismaClient({ adapter });
 
 function hashPassword(password, salt) {
@@ -843,12 +844,24 @@ const sampleClients = [
 ];
 
 async function main() {
+  if (process.env.PULSE_ALLOW_DESTRUCTIVE_SEED !== "1") {
+    throw new Error(
+      [
+        "Destructive Pulse seed refused.",
+        "This command deletes and recreates users, document metadata, and demo records.",
+        "Use db:initialize for a pristine database or db:reset-demo only when an intentional reset was specifically requested."
+      ].join("\n")
+    );
+  }
+
   await prisma.activity.deleteMany();
   await prisma.requestChecklistItem.deleteMany();
-  await prisma.requestAttachment.deleteMany();
+  await prisma.lifecycleDocument.deleteMany();
   await prisma.requestNote.deleteMany();
   await prisma.requestTask.deleteMany();
   await prisma.requestActivity.deleteMany();
+  await prisma.invoice.deleteMany();
+  await prisma.project.deleteMany();
   await prisma.request.deleteMany();
   await prisma.requestChecklistTemplateItem.deleteMany();
   await prisma.requestChecklistTemplate.deleteMany();
@@ -1040,6 +1053,65 @@ async function main() {
     });
   }
 
+
+  const northfield = await prisma.client.create({
+    data: {
+      clientNumber: "CL-1006",
+      legalName: "Northfield Industries",
+      displayName: "Northfield Industries",
+      industry: "Manufacturing",
+      status: "Active",
+      accountOwner: "Alex Morgan",
+      paymentTerms: "Net 30",
+      preferredCurrency: "USD",
+      preferredLanguage: "English",
+      source: "Existing Client",
+      lifetimeValue: 192400,
+      sites: {
+        create: {
+          siteName: "Main manufacturing campus",
+          siteType: "Manufacturing",
+          addressLine1: "Road 2 KM 17.4",
+          city: "Guaynabo",
+          state: "PR",
+          country: "Puerto Rico",
+          isPrimarySite: true
+        }
+      },
+      services: {
+        create: [
+          { serviceName: "CCTV / Cameras" },
+          { serviceName: "Network" }
+        ]
+      }
+    }
+  });
+  await prisma.pointOfContact.create({
+    data: {
+      ownerType: "Client",
+      ownerId: northfield.id,
+      clientId: northfield.id,
+      role: "Primary",
+      name: "Elena Cruz",
+      firstName: "Elena",
+      lastName: "Cruz",
+      title: "Facilities Director",
+      email: "ecruz@northfield.example",
+      phone: "787-555-0148",
+      preferredContactMethod: "Email",
+      isPrimary: true,
+      isPrimaryContact: true
+    }
+  });
+
+
+  const clientsWithDirectory = await prisma.client.findMany({
+    include: { contacts: true, sites: true }
+  });
+  const clientsByName = new Map(
+    clientsWithDirectory.map((client) => [client.displayName, client])
+  );
+
   for (const request of sampleRequests) {
     const assignedUser =
       request.assignedOwner === "Unassigned"
@@ -1048,6 +1120,13 @@ async function main() {
     const template = seededTemplates.get(checklistKeyFor(request.serviceCategory)) || seededTemplates.get("general");
     const completedItems = new Set(request.checklistCompleted ?? []);
     const requestActor = actorFor(request.activities[0]?.actor);
+    const linkedClient = clientsByName.get(request.companyName);
+    const linkedContact = linkedClient?.contacts.find(
+      (contact) => contact.email?.toLowerCase() === request.email.toLowerCase()
+    );
+    const linkedSite = linkedClient?.sites.find(
+      (site) => site.siteName.toLowerCase() === request.siteName.toLowerCase()
+    );
 
     const createdRequest = await prisma.request.create({
       data: {
@@ -1066,6 +1145,9 @@ async function main() {
         siteAddress: request.siteAddress,
         city: request.city,
         state: request.state,
+        clientId: linkedClient?.id,
+        contactId: linkedContact?.id,
+        siteId: linkedSite?.id,
         assignedToId: assignedUser?.id ?? null,
         createdById: requestActor.id,
         receivedDate: request.lastActivityAt,
@@ -1101,9 +1183,6 @@ async function main() {
         tasks: {
           create: request.tasks
         },
-        attachments: {
-          create: request.attachments.map((fileName) => ({ fileName }))
-        },
         activities: {
           create: request.activities
         },
@@ -1116,6 +1195,21 @@ async function main() {
         }
       }
     });
+
+    if (request.attachments.length) {
+      await prisma.lifecycleDocument.createMany({
+        data: request.attachments.map((fileName) => ({
+          requestId: createdRequest.id,
+          originalFileName: fileName,
+          category: "Unverified Legacy",
+          scanStatus: "Legacy",
+          scanMessage:
+            "This filename-only seed record has no stored object and is not downloadable.",
+          uploadedByName: "Seed Data",
+          createdAt: request.lastActivityAt
+        }))
+      });
+    }
 
     await createActivity({
       relatedEntityType: "Request",
@@ -1159,6 +1253,7 @@ async function main() {
     data: {
       quoteNumber: "QT-2026-1001",
       title: "Coastal Hospitality network refresh",
+      clientId: clientsByName.get("Coastal Hospitality Group")?.id,
       clientName: "Coastal Hospitality Group",
       status: "Draft",
       owner: "Sales User",
@@ -1166,6 +1261,55 @@ async function main() {
       createdAt: new Date("2026-05-09T18:30:00.000Z")
     }
   });
+
+  await prisma.request.updateMany({
+    where: { companyName: "Coastal Hospitality Group", status: "Converted to Quote" },
+    data: { relatedQuoteId: quote.id }
+  });
+
+  const seededProjects = await Promise.all([
+    ["PRJ-118", "Banco Popular Tower", "Banco Popular Tower", "David K.", "In Progress", 284000, "2026-06-02"],
+    ["PRJ-119", "Northfield Upgrade", "Northfield Industries", "Alex M.", "Field Work", 96000, "2026-05-28"],
+    ["PRJ-120", "Metro Retail Camera Refresh", "Metro Retail Group", "Maria S.", "Ready", 42000, "2026-06-05"]
+  ].map(([projectNumber, title, clientName, owner, status, budget, dueDate]) => {
+    const client = clientsByName.get(clientName);
+    if (!client) return null;
+    return prisma.project.create({
+      data: {
+        projectNumber,
+        title,
+        clientId: client.id,
+        owner,
+        status,
+        budget,
+        dueDate: new Date(`${dueDate}T12:00:00.000Z`)
+      }
+    });
+  }));
+  const projectsByNumber = new Map(
+    seededProjects.filter(Boolean).map((project) => [project.projectNumber, project])
+  );
+
+  await Promise.all([
+    ["INV-901", "Northfield progress invoice", "Northfield Industries", "PRJ-119", "Sarah M.", "Sent", 24800, "2026-05-20"],
+    ["INV-902", "Banco Popular milestone billing", "Banco Popular Tower", "PRJ-118", "David K.", "Review", 76000, "2026-05-19"],
+    ["INV-903", "Metro Retail deposit", "Metro Retail Group", "PRJ-120", "Sales User", "Overdue", 8500, "2026-05-13"]
+  ].map(([invoiceNumber, title, clientName, projectNumber, owner, status, amount, dueDate]) => {
+    const client = clientsByName.get(clientName);
+    if (!client) return null;
+    return prisma.invoice.create({
+      data: {
+        invoiceNumber,
+        title,
+        clientId: client.id,
+        projectId: projectsByNumber.get(projectNumber)?.id,
+        owner,
+        status,
+        amount,
+        dueDate: new Date(`${dueDate}T12:00:00.000Z`)
+      }
+    });
+  }));
 
   await createActivity({
     relatedEntityType: "Quote",
@@ -1183,7 +1327,7 @@ main()
   .then(async () => {
     await prisma.$disconnect();
     console.log(
-      `Seeded ${testUsers.length} local users, ${sampleClients.length} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, and starter activity.`
+      `Seeded ${testUsers.length} local users, ${sampleClients.length + 1} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, and starter activity.`
     );
   })
   .catch(async (error) => {

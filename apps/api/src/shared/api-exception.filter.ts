@@ -9,6 +9,7 @@ import { Prisma } from "@/generated/prisma/client";
 import type { Response } from "express";
 import { ZodError } from "zod";
 import { AuthError } from "@/shared/auth.service";
+import { DocumentRangeError } from "@/lib/services/documentService";
 
 type ErrorPayload = {
   status: number;
@@ -24,6 +25,18 @@ const errorMap: Record<string, ErrorPayload> = {
   REQUEST_NOT_READY_FOR_QUOTE: {
     status: 400,
     body: { error: "Complete required intake checklist items before creating a quote workspace." }
+  },
+  REQUEST_CONVERTED_LOCKED: {
+    status: 409,
+    body: { error: "Converted requests cannot be reopened or closed again." }
+  },
+  REQUEST_CONVERSION_REQUIRED: {
+    status: 400,
+    body: { error: "Use the quote handoff to convert this request." }
+  },
+  REQUEST_CLOSE_REASON_REQUIRED: {
+    status: 400,
+    body: { error: "Add a reason before closing this request." }
   },
   REQUEST_CHECKLIST_TEMPLATE_NOT_FOUND: {
     status: 404,
@@ -60,7 +73,28 @@ const errorMap: Record<string, ErrorPayload> = {
   },
   LOCAL_USER_PASSWORD_INVALID: { status: 400, body: { error: "Current password is incorrect." } },
   CLIENT_NOT_FOUND: { status: 404, body: { error: "Client not found." } },
-  CONTACT_NOT_FOUND: { status: 404, body: { error: "Contact not found." } }
+  CONTACT_NOT_FOUND: { status: 404, body: { error: "Contact not found." } },
+  QUOTE_NOT_FOUND: { status: 404, body: { error: "Quote not found." } },
+  PROJECT_NOT_FOUND: { status: 404, body: { error: "Project not found." } },
+  INVOICE_NOT_FOUND: { status: 404, body: { error: "Invoice not found." } },
+  QUOTE_ALREADY_CONVERTED: { status: 409, body: { error: "This quote already has a project." } },
+  QUOTE_NOT_APPROVED: { status: 400, body: { error: "Approve the quote before creating a project." } },
+  QUOTE_CLIENT_REQUIRED: { status: 400, body: { error: "Select a client before creating a project from this quote." } },
+  WORK_CLIENT_MISMATCH: { status: 400, body: { error: "The selected records must belong to the same client." } },
+  PROJECT_CANCELLED: { status: 400, body: { error: "Cancelled projects cannot create invoices." } },
+  DOCUMENT_NOT_FOUND: { status: 404, body: { error: "Document not found." } },
+  DOCUMENT_NOT_AVAILABLE: { status: 409, body: { error: "This legacy or unverified document is not available for download." } },
+  DOCUMENT_FILE_REQUIRED: { status: 400, body: { error: "Select a file to upload." } },
+  DOCUMENT_FILENAME_INVALID: { status: 400, body: { error: "The filename contains unsupported or unsafe characters." } },
+  DOCUMENT_TYPE_INVALID: { status: 400, body: { error: "Only PDF, JPEG, PNG, and WebP files are supported." } },
+  DOCUMENT_SIGNATURE_INVALID: { status: 400, body: { error: "The file contents do not match the selected file type." } },
+  DOCUMENT_TOO_LARGE: { status: 413, body: { error: "PDF files may be up to 100 MB; images may be up to 10 MB." } },
+  DOCUMENT_LINEAGE_LIMIT: { status: 413, body: { error: "This Request–Quote–Project lifecycle has reached its 500 MB document limit." } },
+  DOCUMENT_CATEGORY_INVALID: { status: 400, body: { error: "Select a valid document category for this lifecycle stage." } },
+  DOCUMENT_MALWARE_DETECTED: { status: 422, body: { error: "The file failed malware inspection and was rejected." } },
+  DOCUMENT_SCANNER_UNAVAILABLE: { status: 503, body: { error: "Document malware inspection is temporarily unavailable. Nothing was stored." } },
+  DOCUMENT_STORAGE_UNAVAILABLE: { status: 503, body: { error: "Private document storage is unavailable. Nothing was stored." } },
+  DOCUMENT_RANGE_INVALID: { status: 416, body: { error: "The requested document byte range is invalid." } }
 };
 
 function zodFieldErrors(error: ZodError) {
@@ -116,6 +150,13 @@ export function apiErrorPayload(error: unknown): ErrorPayload | null {
 export class ApiExceptionFilter implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<Response>();
+    if (error instanceof DocumentRangeError) {
+      response
+        .status(416)
+        .setHeader("Content-Range", `bytes */${error.byteSize}`)
+        .json({ error: "The requested document byte range is invalid." });
+      return;
+    }
     const mapped = apiErrorPayload(error);
 
     if (mapped) {

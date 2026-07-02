@@ -17,9 +17,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ActivityRecord } from "@/types/activity";
+import type { ClientRecord } from "@/types/client";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import {
   requestPriorities,
@@ -46,6 +48,9 @@ type RequestFormState = {
   serviceCategory: ServiceCategory;
   status: RequestStatus;
   priority: RequestPriority;
+  clientId: string;
+  contactId: string;
+  siteId: string;
   companyName: string;
   contactName: string;
   contactEmail: string;
@@ -74,6 +79,8 @@ type RequestListResponse = {
 type RequestResponse = {
   request: RequestRecord;
 };
+
+type ClientListResponse = { clients: ClientRecord[] };
 
 type ActivityListResponse = {
   activities: ActivityRecord[];
@@ -125,6 +132,9 @@ function emptyForm(defaultAssignedToId = ""): RequestFormState {
     serviceCategory: "Access Control",
     status: "Received",
     priority: "Normal",
+    clientId: "",
+    contactId: "",
+    siteId: "",
     companyName: "",
     contactName: "",
     contactEmail: "",
@@ -154,6 +164,9 @@ function formFromRequest(request: RequestRecord): RequestFormState {
     serviceCategory: request.serviceCategory,
     status: request.status,
     priority: request.priority,
+    clientId: request.clientId ?? "",
+    contactId: request.contactId ?? "",
+    siteId: request.siteId ?? "",
     companyName: request.companyName,
     contactName: request.contactName,
     contactEmail: request.contactEmail,
@@ -259,6 +272,7 @@ export function RequestRouteWorkspace({
   const canWriteActivity = canRole(user?.role, "crm:activity:write");
   const [request, setRequest] = useState<RequestRecord | null>(null);
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
+  const [clients, setClients] = useState<ClientRecord[]>([]);
   const [formState, setFormState] = useState<RequestFormState>(emptyForm(user?.id ?? ""));
   const [isLoading, setIsLoading] = useState(mode !== "new");
   const [isSaving, setIsSaving] = useState(false);
@@ -286,10 +300,12 @@ export function RequestRouteWorkspace({
     async function load() {
       try {
         setIsLoading(true);
-        const listData = await requestJson<RequestListResponse>("/api/requests", {
-          cache: "no-store"
-        });
+        const [listData, clientData] = await Promise.all([
+          requestJson<RequestListResponse>("/api/requests", { cache: "no-store" }),
+          requestJson<ClientListResponse>("/api/clients", { cache: "no-store" })
+        ]);
         setAssignees(listData.assignees);
+        setClients(clientData.clients);
 
         if (requestId) {
           const data = await requestJson<RequestResponse>(`/api/requests/${requestId}`, {
@@ -327,6 +343,56 @@ export function RequestRouteWorkspace({
       inactiveGroups: groupChecklistItems(inactive)
     };
   }, [request?.checklistItems]);
+
+  const selectedClient = clients.find((client) => client.id === formState.clientId);
+
+  function selectClient(clientId: string) {
+    const client = clients.find((item) => item.id === clientId);
+    if (!client) {
+      setFormState({ ...formState, clientId: "", contactId: "", siteId: "" });
+      return;
+    }
+    // Persist canonical IDs and readable snapshots together for history and search.
+    const contact = client.primaryContact.id ? client.primaryContact : client.contacts[0];
+    const site = client.sites.find((item) => item.isPrimarySite) ?? client.sites[0];
+    setFormState({
+      ...formState,
+      clientId: client.id,
+      companyName: client.displayName,
+      contactId: contact?.id ?? "",
+      contactName: contact?.name ?? "",
+      contactEmail: contact?.email ?? "",
+      contactPhone: contact?.phone ?? contact?.mobile ?? "",
+      siteId: site?.id ?? "",
+      siteName: site?.siteName ?? "",
+      siteAddress: site?.address ?? "",
+      city: site?.city ?? "",
+      state: site?.state ?? "PR"
+    });
+  }
+
+  function selectContact(contactId: string) {
+    const contact = selectedClient?.contacts.find((item) => item.id === contactId);
+    setFormState({
+      ...formState,
+      contactId,
+      contactName: contact?.name ?? formState.contactName,
+      contactEmail: contact?.email ?? formState.contactEmail,
+      contactPhone: contact?.phone ?? contact?.mobile ?? formState.contactPhone
+    });
+  }
+
+  function selectSite(siteId: string) {
+    const site = selectedClient?.sites.find((item) => item.id === siteId);
+    setFormState({
+      ...formState,
+      siteId,
+      siteName: site?.siteName ?? formState.siteName,
+      siteAddress: site?.address ?? formState.siteAddress,
+      city: site?.city ?? formState.city,
+      state: site?.state ?? formState.state
+    });
+  }
 
   const missingRequiredLabels = useMemo(
     () => new Set(request?.checklistSummary.missingRequired ?? []),
@@ -583,12 +649,26 @@ export function RequestRouteWorkspace({
               </select>
             </label>
             <label>
-              Client
-              <input value={formState.companyName} onChange={(event) => setFormState({ ...formState, companyName: event.target.value })} />
+              Client account
+              <select value={formState.clientId} onChange={(event) => selectClient(event.target.value)}>
+                <option value="">Unlinked / new prospect</option>
+                {clients.map((client) => <option key={client.id} value={client.id}>{client.displayName}</option>)}
+              </select>
             </label>
             <label>
-              Contact
-              <input value={formState.contactName} onChange={(event) => setFormState({ ...formState, contactName: event.target.value })} />
+              Company name
+              <input value={formState.companyName} onChange={(event) => setFormState({ ...formState, companyName: event.target.value, clientId: "", contactId: "", siteId: "" })} />
+            </label>
+            <label>
+              Contact record
+              <select value={formState.contactId} onChange={(event) => selectContact(event.target.value)} disabled={!selectedClient}>
+                <option value="">No linked contact</option>
+                {(selectedClient?.contacts ?? []).map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}
+              </select>
+            </label>
+            <label>
+              Contact name
+              <input value={formState.contactName} onChange={(event) => setFormState({ ...formState, contactName: event.target.value, contactId: "" })} />
             </label>
             <label>
               Email
@@ -599,8 +679,15 @@ export function RequestRouteWorkspace({
               <input value={formState.contactPhone} onChange={(event) => setFormState({ ...formState, contactPhone: event.target.value })} />
             </label>
             <label>
-              Site
-              <input value={formState.siteName} onChange={(event) => setFormState({ ...formState, siteName: event.target.value })} />
+              Site record
+              <select value={formState.siteId} onChange={(event) => selectSite(event.target.value)} disabled={!selectedClient}>
+                <option value="">No linked site</option>
+                {(selectedClient?.sites ?? []).map((site) => <option key={site.id} value={site.id}>{site.siteName}</option>)}
+              </select>
+            </label>
+            <label>
+              Site name
+              <input value={formState.siteName} onChange={(event) => setFormState({ ...formState, siteName: event.target.value, siteId: "" })} />
             </label>
             <label>
               Address
@@ -910,13 +997,13 @@ export function RequestRouteWorkspace({
           {activeDetailTab === "Files" ? (
             <section className="lead-section">
               <h3>Files / Drawings</h3>
-              {request.files.length ? (
-                <div className="request-tag-list">
-                  {request.files.map((file) => <span key={file}>{file}</span>)}
-                </div>
-              ) : (
-                <p className="lead-notes">No files are indexed yet. Upload and drawing package handling are planned for a later file model.</p>
-              )}
+              <LifecycleDocuments
+                stage="request"
+                recordId={request.id}
+                documents={request.documents}
+                canWrite={canWriteCrm}
+                onChange={(documents) => setRequest({ ...request, documents })}
+              />
             </section>
           ) : null}
 

@@ -47,6 +47,27 @@ export function apiError(error: unknown) {
     );
   }
 
+  if (error instanceof Error && error.message === "REQUEST_CONVERTED_LOCKED") {
+    return NextResponse.json(
+      { error: "Converted requests cannot be reopened or closed again." },
+      { status: 409 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "REQUEST_CONVERSION_REQUIRED") {
+    return NextResponse.json(
+      { error: "Use the quote handoff to convert this request." },
+      { status: 400 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "REQUEST_CLOSE_REASON_REQUIRED") {
+    return NextResponse.json(
+      { error: "Add a reason before closing this request." },
+      { status: 400 }
+    );
+  }
+
   if (error instanceof Error && error.message === "REQUEST_CHECKLIST_TEMPLATE_NOT_FOUND") {
     return NextResponse.json({ error: "Request checklist template not found." }, { status: 404 });
   }
@@ -124,6 +145,22 @@ export function apiError(error: unknown) {
       },
       { status: 409 }
     );
+  }
+
+  const workErrors: Record<string, { status: number; error: string }> = {
+    QUOTE_NOT_FOUND: { status: 404, error: "Quote not found." },
+    PROJECT_NOT_FOUND: { status: 404, error: "Project not found." },
+    INVOICE_NOT_FOUND: { status: 404, error: "Invoice not found." },
+    QUOTE_ALREADY_CONVERTED: { status: 409, error: "This quote already has a project." },
+    QUOTE_NOT_APPROVED: { status: 400, error: "Approve the quote before creating a project." },
+    QUOTE_CLIENT_REQUIRED: { status: 400, error: "Select a client before creating a project from this quote." },
+    WORK_CLIENT_MISMATCH: { status: 400, error: "The selected records must belong to the same client." },
+    PROJECT_CANCELLED: { status: 400, error: "Cancelled projects cannot create invoices." }
+  };
+
+  if (error instanceof Error && workErrors[error.message]) {
+    const mapped = workErrors[error.message];
+    return NextResponse.json({ error: mapped.error }, { status: mapped.status });
   }
 
   console.error(error);

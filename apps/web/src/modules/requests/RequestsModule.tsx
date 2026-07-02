@@ -22,11 +22,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ActivityRecord } from "@/types/activity";
+import type { ClientRecord } from "@/types/client";
 import { RequestsMobileView } from "./RequestsMobileView";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
+import { RequestIntakeWizard } from "./RequestIntakeWizard";
 import {
   requestPriorities,
   requestSources,
@@ -59,6 +62,9 @@ type RequestFormState = {
   serviceCategory: ServiceCategory;
   status: RequestStatus;
   priority: RequestPriority;
+  clientId: string;
+  contactId: string;
+  siteId: string;
   companyName: string;
   contactName: string;
   contactEmail: string;
@@ -92,6 +98,8 @@ type ActivityListResponse = {
   activities: ActivityRecord[];
 };
 
+type ClientListResponse = { clients: ClientRecord[] };
+
 const requestViews: RequestView[] = [
   "All Open",
   "My Requests",
@@ -115,6 +123,9 @@ function createFormState(
     serviceCategory: request?.serviceCategory ?? "Access Control",
     status: request?.status ?? "Received",
     priority: request?.priority ?? "Normal",
+    clientId: request?.clientId ?? "",
+    contactId: request?.contactId ?? "",
+    siteId: request?.siteId ?? "",
     companyName: request?.companyName ?? "",
     contactName: request?.contactName ?? "",
     contactEmail: request?.contactEmail ?? "",
@@ -268,11 +279,12 @@ function assigneeLabel(assignee: RequestAssignee) {
   return `${assignee.name} (${assignee.roleLabel})`;
 }
 
-export function RequestsModule() {
+export function RequestsModule({ openNewOnLoad = false }: { openNewOnLoad?: boolean }) {
   const router = useRouter();
-  const { user } = useCurrentUser();
+  const { user, isLoading: isUserLoading } = useCurrentUser();
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
+  const [clients, setClients] = useState<ClientRecord[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState("");
   const [activeView, setActiveView] = useState<RequestView>("All Open");
   const [searchTerm, setSearchTerm] = useState("");
@@ -281,6 +293,8 @@ export function RequestsModule() {
   const [assigneeFilter, setAssigneeFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] =
     useState<"All" | RequestPriority>("All");
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [handledOpenNewOnLoad, setHandledOpenNewOnLoad] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
   const [formState, setFormState] = useState<RequestFormState>(createFormState());
   const [noteText, setNoteText] = useState("");
@@ -297,6 +311,55 @@ export function RequestsModule() {
     requests.find((request) => request.id === selectedRequestId) ?? null;
   const canWriteCrm = canRole(user?.role, "crm:write");
   const canWriteActivity = canRole(user?.role, "crm:activity:write");
+  const selectedFormClient = clients.find((client) => client.id === formState.clientId);
+
+  function selectFormClient(clientId: string) {
+    const client = clients.find((item) => item.id === clientId);
+    if (!client) {
+      setFormState({ ...formState, clientId: "", contactId: "", siteId: "" });
+      return;
+    }
+    // Persist canonical IDs and readable snapshots together for history and search.
+    const contact = client.primaryContact.id ? client.primaryContact : client.contacts[0];
+    const site = client.sites.find((item) => item.isPrimarySite) ?? client.sites[0];
+    setFormState({
+      ...formState,
+      clientId: client.id,
+      companyName: client.displayName,
+      contactId: contact?.id ?? "",
+      contactName: contact?.name ?? "",
+      contactEmail: contact?.email ?? "",
+      contactPhone: contact?.phone ?? contact?.mobile ?? "",
+      siteId: site?.id ?? "",
+      siteName: site?.siteName ?? "",
+      siteAddress: site?.address ?? "",
+      city: site?.city ?? "",
+      state: site?.state ?? "PR"
+    });
+  }
+
+  function selectFormContact(contactId: string) {
+    const contact = selectedFormClient?.contacts.find((item) => item.id === contactId);
+    setFormState({
+      ...formState,
+      contactId,
+      contactName: contact?.name ?? formState.contactName,
+      contactEmail: contact?.email ?? formState.contactEmail,
+      contactPhone: contact?.phone ?? contact?.mobile ?? formState.contactPhone
+    });
+  }
+
+  function selectFormSite(siteId: string) {
+    const site = selectedFormClient?.sites.find((item) => item.id === siteId);
+    setFormState({
+      ...formState,
+      siteId,
+      siteName: site?.siteName ?? formState.siteName,
+      siteAddress: site?.address ?? formState.siteAddress,
+      city: site?.city ?? formState.city,
+      state: site?.state ?? formState.state
+    });
+  }
 
   function openRequestDetail(requestId: string) {
     router.push(`/requests/${requestId}`);
@@ -332,11 +395,13 @@ export function RequestsModule() {
       try {
         setIsLoading(true);
         setLoadError("");
-        const data = await requestJson<RequestListResponse>("/api/requests", {
-          cache: "no-store"
-        });
+        const [data, clientData] = await Promise.all([
+          requestJson<RequestListResponse>("/api/requests", { cache: "no-store" }),
+          requestJson<ClientListResponse>("/api/clients", { cache: "no-store" })
+        ]);
         setRequests(data.requests);
         setAssignees(data.assignees);
+        setClients(clientData.clients);
         setToast("Requests are connected to the Pulse Request domain.");
       } catch (error) {
         const message =
@@ -352,6 +417,29 @@ export function RequestsModule() {
 
     void loadRequests();
   }, []);
+
+  useEffect(() => {
+    // /requests?new=1 is the compatibility entry point for the old full-page
+    // create route. Once handled, replace the URL so refreshes do not reopen it.
+    if (!openNewOnLoad || handledOpenNewOnLoad) {
+      return;
+    }
+
+    if (isUserLoading) {
+      return;
+    }
+
+    setHandledOpenNewOnLoad(true);
+
+    if (!canWriteCrm) {
+      setToast("Your role does not allow creating requests.");
+      router.replace("/requests", { scroll: false });
+      return;
+    }
+
+    setIntakeOpen(true);
+    router.replace("/requests", { scroll: false });
+  }, [canWriteCrm, handledOpenNewOnLoad, isUserLoading, openNewOnLoad, router]);
 
   useEffect(() => {
     if (
@@ -508,8 +596,28 @@ export function RequestsModule() {
       return;
     }
 
-    setFormMode("create");
-    setFormState(createFormState(undefined, user?.id ?? ""));
+    // Create now uses the guided intake wizard; edit still uses the existing
+    // one-page modal below because it exposes the full request field surface.
+    setIntakeOpen(true);
+  }
+
+  function handleIntakeClientChanged(client: ClientRecord) {
+    // Client/PoC/site creation happens immediately inside the wizard, so keep
+    // the queue's local Directory cache fresh without reloading the whole page.
+    setClients((current) =>
+      current.some((item) => item.id === client.id)
+        ? current.map((item) => (item.id === client.id ? client : item))
+        : [client, ...current]
+    );
+  }
+
+  function handleIntakeCreated(request: RequestRecord) {
+    // Mirror the old create behavior: prepend the request, select it, and leave
+    // the user in the open intake queue.
+    setRequests((current) => [request, ...current]);
+    setSelectedRequestId(request.id);
+    setActiveView("All Open");
+    setToast(`${request.requestNumber} created.`);
   }
 
   function openEditForm(request: RequestRecord) {
@@ -832,10 +940,10 @@ export function RequestsModule() {
       <section className="requests-desktop-summary" aria-label="Request intake summary">
         <div className="requests-context-label">
           <span>Requests / Intake Queue</span>
-          <Link className="primary-button compact" href="/requests/new">
+          <button className="primary-button compact" type="button" onClick={openCreateForm}>
             <Plus size={17} />
             New Request
-          </Link>
+          </button>
         </div>
         <div className="requests-summary-grid">
           {desktopSummaryCards.map((card) => (
@@ -1226,13 +1334,17 @@ export function RequestsModule() {
 
               <section className="lead-section">
                 <h3>Files / Drawings</h3>
-                {selectedRequest.files.length ? (
-                  <div className="request-tag-list">
-                    {selectedRequest.files.map((file) => <span key={file}>{file}</span>)}
-                  </div>
-                ) : (
-                  <p className="lead-notes">No files are indexed yet. Upload and drawing package handling are planned for a later file model.</p>
-                )}
+                <LifecycleDocuments
+                  stage="request"
+                  recordId={selectedRequest.id}
+                  documents={selectedRequest.documents}
+                  canWrite={canWriteCrm}
+                  onChange={(documents) => setRequests((current) =>
+                    current.map((item) =>
+                      item.id === selectedRequest.id ? { ...item, documents } : item
+                    )
+                  )}
+                />
               </section>
 
               <section className="lead-section">
@@ -1280,6 +1392,16 @@ export function RequestsModule() {
 
       <div className="lead-toast">{toast}</div>
 
+      <RequestIntakeWizard
+        isOpen={intakeOpen}
+        clients={clients}
+        assignees={assignees}
+        currentUser={user}
+        onClose={() => setIntakeOpen(false)}
+        onClientChanged={handleIntakeClientChanged}
+        onCreated={handleIntakeCreated}
+      />
+
       {formMode ? (
         <div className="lead-modal-backdrop" role="dialog" aria-modal="true">
           <form className="lead-form-modal" onSubmit={saveRequest}>
@@ -1317,12 +1439,26 @@ export function RequestsModule() {
                 </select>
               </label>
               <label>
-                Company
-                <input value={formState.companyName} onChange={(event) => setFormState({ ...formState, companyName: event.target.value })} />
+                Client account
+                <select value={formState.clientId} onChange={(event) => selectFormClient(event.target.value)}>
+                  <option value="">Unlinked / new prospect</option>
+                  {clients.map((client) => <option key={client.id} value={client.id}>{client.displayName}</option>)}
+                </select>
+              </label>
+              <label>
+                Company name
+                <input value={formState.companyName} onChange={(event) => setFormState({ ...formState, companyName: event.target.value, clientId: "", contactId: "", siteId: "" })} />
+              </label>
+              <label>
+                Contact record
+                <select value={formState.contactId} onChange={(event) => selectFormContact(event.target.value)} disabled={!selectedFormClient}>
+                  <option value="">No linked contact</option>
+                  {(selectedFormClient?.contacts ?? []).map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}
+                </select>
               </label>
               <label>
                 Contact person
-                <input value={formState.contactName} onChange={(event) => setFormState({ ...formState, contactName: event.target.value })} />
+                <input value={formState.contactName} onChange={(event) => setFormState({ ...formState, contactName: event.target.value, contactId: "" })} />
               </label>
               <label>
                 Email
@@ -1333,8 +1469,15 @@ export function RequestsModule() {
                 <input value={formState.contactPhone} onChange={(event) => setFormState({ ...formState, contactPhone: event.target.value })} />
               </label>
               <label>
+                Site record
+                <select value={formState.siteId} onChange={(event) => selectFormSite(event.target.value)} disabled={!selectedFormClient}>
+                  <option value="">No linked site</option>
+                  {(selectedFormClient?.sites ?? []).map((site) => <option key={site.id} value={site.id}>{site.siteName}</option>)}
+                </select>
+              </label>
+              <label>
                 Site/location
-                <input value={formState.siteName} onChange={(event) => setFormState({ ...formState, siteName: event.target.value })} />
+                <input value={formState.siteName} onChange={(event) => setFormState({ ...formState, siteName: event.target.value, siteId: "" })} />
               </label>
               <label>
                 Site address

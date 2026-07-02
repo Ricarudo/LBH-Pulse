@@ -16,7 +16,7 @@ services:
     container_name: pulse-api-ci-container
     image: node:24-alpine
     working_dir: /usr/src/app/apps/api
-    command: sh -c "npm ci && npm run db:setup && npm test && npm run build"
+    command: sh -c "npm ci && npm run db:initialize && npm test && npm run build"
     environment:
       NODE_ENV: test
       DATABASE_URL: postgresql://kuotesuite:kuotesuite_dev_password@postgres:5432/kuotesuite?schema=pulse

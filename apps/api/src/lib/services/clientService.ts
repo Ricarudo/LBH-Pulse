@@ -39,6 +39,14 @@ const clientInclude = {
     orderBy: {
       createdAt: "desc"
     }
+  },
+  projects: {
+    where: { archivedAt: null },
+    select: { status: true }
+  },
+  invoices: {
+    where: { archivedAt: null },
+    select: { status: true, amount: true }
   }
 } satisfies Prisma.ClientInclude;
 
@@ -215,9 +223,13 @@ function toClientRecord(client: ClientWithRelations): ClientRecord {
     state: primarySite?.state ?? "",
     serviceProfile: client.services.map((service) => service.serviceName),
     openOpportunities: client.openOpportunities,
-    activeProjects: client.activeProjects,
+    activeProjects: client.projects.filter(
+      (project) => !["Completed", "Cancelled"].includes(project.status)
+    ).length,
     lifetimeValue: Number(client.lifetimeValue),
-    outstandingBalance: Number(client.outstandingBalance),
+    outstandingBalance: client.invoices
+      .filter((invoice) => !["Paid", "Void"].includes(invoice.status))
+      .reduce((total, invoice) => total + Number(invoice.amount), 0),
     lastActivity: formatDateInput(client.lastActivityAt ?? client.updatedAt),
     source: client.source ?? "",
     importantNotes: client.generalNotes ?? client.brandPreferences ?? "",

@@ -1,5 +1,9 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Req } from "@nestjs/common";
-import type { Request } from "express";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Req, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Express, Request } from "express";
+import { mkdirSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import { diskStorage } from "multer";
 import {
   addRequestActivity,
   archiveRequest,
@@ -25,6 +29,10 @@ import {
   updateRequestSchema
 } from "@/lib/validations/request";
 import { AuthService } from "@/shared/auth.service";
+import { uploadDocument } from "@/lib/services/documentService";
+
+const uploadDirectory = process.env.DOCUMENT_TEMP_DIR || "/tmp/pulse-uploads";
+mkdirSync(uploadDirectory, { recursive: true });
 
 @Controller("requests")
 export class RequestsController {
@@ -82,7 +90,12 @@ export class RequestsController {
   ) {
     const user = await this.auth.requireUser(request, "crm:write");
     const payload = changeRequestStatusSchema.parse(body);
-    const requestRecord = await changeRequestStatus(id, payload.status, user);
+    const requestRecord = await changeRequestStatus(
+      id,
+      payload.status,
+      user,
+      payload.reason
+    );
     return { request: requestRecord };
   }
 
@@ -97,6 +110,26 @@ export class RequestsController {
     const payload = convertRequestSchema.parse(body);
     const requestRecord = await convertRequest(id, payload, user);
     return { request: requestRecord };
+  }
+
+  @Post(":id/documents")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      storage: diskStorage({ destination: uploadDirectory }),
+      limits: { fileSize: 100 * 1024 * 1024 }
+    })
+  )
+  async uploadDocument(
+    @Req() request: Request,
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body("category") category = "Other"
+  ) {
+    const user = await this.auth.requireUser(request, "crm:write").catch(async (error) => {
+      if (file) await unlink(file.path).catch(() => undefined);
+      throw error;
+    });
+    return { document: await uploadDocument("request", id, file, category, user) };
   }
 
   @Post(":id/activities")

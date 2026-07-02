@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { toAuthenticatedUser, type AuthenticatedUser } from "@/lib/auth/permissions";
 import { recordActivity } from "@/lib/services/activityService";
-import type { ClientQuoteSummary } from "@/types/client";
+import { toInvoiceRecord, toProjectRecord, toQuoteRecord } from "@/lib/services/workService";
 import type {
   RequestActivityType,
   RequestAssignee,
@@ -44,7 +44,8 @@ const requestInclude = {
       createdAt: "desc"
     }
   },
-  attachments: {
+  documents: {
+    where: { deletedAt: null },
     orderBy: {
       createdAt: "desc"
     }
@@ -251,7 +252,27 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
     archivedAt: request.archivedAt ? request.archivedAt.toISOString() : undefined,
     createdAt: formatDateInput(request.createdAt),
     updatedAt: request.updatedAt.toISOString(),
-    files: request.attachments.map((attachment) => attachment.fileName),
+    documents: request.documents.map((document) => {
+      const available = document.scanStatus === "Clean" && Boolean(document.objectKey);
+      return {
+        id: document.id,
+        sourceType: "Request" as const,
+        sourceId: request.id,
+        sourceNumber: request.requestNumber,
+        inherited: false,
+        canDelete: true,
+        originalFileName: document.originalFileName,
+        mediaType: document.mediaType ?? "",
+        byteSize: Number(document.byteSize),
+        category: document.category,
+        scanStatus: document.scanStatus,
+        available,
+        uploadedByName: document.uploadedByName,
+        createdAt: document.createdAt.toISOString(),
+        downloadUrl: available ? `/api/documents/${document.id}/download` : null,
+        previewUrl: available ? `/api/documents/${document.id}/preview` : null
+      };
+    }),
     activity: request.activities.map((activity) => ({
       id: activity.id,
       type: activity.type as RequestActivityType,
@@ -410,52 +431,76 @@ export async function listClientRelatedWork(clientId: string) {
       archivedAt: null,
       OR: [{ id: clientId }, { clientNumber: clientId }]
     },
-    select: {
-      id: true
-    }
+    select: { id: true }
   });
 
   if (!client) {
     throw new Error("CLIENT_NOT_FOUND");
   }
 
-  const clientRequests = await prisma.request.findMany({
-    where: {
-      clientId: client.id,
-      archivedAt: null
-    },
-    include: requestInclude,
-    orderBy: [
-      {
-        updatedAt: "desc"
-      }
-    ]
-  });
+  const [clientRequests, quotes, projects, invoices] = await Promise.all([
+    prisma.request.findMany({
+      where: { clientId: client.id, archivedAt: null },
+      include: requestInclude,
+      orderBy: { updatedAt: "desc" }
+    }),
+    prisma.quote.findMany({
+      where: { clientId: client.id, archivedAt: null },
+      include: {
+        client: { select: { id: true, displayName: true } },
+        requests: {
+          where: { archivedAt: null },
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: { id: true, requestNumber: true }
+        },
+        project: { select: { id: true } }
+      },
+      orderBy: { updatedAt: "desc" }
+    }),
+    prisma.project.findMany({
+      where: { clientId: client.id, archivedAt: null },
+      include: {
+        client: { select: { id: true, displayName: true } },
+        quote: { select: { id: true, quoteNumber: true } },
+        invoices: { where: { archivedAt: null }, select: { id: true } }
+      },
+      orderBy: { updatedAt: "desc" }
+    }),
+    prisma.invoice.findMany({
+      where: { clientId: client.id, archivedAt: null },
+      include: {
+        client: { select: { id: true, displayName: true } },
+        project: { select: { id: true, projectNumber: true } }
+      },
+      orderBy: { updatedAt: "desc" }
+    })
+  ]);
 
-  const quoteById = new Map<string, ClientQuoteSummary>();
-
-  for (const request of clientRequests) {
-    if (!request.relatedQuote) {
-      continue;
-    }
-
-    quoteById.set(request.relatedQuote.id, {
-      id: request.relatedQuote.id,
-      quoteNumber: request.relatedQuote.quoteNumber,
-      title: request.relatedQuote.title,
-      status: request.relatedQuote.status,
-      owner: request.relatedQuote.owner,
-      total: Number(request.relatedQuote.total),
-      createdAt: formatDateInput(request.relatedQuote.createdAt),
-      updatedAt: request.relatedQuote.updatedAt.toISOString(),
-      requestId: request.id,
-      requestNumber: request.requestNumber
-    });
-  }
+  const requestRecords = clientRequests.map(toRequestRecord);
+  const quoteRecords = quotes.map((quote) => toQuoteRecord(quote));
+  const projectRecords = projects.map((project) => toProjectRecord(project));
+  const invoiceRecords = invoices.map(toInvoiceRecord);
 
   return {
-    requests: clientRequests.map(toRequestRecord),
-    quotes: Array.from(quoteById.values())
+    requests: requestRecords,
+    quotes: quoteRecords,
+    projects: projectRecords,
+    invoices: invoiceRecords,
+    summary: {
+      activeRequests: requestRecords.filter(
+        (request) => !["Converted to Quote", "No Bid", "Cancelled", "Duplicate"].includes(request.status)
+      ).length,
+      activeQuotes: quoteRecords.filter(
+        (quote) => !quote.projectId && !["Rejected", "Expired", "Cancelled"].includes(quote.status)
+      ).length,
+      activeProjects: projectRecords.filter(
+        (project) => !["Completed", "Cancelled"].includes(project.status)
+      ).length,
+      outstandingInvoiceBalance: invoiceRecords
+        .filter((invoice) => !["Paid", "Void"].includes(invoice.status))
+        .reduce((total, invoice) => total + invoice.amount, 0)
+    }
   };
 }
 
@@ -745,24 +790,54 @@ export async function archiveRequest(id: string, user?: AuthenticatedUser) {
 export async function changeRequestStatus(
   id: string,
   status: string,
-  user?: AuthenticatedUser
+  user?: AuthenticatedUser,
+  reason = ""
 ) {
   const existingRequest = await getRequestOrThrow(id);
+  const terminalStatuses = ["No Bid", "Cancelled", "Duplicate"];
+  const normalizedReason = reason.trim();
+
+  if (terminalStatuses.includes(status) && !normalizedReason) {
+    throw new Error("REQUEST_CLOSE_REASON_REQUIRED");
+  }
+
+  if (
+    existingRequest.status === "Converted to Quote" &&
+    status !== "Converted to Quote"
+  ) {
+    throw new Error("REQUEST_CONVERTED_LOCKED");
+  }
+
+  if (
+    status === "Converted to Quote" &&
+    existingRequest.status !== "Converted to Quote"
+  ) {
+    throw new Error("REQUEST_CONVERSION_REQUIRED");
+  }
 
   if (status === "Ready for Quote" && !buildChecklistSummary(existingRequest).readyForQuote) {
     throw new Error("REQUEST_NOT_READY_FOR_QUOTE");
   }
 
+  const isReopening =
+    terminalStatuses.includes(existingRequest.status) &&
+    !terminalStatuses.includes(status);
+  const nextStatus = isReopening
+    ? deriveIntakeStatus({ ...existingRequest, status: "Reviewing" })
+    : status;
   const now = new Date();
   const request = await prisma.request.update({
     where: { id },
     data: {
-      status,
+      status: nextStatus,
       lastActivityAt: now,
       activities: {
         create: {
           type: "Status",
-          title: `Status changed to ${status}`,
+          title: isReopening
+            ? `Request reopened as ${nextStatus}`
+            : `Status changed to ${nextStatus}`,
+          body: normalizedReason || (isReopening ? "Request returned to active intake." : null),
           actor: user?.name ?? "Pulse System",
           createdAt: now
         }
@@ -776,9 +851,15 @@ export async function changeRequestStatus(
     relatedEntityType: "Request",
     relatedEntityId: request.id,
     type: "Status Changed",
-    title: `${request.requestNumber} moved to ${status}`,
-    detail: request.title,
-    metadata: { status }
+    title: isReopening
+      ? `${request.requestNumber} reopened`
+      : `${request.requestNumber} moved to ${nextStatus}`,
+    detail: normalizedReason || request.title,
+    metadata: {
+      status: nextStatus,
+      requestedStatus: status,
+      reason: normalizedReason || undefined
+    }
   });
 
   return toRequestRecord(request);
@@ -1046,6 +1127,7 @@ export async function convertRequest(
           data: {
             quoteNumber: await generateQuoteNumber(tx),
             title: existingRequest.title,
+            clientId: existingRequest.clientId,
             clientName: existingRequest.companyName || existingRequest.client?.displayName || null,
             status: "Draft",
             owner: existingRequest.assignedTo?.name ?? "Unassigned",

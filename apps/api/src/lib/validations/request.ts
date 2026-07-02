@@ -99,9 +99,27 @@ export const updateRequestSchema = requestFormFieldsSchema.partial().superRefine
   }
 );
 
-export const changeRequestStatusSchema = z.object({
-  status: requestStatusSchema
-});
+const terminalRequestStatuses = ["No Bid", "Cancelled", "Duplicate"] as const;
+
+export const changeRequestStatusSchema = z
+  .object({
+    status: requestStatusSchema,
+    reason: optionalText
+  })
+  .superRefine((data, context) => {
+    if (
+      terminalRequestStatuses.includes(
+        data.status as (typeof terminalRequestStatuses)[number]
+      ) &&
+      !data.reason
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Add a reason before closing this request.",
+        path: ["reason"]
+      });
+    }
+  });
 
 export const createRequestActivitySchema = z.object({
   type: z

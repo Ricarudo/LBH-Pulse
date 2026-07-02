@@ -1,7 +1,15 @@
-import { RequestsModule } from "@/modules/requests/RequestsModule";
+import { RequestsQueueModule } from "@/modules/requests/RequestsQueueModule";
 import { PulseShell } from "@/components/PulseShell";
 
-export default function RequestsPage() {
+type RequestsPageProps = {
+  searchParams?: Promise<{
+    new?: string;
+  }>;
+};
+
+export default async function RequestsPage({ searchParams }: RequestsPageProps) {
+  const params = await searchParams;
+
   return (
     <PulseShell
       activePage="requests"
@@ -9,7 +17,8 @@ export default function RequestsPage() {
       subtitle="Incoming calls, emails, RFPs, site visits, and quote requests."
       compactHeader
     >
-      <RequestsModule />
+      {/* Keep the guided intake flow above the queue instead of replacing it. */}
+      <RequestsQueueModule openNewOnLoad={params?.new === "1"} />
     </PulseShell>
   );
 }

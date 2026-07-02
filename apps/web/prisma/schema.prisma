@@ -57,7 +57,7 @@ model Request {
   activities      RequestActivity[]
   tasks           RequestTask[]
   notesList       RequestNote[]
-  attachments     RequestAttachment[]
+  documents       LifecycleDocument[]
   checklistItems  RequestChecklistItem[]
 
   @@index([status])
@@ -177,17 +177,6 @@ model RequestNote {
   @@index([createdAt])
 }
 
-model RequestAttachment {
-  id        String   @id @default(cuid())
-  requestId String
-  fileName  String
-  url       String?
-  createdAt DateTime @default(now())
-  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-
-  @@index([requestId])
-}
-
 model LocalUser {
   id           String     @id @default(cuid())
   name         String
@@ -206,6 +195,7 @@ model LocalUser {
   assignedRequests Request[] @relation("AssignedRequests")
   createdRequests  Request[] @relation("CreatedRequests")
   completedRequestChecklistItems RequestChecklistItem[]
+  uploadedDocuments LifecycleDocument[] @relation("UploadedDocuments")
 
   @@index([role])
   @@index([active])
@@ -256,6 +246,7 @@ model Quote {
   id          String    @id @default(cuid())
   quoteNumber String    @unique
   title       String
+  clientId    String?
   clientName  String?
   status      String    @default("Draft")
   owner       String    @default("Unassigned")
@@ -263,8 +254,95 @@ model Quote {
   archivedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  client      Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
   requests    Request[]
+  project     Project?
+  documents   LifecycleDocument[]
 
+  @@index([status])
+  @@index([owner])
+  @@index([clientId])
+  @@index([archivedAt])
+}
+
+model Project {
+  id            String    @id @default(cuid())
+  projectNumber String    @unique
+  title         String
+  clientId      String
+  quoteId       String?   @unique
+  owner         String    @default("Unassigned")
+  status        String    @default("Ready")
+  budget        Decimal   @default(0) @db.Decimal(12, 2)
+  startDate     DateTime?
+  dueDate       DateTime?
+  archivedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  quote         Quote?    @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  invoices      Invoice[]
+  documents     LifecycleDocument[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([owner])
+  @@index([archivedAt])
+}
+
+model LifecycleDocument {
+  id                 String    @id @default(cuid())
+  requestId          String?
+  quoteId            String?
+  projectId          String?
+  objectKey          String?   @unique
+  originalFileName   String
+  mediaType          String?
+  byteSize           BigInt    @default(0)
+  sha256             String?
+  category           String    @default("Other")
+  scanStatus         String    @default("Clean")
+  scanMessage        String?
+  scannedAt          DateTime?
+  uploadedById       String?
+  uploadedByName     String    @default("Pulse System")
+  deletedAt          DateTime?
+  deletedById        String?
+  deletedByName      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  request            Request?  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  quote              Quote?    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  project            Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy         LocalUser? @relation("UploadedDocuments", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([requestId, deletedAt])
+  @@index([quoteId, deletedAt])
+  @@index([projectId, deletedAt])
+  @@index([uploadedById])
+  @@index([sha256])
+  @@index([createdAt])
+}
+
+model Invoice {
+  id            String    @id @default(cuid())
+  invoiceNumber String    @unique
+  title         String
+  clientId      String
+  projectId     String?
+  owner         String    @default("Unassigned")
+  status        String    @default("Draft")
+  amount        Decimal   @default(0) @db.Decimal(12, 2)
+  issuedDate    DateTime?
+  dueDate       DateTime?
+  archivedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([projectId])
   @@index([status])
   @@index([owner])
   @@index([archivedAt])
@@ -312,6 +390,9 @@ model Client {
   services           ClientService[]
   activities         ClientActivity[]
   requests           Request[]
+  quotes             Quote[]
+  projects           Project[]
+  invoices           Invoice[]
 
   @@index([status])
   @@index([accountOwner])

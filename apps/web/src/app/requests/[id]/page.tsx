@@ -1,14 +1,27 @@
 import { PulseShell } from "@/components/PulseShell";
-import { RequestRouteWorkspace } from "@/modules/requests/RequestRouteWorkspace";
+import { RequestRecordWorkspace } from "@/modules/requests/RequestRecordWorkspace";
 
 type RequestPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams?: Promise<{
+    returnTo?: string;
+  }>;
 };
 
-export default async function RequestPage({ params }: RequestPageProps) {
+function safeReturnTo(value?: string) {
+  return value?.startsWith("/requests") && !value.startsWith("//")
+    ? value
+    : "/requests";
+}
+
+export default async function RequestPage({
+  params,
+  searchParams
+}: RequestPageProps) {
   const { id } = await params;
+  const query = await searchParams;
 
   return (
     <PulseShell
@@ -17,7 +30,10 @@ export default async function RequestPage({ params }: RequestPageProps) {
       subtitle="Review intake details."
       compactHeader
     >
-      <RequestRouteWorkspace mode="view" requestId={id} />
+      <RequestRecordWorkspace
+        requestId={id}
+        returnTo={safeReturnTo(query?.returnTo)}
+      />
     </PulseShell>
   );
 }

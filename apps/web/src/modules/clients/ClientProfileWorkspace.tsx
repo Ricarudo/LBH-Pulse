@@ -27,11 +27,16 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { RequestRecord, RequestStatus } from "@/types/request";
+import type {
+  ClientWorkSummary,
+  InvoiceRecord,
+  ProjectRecord,
+  QuoteRecord
+} from "@/types/work";
 import {
   formatMoney,
   type ClientActivity,
   type ClientContact,
-  type ClientQuoteSummary,
   type ClientRecord,
   type ClientSite,
   type ClientStatus
@@ -47,7 +52,10 @@ type ClientResponse = {
 
 type ClientRelatedWorkResponse = {
   requests: RequestRecord[];
-  quotes: ClientQuoteSummary[];
+  quotes: QuoteRecord[];
+  projects: ProjectRecord[];
+  invoices: InvoiceRecord[];
+  summary: ClientWorkSummary;
 };
 
 const clientProfileTabs = [
@@ -70,14 +78,16 @@ const closedRequestStatuses = new Set<RequestStatus>([
   "Duplicate"
 ]);
 
-const closedQuoteStatuses = new Set(["Accepted", "Won", "Lost", "Expired", "Cancelled", "Rejected"]);
-
 const clientWorkFilters = [
   "All Records",
   "Open Requests",
   "Closed Requests",
   "Draft Quotes",
-  "Other Quotes"
+  "Other Quotes",
+  "Active Projects",
+  "Closed Projects",
+  "Open Invoices",
+  "Paid / Void Invoices"
 ] as const;
 
 type ClientWorkFilter = (typeof clientWorkFilters)[number];
@@ -430,7 +440,7 @@ function QuotesTable({
   emptyTitle = "No converted quote work is linked yet.",
   emptyDetail = "Quotes will appear here when client-linked requests are converted into quote workspaces."
 }: {
-  quotes: ClientQuoteSummary[];
+  quotes: QuoteRecord[];
   emptyTitle?: string;
   emptyDetail?: string;
 }) {
@@ -471,7 +481,7 @@ function QuotesTable({
             <td>{quote.owner}</td>
             <td>{formatMoney(quote.total)}</td>
             <td>
-              <Link href={`/requests/${quote.requestId}`}>{quote.requestNumber}</Link>
+              {quote.requestId ? <Link href={`/requests/${quote.requestId}`}>{quote.requestNumber}</Link> : "Manual quote"}
             </td>
             <td>{displayDate(quote.updatedAt)}</td>
           </tr>
@@ -485,7 +495,16 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   const { user } = useCurrentUser();
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [requests, setRequests] = useState<RequestRecord[]>([]);
-  const [quotes, setQuotes] = useState<ClientQuoteSummary[]>([]);
+  const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  // The API owns active/closed rules so profile metrics match every work board.
+  const [workSummary, setWorkSummary] = useState<ClientWorkSummary>({
+    activeRequests: 0,
+    activeQuotes: 0,
+    activeProjects: 0,
+    outstandingInvoiceBalance: 0
+  });
   const [activeTab, setActiveTab] = useState<ClientProfileTab>("Overview");
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingActivity, setIsSavingActivity] = useState(false);
@@ -520,9 +539,14 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
           );
           setRequests(relatedWorkData.requests);
           setQuotes(relatedWorkData.quotes);
+          setProjects(relatedWorkData.projects);
+          setInvoices(relatedWorkData.invoices);
+          setWorkSummary(relatedWorkData.summary);
         } catch (error) {
           setRequests([]);
           setQuotes([]);
+          setProjects([]);
+          setInvoices([]);
           setRelatedWorkError(
             error instanceof Error
               ? error.message
@@ -534,6 +558,8 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
         setClient(null);
         setRequests([]);
         setQuotes([]);
+        setProjects([]);
+        setInvoices([]);
         setRelatedWorkError("");
       } finally {
         setIsLoading(false);
@@ -542,16 +568,6 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
 
     void loadClientProfile();
   }, [clientId]);
-
-  const activeRequests = useMemo(
-    () => requests.filter((request) => !closedRequestStatuses.has(request.status)),
-    [requests]
-  );
-
-  const activeQuotes = useMemo(
-    () => quotes.filter((quote) => !closedQuoteStatuses.has(quote.status)),
-    [quotes]
-  );
 
   const normalizedSearch = profileSearch.trim().toLowerCase();
 
@@ -610,6 +626,30 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
         );
       }),
     [normalizedSearch, quotes, workspaceFilter]
+  );
+
+  const filteredProjects = useMemo(
+    () => projects.filter((project) => {
+      const closed = ["Completed", "Cancelled"].includes(project.status);
+      const matchesFilter = workspaceFilter === "Active Projects" ? !closed : workspaceFilter === "Closed Projects" ? closed : true;
+      return matchesFilter && matchesSearch(
+        [project.projectNumber, project.title, project.status, project.owner, project.quoteNumber, project.budget, project.dueDate],
+        normalizedSearch
+      );
+    }),
+    [normalizedSearch, projects, workspaceFilter]
+  );
+
+  const filteredInvoices = useMemo(
+    () => invoices.filter((invoice) => {
+      const closed = ["Paid", "Void"].includes(invoice.status);
+      const matchesFilter = workspaceFilter === "Open Invoices" ? !closed : workspaceFilter === "Paid / Void Invoices" ? closed : true;
+      return matchesFilter && matchesSearch(
+        [invoice.invoiceNumber, invoice.title, invoice.status, invoice.owner, invoice.projectNumber, invoice.amount, invoice.dueDate],
+        normalizedSearch
+      );
+    }),
+    [invoices, normalizedSearch, workspaceFilter]
   );
 
   const filteredActiveRequests = useMemo(
@@ -678,6 +718,9 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
       return `${filteredQuotes.length} quotes`;
     }
 
+    if (activeTab === "Projects") return `${filteredProjects.length} projects`;
+    if (activeTab === "Invoices") return `${filteredInvoices.length} invoices`;
+
     if (activeTab === "Contacts & Sites") {
       return `${filteredContacts.length + filteredSites.length} records`;
     }
@@ -687,7 +730,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     }
 
     if (activeTab === "Overview") {
-      return `${filteredActiveRequests.length + filteredQuotes.length + filteredActivities.length} related items`;
+      return `${filteredActiveRequests.length + filteredQuotes.length + filteredProjects.length + filteredInvoices.length + filteredActivities.length} related items`;
     }
 
     return "Profile data";
@@ -696,10 +739,21 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     filteredActivities.length,
     filteredActiveRequests.length,
     filteredContacts.length,
+    filteredInvoices.length,
+    filteredProjects.length,
     filteredQuotes.length,
     filteredRequests.length,
     filteredSites.length
   ]);
+
+  const availableWorkFilters = useMemo(() => {
+    // Keep each tab focused instead of exposing filters for unrelated record types.
+    if (activeTab === "Requests") return clientWorkFilters.slice(0, 3);
+    if (activeTab === "Quotes") return ["All Records", "Draft Quotes", "Other Quotes"] as ClientWorkFilter[];
+    if (activeTab === "Projects") return ["All Records", "Active Projects", "Closed Projects"] as ClientWorkFilter[];
+    if (activeTab === "Invoices") return ["All Records", "Open Invoices", "Paid / Void Invoices"] as ClientWorkFilter[];
+    return ["All Records"] as ClientWorkFilter[];
+  }, [activeTab]);
 
   const website = client?.website ? websiteHref(client.website) : "";
 
@@ -929,7 +983,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                 value={workspaceFilter}
                 onChange={(event) => setWorkspaceFilter(event.target.value as ClientWorkFilter)}
               >
-                {clientWorkFilters.map((filter) => (
+                {availableWorkFilters.map((filter) => (
                   <option key={filter} value={filter}>
                     {filter}
                   </option>
@@ -942,22 +996,22 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
           <section className="client-360-metric-grid" aria-label="Client profile metrics">
             <ClientMetricCard
               label="Open Requests"
-              value={activeRequests.length}
+              value={workSummary.activeRequests}
               icon={<FileText size={18} />}
             />
             <ClientMetricCard
               label="Active Quotes"
-              value={activeQuotes.length}
+              value={workSummary.activeQuotes}
               icon={<ReceiptText size={18} />}
             />
             <ClientMetricCard
               label="Active Projects"
-              value={client.activeProjects}
+              value={workSummary.activeProjects}
               icon={<FolderKanban size={18} />}
             />
             <ClientMetricCard
               label="Outstanding Balance"
-              value={formatMoney(client.outstandingBalance)}
+              value={formatMoney(workSummary.outstandingInvoiceBalance)}
               icon={<CreditCard size={18} />}
             />
             <ClientMetricCard
@@ -981,7 +1035,10 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                   role="tab"
                   aria-selected={activeTab === tab}
                   className={activeTab === tab ? "lead-view-tab active" : "lead-view-tab"}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    setWorkspaceFilter("All Records");
+                  }}
                 >
                   {tab}
                 </button>
@@ -1064,6 +1121,14 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                     />
                   </section>
                   <section className="client-360-tab-card client-360-wide-section">
+                    <h3>Active Projects</h3>
+                    <ProjectsTable projects={filteredProjects.filter((project) => !["Completed", "Cancelled"].includes(project.status)).slice(0, 5)} />
+                  </section>
+                  <section className="client-360-tab-card client-360-wide-section">
+                    <h3>Open Invoices</h3>
+                    <InvoicesTable invoices={filteredInvoices.filter((invoice) => !["Paid", "Void"].includes(invoice.status)).slice(0, 5)} />
+                  </section>
+                  <section className="client-360-tab-card client-360-wide-section">
                     <h3>Recent Activity</h3>
                     <ClientActivityTimeline activities={filteredActivities.slice(0, 5)} />
                   </section>
@@ -1100,20 +1165,14 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
             ) : null}
 
             {activeTab === "Projects" ? (
-              <div className="client-360-tab-content client-360-compact-tab">
-                <EmptyPanel
-                  title="No client-linked project records yet."
-                  detail="The active project count is preserved on the profile; detailed project records are not linked in this workspace yet."
-                />
+              <div className="client-360-tab-content">
+                <ProjectsTable projects={filteredProjects} />
               </div>
             ) : null}
 
             {activeTab === "Invoices" ? (
-              <div className="client-360-tab-content client-360-compact-tab">
-                <EmptyPanel
-                  title="No client-linked invoice records yet."
-                  detail="Outstanding balance and invoice requirements are preserved; detailed invoice records are not linked in this workspace yet."
-                />
+              <div className="client-360-tab-content">
+                <InvoicesTable invoices={filteredInvoices} />
               </div>
             ) : null}
 
@@ -1216,5 +1275,43 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
         </main>
       </div>
     </section>
+  );
+}
+
+function ProjectsTable({ projects }: { projects: ProjectRecord[] }) {
+  if (!projects.length) {
+    return <EmptyPanel title="No projects match this view." detail="Client-linked projects will appear here." />;
+  }
+  return (
+    <table className="data-table client-360-table">
+      <thead><tr><th>Project</th><th>Status</th><th>Owner</th><th>Budget</th><th>Source Quote</th><th>Due</th><th>Invoices</th></tr></thead>
+      <tbody>{projects.map((project) => (
+        <tr key={project.id}>
+          <td><strong>{project.projectNumber}</strong><br /><span className="table-muted">{project.title}</span></td>
+          <td><span className={project.status === "On Hold" ? "status-pill warning" : "status-pill"}>{project.status}</span></td>
+          <td>{project.owner}</td><td>{formatMoney(project.budget)}</td>
+          <td>{project.quoteNumber || "Manual project"}</td><td>{displayDate(project.dueDate)}</td><td>{project.invoiceCount}</td>
+        </tr>
+      ))}</tbody>
+    </table>
+  );
+}
+
+function InvoicesTable({ invoices }: { invoices: InvoiceRecord[] }) {
+  if (!invoices.length) {
+    return <EmptyPanel title="No invoices match this view." detail="Client-linked invoices will appear here." />;
+  }
+  return (
+    <table className="data-table client-360-table">
+      <thead><tr><th>Invoice</th><th>Status</th><th>Owner</th><th>Amount</th><th>Project</th><th>Issued</th><th>Due</th></tr></thead>
+      <tbody>{invoices.map((invoice) => (
+        <tr key={invoice.id}>
+          <td><strong>{invoice.invoiceNumber}</strong><br /><span className="table-muted">{invoice.title}</span></td>
+          <td><span className={invoice.status === "Overdue" ? "status-pill danger" : invoice.status === "Draft" || invoice.status === "Review" ? "status-pill warning" : "status-pill"}>{invoice.status}</span></td>
+          <td>{invoice.owner}</td><td>{formatMoney(invoice.amount)}</td><td>{invoice.projectNumber || "No project"}</td>
+          <td>{displayDate(invoice.issuedDate)}</td><td>{displayDate(invoice.dueDate)}</td>
+        </tr>
+      ))}</tbody>
+    </table>
   );
 }
