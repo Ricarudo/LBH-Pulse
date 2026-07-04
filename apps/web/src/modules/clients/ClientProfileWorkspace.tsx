@@ -26,6 +26,7 @@ import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { formatWorkspaceDate } from "@/lib/formatting";
 import type { RequestRecord, RequestStatus } from "@/types/request";
 import type {
   ClientWorkSummary,
@@ -125,20 +126,7 @@ function compactValue(value: string | number | null | undefined) {
 }
 
 function displayDate(value: string) {
-  if (!value) {
-    return "No activity";
-  }
-
-  const parsed = new Date(value.includes("T") ? value : `${value}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  }).format(parsed);
+  return formatWorkspaceDate(value) || "No activity";
 }
 
 function websiteHref(website: string) {
@@ -420,7 +408,7 @@ function RequestsTable({
               <span className={requestStatusClass(request.status)}>{request.status}</span>
             </td>
             <td>{request.requestType}</td>
-            <td>{request.serviceCategory}</td>
+            <td>{request.serviceCategories.join(", ")}</td>
             <td>{request.assignedToName}</td>
             <td>{displayDate(request.receivedDate)}</td>
             <td>
@@ -589,7 +577,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               request.title,
               request.status,
               request.requestType,
-              request.serviceCategory,
+              ...request.serviceCategories,
               request.assignedToName,
               request.receivedDate
             ],

@@ -7,20 +7,63 @@ import {
   updateLocalUser
 } from "@/lib/services/localUserService";
 import {
+  archiveRequestChecklistTemplate,
+  createRequestChecklistTemplate,
+  duplicateRequestChecklistTemplate,
   listRequestChecklistTemplates,
+  restoreRequestChecklistTemplate,
   updateRequestChecklistTemplate
 } from "@/lib/services/requestChecklistTemplateService";
+import {
+  getUserPreferences,
+  getWorkspaceSettings,
+  updateUserPreferences,
+  updateWorkspaceSettings
+} from "@/lib/services/settingsService";
 import {
   createLocalUserSchema,
   resetLocalUserPasswordSchema,
   updateLocalUserSchema
 } from "@/lib/validations/localUser";
-import { updateRequestChecklistTemplateSchema } from "@/lib/validations/requestChecklistTemplate";
+import {
+  createRequestChecklistTemplateSchema,
+  updateRequestChecklistTemplateSchema
+} from "@/lib/validations/requestChecklistTemplate";
+import {
+  userPreferencesSchema,
+  workspaceSettingsSchema
+} from "@/lib/validations/settings";
 import { AuthService } from "@/shared/auth.service";
 
 @Controller("settings")
 export class SettingsController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+
+  @Get("preferences")
+  async preferences(@Req() request: Request) {
+    const user = await this.auth.requireUser(request);
+    return { preferences: await getUserPreferences(user.id) };
+  }
+
+  @Patch("preferences")
+  async savePreferences(@Req() request: Request, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request);
+    const payload = userPreferencesSchema.parse(body);
+    return { preferences: await updateUserPreferences(user.id, payload) };
+  }
+
+  @Get("workspace")
+  async workspace(@Req() request: Request) {
+    await this.auth.requireUser(request);
+    return { workspace: await getWorkspaceSettings() };
+  }
+
+  @Patch("workspace")
+  async saveWorkspace(@Req() request: Request, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, "settings:write");
+    const payload = workspaceSettingsSchema.parse(body);
+    return { workspace: await updateWorkspaceSettings(payload, user) };
+  }
 
   @Get("accounts")
   async accounts(@Req() request: Request) {
@@ -66,6 +109,31 @@ export class SettingsController {
     await this.auth.requireUser(request, "settings:read");
     const templates = await listRequestChecklistTemplates();
     return { templates };
+  }
+
+  @Post("request-checklists")
+  async createRequestChecklist(@Req() request: Request, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, "settings:write");
+    const payload = createRequestChecklistTemplateSchema.parse(body);
+    return { template: await createRequestChecklistTemplate(payload, user) };
+  }
+
+  @Post("request-checklists/:templateId/duplicate")
+  async duplicateRequestChecklist(@Req() request: Request, @Param("templateId") templateId: string) {
+    const user = await this.auth.requireUser(request, "settings:write");
+    return { template: await duplicateRequestChecklistTemplate(templateId, user) };
+  }
+
+  @Post("request-checklists/:templateId/archive")
+  async archiveRequestChecklist(@Req() request: Request, @Param("templateId") templateId: string) {
+    const user = await this.auth.requireUser(request, "settings:write");
+    return { template: await archiveRequestChecklistTemplate(templateId, user) };
+  }
+
+  @Post("request-checklists/:templateId/restore")
+  async restoreRequestChecklist(@Req() request: Request, @Param("templateId") templateId: string) {
+    const user = await this.auth.requireUser(request, "settings:write");
+    return { template: await restoreRequestChecklistTemplate(templateId, user) };
   }
 
   @Patch("request-checklists/:templateId")

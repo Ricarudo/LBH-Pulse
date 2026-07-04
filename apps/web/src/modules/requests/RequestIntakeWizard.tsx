@@ -125,7 +125,7 @@ type SiteTextField = Exclude<SiteField, "isPrimarySite">;
 type RequestInfoDraft = {
   title: string;
   description: string;
-  serviceCategory: ServiceCategory;
+  serviceCategories: ServiceCategory[];
   dueDate: string;
   siteVisitNeeded: boolean;
   source: RequestSource;
@@ -181,7 +181,7 @@ const siteFields = Object.keys(siteFieldLimits) as SiteTextField[];
 const requestInfoFields = Object.keys({
   title: true,
   description: true,
-  serviceCategory: true,
+  serviceCategories: true,
   dueDate: true,
   siteVisitNeeded: true,
   source: true,
@@ -228,7 +228,7 @@ function blankRequestInfo(defaultAssignedToId = ""): RequestInfoDraft {
   return {
     title: "",
     description: "",
-    serviceCategory: "Access Control",
+    serviceCategories: ["Access Control"],
     dueDate: "",
     siteVisitNeeded: false,
     source: "Call",
@@ -412,12 +412,10 @@ function sitePayload(site: SiteDraft): ClientSiteInput {
 }
 
 function validateRequestInfoDraft(info: RequestInfoDraft) {
-  // Trade is stored as serviceCategory. The request API uses that value to copy
-  // the matching checklist template onto the newly created request.
   const normalized: RequestInfoDraft = {
     title: normalizeText(info.title, true),
     description: normalizeText(info.description),
-    serviceCategory: info.serviceCategory,
+    serviceCategories: Array.from(new Set(info.serviceCategories)),
     dueDate: normalizeText(info.dueDate),
     siteVisitNeeded: info.siteVisitNeeded,
     source: info.source,
@@ -442,8 +440,9 @@ function validateRequestInfoDraft(info: RequestInfoDraft) {
   validateCleanText(errors, "title", normalized.title, requestFieldLimits.title);
   validateCleanText(errors, "description", normalized.description, requestFieldLimits.description);
 
-  if (!isAllowedValue(normalized.serviceCategory, serviceCategories)) {
-    errors.serviceCategory = "Select a valid trade.";
+  if (!normalized.serviceCategories.length ||
+      normalized.serviceCategories.some((category) => !isAllowedValue(category, serviceCategories))) {
+    errors.serviceCategories = "Select at least one valid trade.";
   }
 
   if (!isAllowedValue(normalized.source, requestSources)) {
@@ -1033,7 +1032,7 @@ export function RequestIntakeWizard({
           title: normalized.title,
           requestType: normalized.requestType,
           source: normalized.source,
-          serviceCategory: normalized.serviceCategory,
+          serviceCategories: normalized.serviceCategories,
           status: "Received",
           priority: normalized.priority,
           clientId: selectedClient.id,
@@ -1657,16 +1656,28 @@ export function RequestIntakeWizard({
                   required
                   onChange={(value) => updateRequestInfo("description", value)}
                 />
-                <SelectField
-                  label="Trade"
-                  name="serviceCategory"
-                  value={requestInfo.serviceCategory}
-                  options={serviceCategories}
-                  errors={requestErrors}
-                  prefix="request"
-                  required
-                  onChange={(value) => updateRequestInfo("serviceCategory", value as ServiceCategory)}
-                />
+                <fieldset className="request-wizard-trade-field">
+                  <legend>Trades <span aria-hidden="true">*</span></legend>
+                  <p>Select every trade included in this Request. Each one loads its own checklist.</p>
+                  <div className="request-wizard-trade-grid">
+                    {serviceCategories.map((category) => (
+                      <label key={category} className={requestInfo.serviceCategories.includes(category) ? "selected" : ""}>
+                        <input
+                          type="checkbox"
+                          checked={requestInfo.serviceCategories.includes(category)}
+                          onChange={(event) => updateRequestInfo(
+                            "serviceCategories",
+                            event.target.checked
+                              ? [...requestInfo.serviceCategories, category]
+                              : requestInfo.serviceCategories.filter((value) => value !== category)
+                          )}
+                        />
+                        <span>{category}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {requestErrors.serviceCategories ? <small className="field-error" role="alert">{requestErrors.serviceCategories}</small> : null}
+                </fieldset>
                 <TextField
                   label="Due Date"
                   name="dueDate"

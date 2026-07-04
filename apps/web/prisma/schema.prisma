@@ -59,6 +59,8 @@ model Request {
   notesList       RequestNote[]
   documents       LifecycleDocument[]
   checklistItems  RequestChecklistItem[]
+  trades          RequestTrade[]
+  checklistInstances RequestChecklistInstance[]
 
   @@index([status])
   @@index([priority])
@@ -81,14 +83,17 @@ model RequestChecklistTemplate {
   requestType     String?
   serviceCategory String?
   active          Boolean                        @default(true)
+  archivedAt      DateTime?
   createdAt       DateTime                       @default(now())
   updatedAt       DateTime                       @updatedAt
   items           RequestChecklistTemplateItem[]
   requests        Request[]
+  requestInstances RequestChecklistInstance[]
 
   @@index([requestType])
   @@index([serviceCategory])
   @@index([active])
+  @@index([archivedAt])
 }
 
 model RequestChecklistTemplateItem {
@@ -113,6 +118,7 @@ model RequestChecklistItem {
   id             String                        @id @default(cuid())
   requestId      String
   templateItemId String?
+  checklistInstanceId String?
   label          String
   description    String?
   required       Boolean                       @default(true)
@@ -128,12 +134,47 @@ model RequestChecklistItem {
   updatedAt      DateTime                      @updatedAt
   request        Request                       @relation(fields: [requestId], references: [id], onDelete: Cascade)
   templateItem   RequestChecklistTemplateItem? @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  checklistInstance RequestChecklistInstance?  @relation(fields: [checklistInstanceId], references: [id], onDelete: Cascade)
   completedBy    LocalUser?                    @relation(fields: [completedById], references: [id], onDelete: SetNull)
 
   @@index([requestId])
   @@index([templateItemId])
+  @@index([checklistInstanceId])
   @@index([completed])
   @@index([completedById])
+}
+
+model RequestTrade {
+  id              String   @id @default(cuid())
+  requestId       String
+  serviceCategory String
+  createdAt       DateTime @default(now())
+  request         Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, serviceCategory])
+  @@index([serviceCategory])
+}
+
+model RequestChecklistInstance {
+  id                   String                    @id @default(cuid())
+  requestId            String
+  templateId           String?
+  templateKeySnapshot  String
+  templateNameSnapshot String
+  matchType            String
+  matchValue           String?
+  active               Boolean                   @default(true)
+  retiredAt            DateTime?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  request              Request                   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  template             RequestChecklistTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  items                RequestChecklistItem[]
+
+  @@index([requestId])
+  @@index([templateId])
+  @@index([active])
+  @@index([matchType, matchValue])
 }
 
 model RequestActivity {
@@ -186,6 +227,8 @@ model LocalUser {
   active       Boolean    @default(true)
   mustChangePassword Boolean @default(false)
   authProvider String     @default("LOCAL")
+  themeMode    String     @default("system")
+  accentTheme  String     @default("blue")
   entraObjectId String?
   lastLoginAt  DateTime?
   deactivatedAt DateTime?
@@ -202,6 +245,17 @@ model LocalUser {
   @@index([authProvider])
   @@index([entraObjectId])
   @@index([lastLoginAt])
+}
+
+model WorkspaceSettings {
+  id           String   @id @default("default")
+  name         String   @default("R2 Communications")
+  timeZone     String   @default("America/Puerto_Rico")
+  locale       String   @default("en-US")
+  dateFormat   String   @default("MM/DD/YYYY")
+  weekStartsOn Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Activity {

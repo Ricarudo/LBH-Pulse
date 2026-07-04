@@ -35,7 +35,8 @@ const requestFormFieldsSchema = z.object({
   title: optionalText,
   requestType: requestTypeSchema.default("Quote Request"),
   source: requestSourceSchema.default("Call"),
-  serviceCategory: serviceCategorySchema.default("Access Control"),
+  serviceCategory: serviceCategorySchema.optional(),
+  serviceCategories: z.array(serviceCategorySchema).min(1, "Select at least one trade.").optional(),
   status: requestStatusSchema.default("Received"),
   priority: requestPrioritySchema.default("Normal"),
   companyName: optionalText,
@@ -75,11 +76,13 @@ export const createRequestSchema = requestFormFieldsSchema
   })
   .transform((data) => ({
     ...data,
+    serviceCategories: Array.from(new Set(data.serviceCategories ?? [data.serviceCategory ?? "Access Control"])),
+    serviceCategory: (data.serviceCategories?.[0] ?? data.serviceCategory ?? "Access Control"),
     title:
       data.title ||
       data.companyName ||
       data.contactName ||
-      `${data.serviceCategory} request`
+      `${data.serviceCategories?.[0] ?? data.serviceCategory ?? "Access Control"} request`
   }));
 
 export const updateRequestSchema = requestFormFieldsSchema.partial().superRefine(

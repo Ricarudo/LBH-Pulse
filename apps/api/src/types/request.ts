@@ -111,6 +111,19 @@ export type RequestChecklistSummary = {
   readyForQuote: boolean;
 };
 
+export type RequestChecklistInstanceRecord = {
+  id: string;
+  templateId: string | null;
+  templateKey: string;
+  templateName: string;
+  matchType: "CORE" | "TRADE" | "REQUEST_TYPE" | "LEGACY";
+  matchValue: string;
+  active: boolean;
+  retiredAt: string;
+  items: RequestChecklistItem[];
+  summary: Omit<RequestChecklistSummary, "readyForQuote">;
+};
+
 export type RequestAssignee = {
   id: string;
   name: string;
@@ -126,6 +139,7 @@ export type RequestRecord = {
   requestType: RequestType;
   source: RequestSource;
   serviceCategory: ServiceCategory;
+  serviceCategories: ServiceCategory[];
   status: RequestStatus;
   priority: RequestPriority;
   companyName: string;
@@ -163,5 +177,6 @@ export type RequestRecord = {
   activity: RequestActivity[];
   tasks: RequestTask[];
   checklistItems: RequestChecklistItem[];
+  checklistInstances: RequestChecklistInstanceRecord[];
   checklistSummary: RequestChecklistSummary;
 };

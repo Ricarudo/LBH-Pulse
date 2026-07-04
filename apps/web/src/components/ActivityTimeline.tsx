@@ -2,6 +2,7 @@
 
 import { Activity, Clock3, UserRound } from "lucide-react";
 import type { ActivityRecord } from "@/types/activity";
+import { formatWorkspaceDate } from "@/lib/formatting";
 
 type ActivityTimelineProps = {
   activities: ActivityRecord[];
@@ -41,7 +42,7 @@ export function ActivityTimeline({
               </span>
               <span>
                 <Clock3 size={13} />
-                {item.createdAt}
+                {formatWorkspaceDate(item.createdAt, true)}
               </span>
               <span>{item.type}</span>
             </div>

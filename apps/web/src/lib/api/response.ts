@@ -100,6 +100,17 @@ export function apiError(error: unknown) {
     );
   }
 
+  if (error instanceof Error && error.message === "REQUEST_CHECKLIST_TEMPLATE_MAPPING_REQUIRED") {
+    return NextResponse.json(
+      { error: "Choose one trade or request type for this template." },
+      { status: 400 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "REQUEST_CHECKLIST_TEMPLATE_ARCHIVED") {
+    return NextResponse.json({ error: "Restore this template before editing it." }, { status: 409 });
+  }
+
   if (error instanceof Error && error.message === "LOCAL_USER_NOT_FOUND") {
     return NextResponse.json({ error: "Pulse user not found." }, { status: 404 });
   }
@@ -114,6 +125,13 @@ export function apiError(error: unknown) {
   if (error instanceof Error && error.message === "LOCAL_USER_LAST_ADMIN") {
     return NextResponse.json(
       { error: "At least one active Admin account must remain available." },
+      { status: 400 }
+    );
+  }
+
+  if (error instanceof Error && error.message === "LOCAL_USER_SELF_ACCESS") {
+    return NextResponse.json(
+      { error: "Ask another administrator to change your role or account status." },
       { status: 400 }
     );
   }

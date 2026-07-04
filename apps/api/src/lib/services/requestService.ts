@@ -25,6 +25,18 @@ const requestInclude = {
   site: true,
   relatedQuote: true,
   checklistTemplate: true,
+  trades: {
+    orderBy: { serviceCategory: "asc" }
+  },
+  checklistInstances: {
+    include: {
+      items: {
+        include: { completedBy: true },
+        orderBy: [{ sortOrder: "asc" }, { label: "asc" }]
+      }
+    },
+    orderBy: [{ active: "desc" }, { createdAt: "asc" }]
+  },
   checklistItems: {
     include: {
       completedBy: true
@@ -77,17 +89,7 @@ function formatDateInput(date?: Date | null) {
 }
 
 function formatDateTime(date?: Date | null) {
-  if (!date) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(date);
+  return date?.toISOString() ?? "";
 }
 
 function isChecklistItemApplicable(
@@ -106,7 +108,10 @@ function isChecklistItemApplicable(
 }
 
 function buildChecklistSummary(request: RequestWithRelations) {
-  const applicableItems = request.checklistItems.filter((item) =>
+  const activeInstanceItems = request.checklistInstances.length
+    ? request.checklistInstances.filter((instance) => instance.active).flatMap((instance) => instance.items)
+    : request.checklistItems;
+  const applicableItems = activeInstanceItems.filter((item) =>
     isChecklistItemApplicable(item, request)
   );
   const requiredItems = applicableItems.filter((item) => item.required);
@@ -118,7 +123,7 @@ function buildChecklistSummary(request: RequestWithRelations) {
     missingRequired.push("Internal owner assigned");
   }
 
-  if (!request.serviceCategory) {
+  if (!request.trades.length && !request.serviceCategory) {
     missingRequired.push("Service category selected");
   }
 
@@ -138,9 +143,12 @@ function buildChecklistSummary(request: RequestWithRelations) {
 
   return {
     templateName:
-      request.checklistTemplateNameSnapshot ??
-      request.checklistTemplate?.name ??
-      "Request Intake",
+      request.checklistInstances.filter((instance) => instance.active).length > 1
+        ? "Request checklists"
+        : request.checklistInstances.find((instance) => instance.active)?.templateNameSnapshot ??
+          request.checklistTemplateNameSnapshot ??
+          request.checklistTemplate?.name ??
+          "Request Intake",
     completed: applicableItems.filter((item) => item.completed).length,
     total: applicableItems.length,
     requiredCompleted: requiredItems.filter((item) => item.completed).length,
@@ -216,6 +224,9 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
     requestType: request.requestType as RequestRecord["requestType"],
     source: request.source as RequestRecord["source"],
     serviceCategory: request.serviceCategory as RequestRecord["serviceCategory"],
+    serviceCategories: (request.trades.length
+      ? request.trades.map((trade) => trade.serviceCategory)
+      : [request.serviceCategory]) as RequestRecord["serviceCategories"],
     status: request.status as RequestRecord["status"],
     priority: request.priority as RequestRecord["priority"],
     companyName: request.companyName ?? request.client?.displayName ?? "",
@@ -302,6 +313,43 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
       notes: item.notes ?? "",
       applicable: isChecklistItemApplicable(item, request)
     })),
+    checklistInstances: request.checklistInstances.map((instance) => {
+      const items = instance.items.map((item) => ({
+        id: item.id,
+        label: item.label,
+        description: item.description ?? "",
+        required: item.required,
+        appliesWhen: item.appliesWhen ?? "",
+        group: item.group ?? "Intake",
+        sortOrder: item.sortOrder,
+        completed: item.completed,
+        completedAt: formatDateTime(item.completedAt),
+        completedByName: item.completedByNameSnapshot ?? item.completedBy?.name ?? "",
+        notes: item.notes ?? "",
+        applicable: isChecklistItemApplicable(item, request)
+      }));
+      const applicable = items.filter((item) => item.applicable);
+      const required = applicable.filter((item) => item.required);
+      return {
+        id: instance.id,
+        templateId: instance.templateId,
+        templateKey: instance.templateKeySnapshot,
+        templateName: instance.templateNameSnapshot,
+        matchType: instance.matchType as "CORE" | "TRADE" | "REQUEST_TYPE" | "LEGACY",
+        matchValue: instance.matchValue ?? "",
+        active: instance.active,
+        retiredAt: formatDateTime(instance.retiredAt),
+        items,
+        summary: {
+          templateName: instance.templateNameSnapshot,
+          completed: applicable.filter((item) => item.completed).length,
+          total: applicable.length,
+          requiredCompleted: required.filter((item) => item.completed).length,
+          requiredTotal: required.length,
+          missingRequired: required.filter((item) => !item.completed).map((item) => item.label)
+        }
+      };
+    }),
     checklistSummary: buildChecklistSummary(request)
   };
 }
@@ -329,59 +377,43 @@ async function getRequestOrThrow(id: string) {
   return request;
 }
 
-async function findChecklistTemplate(
+async function findChecklistTemplates(
   tx: Prisma.TransactionClient,
-  serviceCategory: string,
+  serviceCategories: string[],
   requestType: string
 ) {
-  let template = serviceCategory
-    ? await tx.requestChecklistTemplate.findFirst({
-        where: {
-          active: true,
-          serviceCategory
-        },
-        include: {
-          items: {
-            where: { active: true },
-            orderBy: { sortOrder: "asc" }
-          }
-        },
-        orderBy: { updatedAt: "desc" }
-      })
-    : null;
-
-  if (!template && requestType) {
-    template = await tx.requestChecklistTemplate.findFirst({
-      where: {
-        active: true,
-        requestType
-      },
-      include: {
-        items: {
-          where: { active: true },
-          orderBy: { sortOrder: "asc" }
-        }
-      },
-      orderBy: { updatedAt: "desc" }
-    });
-  }
-
-  if (!template) {
-    template = await tx.requestChecklistTemplate.findFirst({
-      where: {
-        active: true,
-        key: "general"
-      },
-      include: {
-        items: {
-          where: { active: true },
-          orderBy: { sortOrder: "asc" }
-        }
+  const templates = await tx.requestChecklistTemplate.findMany({
+    where: {
+      active: true,
+      archivedAt: null,
+      OR: [
+        { key: "general" },
+        { serviceCategory: { in: serviceCategories } },
+        { requestType }
+      ]
+    },
+    include: {
+      items: {
+        where: { active: true },
+        orderBy: { sortOrder: "asc" }
       }
+    }
+  });
+  return templates
+    .map((template) => ({
+      template,
+      matchType: template.key === "general"
+        ? "CORE"
+        : template.serviceCategory
+          ? "TRADE"
+          : "REQUEST_TYPE",
+      matchValue: template.serviceCategory ?? template.requestType
+    }))
+    .sort((left, right) => {
+      const order: Record<string, number> = { CORE: 0, TRADE: 1, REQUEST_TYPE: 2 };
+      return order[left.matchType] - order[right.matchType] ||
+        (left.matchValue ?? "").localeCompare(right.matchValue ?? "");
     });
-  }
-
-  return template;
 }
 
 function buildChecklistItemCreateData(
@@ -396,9 +428,9 @@ function buildChecklistItemCreateData(
       group: string | null;
       active?: boolean;
     }>;
-  } | null
+  }
 ) {
-  return template?.items.filter((item) => item.active !== false).map((item) => ({
+  return template.items.filter((item) => item.active !== false).map((item) => ({
     templateItemId: item.id,
     label: item.label,
     description: item.description,
@@ -406,7 +438,67 @@ function buildChecklistItemCreateData(
     appliesWhen: item.appliesWhen,
     sortOrder: item.sortOrder,
     group: item.group
-  })) ?? [];
+  }));
+}
+
+async function reconcileRequestChecklists(
+  tx: Prisma.TransactionClient,
+  requestId: string,
+  serviceCategories: string[],
+  requestType: string
+) {
+  const desired = await findChecklistTemplates(tx, serviceCategories, requestType);
+  const existing = await tx.requestChecklistInstance.findMany({
+    where: { requestId },
+    include: { items: true }
+  });
+  const desiredKeys = new Set(desired.map((match) => `${match.matchType}:${match.matchValue ?? ""}`));
+
+  for (const instance of existing.filter((candidate) => candidate.active)) {
+    const key = instance.matchType === "LEGACY"
+      ? `TRADE:${instance.matchValue ?? ""}`
+      : `${instance.matchType}:${instance.matchValue ?? ""}`;
+    if (!desiredKeys.has(key)) {
+      await tx.requestChecklistInstance.update({
+        where: { id: instance.id },
+        data: { active: false, retiredAt: new Date() }
+      });
+    }
+  }
+
+  for (const match of desired) {
+    const equivalent = existing.find((instance) => {
+      if (instance.templateId === match.template.id) return true;
+      return instance.matchType === "LEGACY" &&
+        match.matchType === "TRADE" &&
+        instance.matchValue === match.matchValue;
+    });
+    if (equivalent) {
+      if (!equivalent.active) {
+        await tx.requestChecklistInstance.update({
+          where: { id: equivalent.id },
+          data: { active: true, retiredAt: null }
+        });
+      }
+      continue;
+    }
+    await tx.requestChecklistInstance.create({
+      data: {
+        requestId,
+        templateId: match.template.id,
+        templateKeySnapshot: match.template.key,
+        templateNameSnapshot: match.template.name,
+        matchType: match.matchType,
+        matchValue: match.matchValue,
+        items: {
+          create: buildChecklistItemCreateData(match.template).map((item) => ({
+            ...item,
+            requestId
+          }))
+        }
+      }
+    });
+  }
 }
 
 export async function listRequests() {
@@ -526,11 +618,13 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
   const request = await prisma.$transaction(async (tx) => {
     const now = new Date();
     const requestNumber = await generateRequestNumber(tx);
-    const template = await findChecklistTemplate(
-      tx,
-      input.serviceCategory,
-      input.requestType
-    );
+    const serviceCategories = input.serviceCategories;
+    const matches = await findChecklistTemplates(tx, serviceCategories, input.requestType);
+    if (!matches.some((match) => match.matchType === "CORE")) {
+      throw new Error("REQUEST_CHECKLIST_TEMPLATE_FALLBACK_REQUIRED");
+    }
+    const legacyTemplate = matches.find((match) => match.matchType === "TRADE")?.template ??
+      matches.find((match) => match.matchType === "CORE")?.template;
 
     const created = await tx.request.create({
       data: {
@@ -538,7 +632,7 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
         title: input.title,
         requestType: input.requestType,
         source: input.source,
-        serviceCategory: input.serviceCategory,
+        serviceCategory: serviceCategories[0],
         status: input.status,
         priority: input.priority,
         companyName: input.companyName || null,
@@ -564,11 +658,11 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
         description: input.description || null,
         internalNotes: input.internalNotes || null,
         relatedQuoteId: input.relatedQuoteId || null,
-        checklistTemplateId: template?.id ?? null,
-        checklistTemplateNameSnapshot: template?.name ?? null,
+        checklistTemplateId: legacyTemplate?.id ?? null,
+        checklistTemplateNameSnapshot: legacyTemplate?.name ?? null,
         lastActivityAt: now,
-        checklistItems: {
-          create: buildChecklistItemCreateData(template)
+        trades: {
+          create: serviceCategories.map((serviceCategory) => ({ serviceCategory }))
         },
         activities: {
           create: {
@@ -589,11 +683,33 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
             }
           : undefined
       },
-      include: requestInclude
     });
 
-    const derivedStatus = deriveIntakeStatus(created);
-    if (derivedStatus !== created.status) {
+    for (const match of matches) {
+      await tx.requestChecklistInstance.create({
+        data: {
+          requestId: created.id,
+          templateId: match.template.id,
+          templateKeySnapshot: match.template.key,
+          templateNameSnapshot: match.template.name,
+          matchType: match.matchType,
+          matchValue: match.matchValue,
+          items: {
+            create: buildChecklistItemCreateData(match.template).map((item) => ({
+              ...item,
+              requestId: created.id
+            }))
+          }
+        }
+      });
+    }
+
+    const hydrated = await tx.request.findUniqueOrThrow({
+      where: { id: created.id },
+      include: requestInclude
+    });
+    const derivedStatus = deriveIntakeStatus(hydrated);
+    if (derivedStatus !== hydrated.status) {
       return tx.request.update({
         where: { id: created.id },
         data: { status: derivedStatus },
@@ -601,7 +717,7 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
       });
     }
 
-    return created;
+    return hydrated;
   });
 
   await recordActivity({
@@ -631,6 +747,30 @@ export async function updateRequest(
   const nextAssigneeName =
     assignedTo === undefined ? previousAssigneeName : assignedTo?.name ?? "Unassigned";
   const now = new Date();
+  const requestedCategories = input.serviceCategories ??
+    (input.serviceCategory ? [input.serviceCategory] : undefined);
+  const checklistRulesChanged = requestedCategories !== undefined || input.requestType !== undefined;
+
+  if (checklistRulesChanged && existingRequest.status === "Converted to Quote") {
+    throw new Error("REQUEST_CONVERTED_LOCKED");
+  }
+
+  if (checklistRulesChanged) {
+    const nextCategories = requestedCategories ??
+      (existingRequest.trades.length
+        ? existingRequest.trades.map((trade) => trade.serviceCategory)
+        : [existingRequest.serviceCategory]);
+    const nextRequestType = input.requestType ?? existingRequest.requestType;
+    await prisma.$transaction(async (tx) => {
+      if (requestedCategories) {
+        await tx.requestTrade.deleteMany({ where: { requestId: id } });
+        await tx.requestTrade.createMany({
+          data: nextCategories.map((serviceCategory) => ({ requestId: id, serviceCategory }))
+        });
+      }
+      await reconcileRequestChecklists(tx, id, nextCategories, nextRequestType);
+    });
+  }
 
   const request = await prisma.request.update({
     where: { id },
@@ -638,8 +778,8 @@ export async function updateRequest(
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.requestType !== undefined ? { requestType: input.requestType } : {}),
       ...(input.source !== undefined ? { source: input.source } : {}),
-      ...(input.serviceCategory !== undefined
-        ? { serviceCategory: input.serviceCategory }
+      ...(requestedCategories !== undefined
+        ? { serviceCategory: requestedCategories[0] }
         : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       ...(input.priority !== undefined ? { priority: input.priority } : {}),
@@ -1016,13 +1156,20 @@ export async function updateRequestChecklistItem(
   input: UpdateRequestChecklistItemInput,
   user?: AuthenticatedUser
 ) {
-  await getRequestOrThrow(id);
+  const currentRequest = await getRequestOrThrow(id);
+  if (currentRequest.status === "Converted to Quote") {
+    throw new Error("REQUEST_CONVERTED_LOCKED");
+  }
 
   const now = new Date();
   const existingItem = await prisma.requestChecklistItem.findFirst({
     where: {
       id: itemId,
-      requestId: id
+      requestId: id,
+      OR: [
+        { checklistInstanceId: null },
+        { checklistInstance: { active: true } }
+      ]
     }
   });
 

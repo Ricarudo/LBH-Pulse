@@ -58,6 +58,14 @@ const errorMap: Record<string, ErrorPayload> = {
     status: 400,
     body: { error: "Checklist template items must belong to the selected template." }
   },
+  REQUEST_CHECKLIST_TEMPLATE_MAPPING_REQUIRED: {
+    status: 400,
+    body: { error: "Choose one trade or request type for this template." }
+  },
+  REQUEST_CHECKLIST_TEMPLATE_ARCHIVED: {
+    status: 409,
+    body: { error: "Restore this template before editing it." }
+  },
   LOCAL_USER_NOT_FOUND: { status: 404, body: { error: "Pulse user not found." } },
   LOCAL_USER_EMAIL_EXISTS: {
     status: 400,
@@ -66,6 +74,10 @@ const errorMap: Record<string, ErrorPayload> = {
   LOCAL_USER_LAST_ADMIN: {
     status: 400,
     body: { error: "At least one active Admin account must remain available." }
+  },
+  LOCAL_USER_SELF_ACCESS: {
+    status: 400,
+    body: { error: "Ask another administrator to change your role or account status." }
   },
   LOCAL_USER_PASSWORD_UNAVAILABLE: {
     status: 400,

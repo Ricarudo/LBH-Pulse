@@ -10,10 +10,13 @@ export const metadata: Metadata = {
 const themeScript = `
 (() => {
   try {
-    const theme = window.localStorage.getItem("pulse.theme");
-    if (theme === "dark" || theme === "light") {
-      document.documentElement.dataset.theme = theme;
-    }
+    const mode = window.localStorage.getItem("pulse.themeMode") || "system";
+    const accent = window.localStorage.getItem("pulse.accentTheme") || "blue";
+    const theme = mode === "system"
+      ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : mode;
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.accent = accent;
   } catch {
   }
 })();

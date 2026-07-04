@@ -30,17 +30,7 @@ type LocalUserShape = {
 };
 
 function formatDateTime(date?: Date | null) {
-  if (!date) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(date);
+  return date?.toISOString() ?? "";
 }
 
 function toLocalAccountRecord(user: LocalUserShape): LocalAccountRecord {
@@ -170,6 +160,13 @@ export async function updateLocalUser(
   actor: AuthenticatedUser
 ) {
   const existing = await getLocalUserOrThrow(id);
+  if (
+    id === actor.id &&
+    ((input.role !== undefined && input.role !== existing.role) ||
+      (input.active !== undefined && input.active !== existing.active))
+  ) {
+    throw new Error("LOCAL_USER_SELF_ACCESS");
+  }
   const nextEmail = input.email ?? existing.email;
   const nextRole = input.role ?? existing.role;
   const nextActive = input.active ?? existing.active;

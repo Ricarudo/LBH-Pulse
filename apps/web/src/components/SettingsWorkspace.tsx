@@ -1,504 +1,281 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { CheckCircle2, Plus, RotateCcw } from "lucide-react";
-import { canRole } from "@/lib/auth/permissions";
-import { useCurrentUser } from "@/lib/useCurrentUser";
-import { SettingsAccountsSection } from "@/components/SettingsAccountsSection";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import {
-  requestTypes,
-  serviceCategories
-} from "@/types/request";
-import type {
-  RequestChecklistTemplateItemRecord,
-  RequestChecklistTemplateRecord
-} from "@/types/requestChecklistTemplate";
+  Bell,
+  Building2,
+  Check,
+  ClipboardCheck,
+  KeyRound,
+  Palette,
+  Plug,
+  ShieldCheck,
+  UserRound,
+  UsersRound
+} from "lucide-react";
+import { useCurrentUser } from "@/lib/useCurrentUser";
+import { canRole } from "@/lib/auth/permissions";
+import { usePulsePreferences } from "@/components/PulseShell";
+import { SettingsAccountsSection } from "@/components/SettingsAccountsSection";
+import { SettingsChecklistsSection } from "@/components/SettingsChecklistsSection";
+import type { ThemeMode, AccentTheme, WorkspaceSettingsRecord } from "@/types/settings";
 
-const defaultSettings = {
-  localLogin: true,
-  approvalAlerts: true,
-  commandView: true,
-  proposalOutputs: true,
-  serviceModule: false
-};
+export type SettingsSection =
+  | "account"
+  | "appearance"
+  | "general"
+  | "users"
+  | "request-checklists"
+  | "roadmap";
 
-type TemplatesResponse = {
-  templates: RequestChecklistTemplateRecord[];
-};
+const personalTabs = [
+  { key: "account", label: "Account", icon: UserRound },
+  { key: "appearance", label: "Appearance", icon: Palette }
+] as const;
 
-type TemplateResponse = {
-  template: RequestChecklistTemplateRecord;
-};
+const adminTabs = [
+  { key: "general", label: "General", icon: Building2 },
+  { key: "users", label: "Users & access", icon: UsersRound },
+  { key: "request-checklists", label: "Request checklists", icon: ClipboardCheck },
+  { key: "roadmap", label: "Roadmap", icon: Plug }
+] as const;
 
-async function settingsJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers
-    }
-  });
-
+async function responseJson<T>(response: Response) {
   const data = await response.json().catch(() => ({}));
-
   if (!response.ok) {
-    throw new Error(typeof data.error === "string" ? data.error : "Settings request failed.");
+    throw new Error(typeof data.error === "string" ? data.error : "Unable to save settings.");
   }
-
   return data as T;
 }
 
-function copyTemplate(template: RequestChecklistTemplateRecord) {
-  return {
-    ...template,
-    items: template.items.map((item) => ({ ...item }))
-  };
-}
+function AccountSection() {
+  const { user } = useCurrentUser();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
-function sortedItems(items: RequestChecklistTemplateItemRecord[]) {
-  return [...items].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
-}
-
-export function SettingsWorkspace() {
-  const { user, isLoading } = useCurrentUser();
-  const [settings, setSettings] = useState(defaultSettings);
-  const [message, setMessage] = useState("Local settings are ready for review.");
-  const [templates, setTemplates] = useState<RequestChecklistTemplateRecord[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [templateDraft, setTemplateDraft] = useState<RequestChecklistTemplateRecord | null>(null);
-  const [templatesLoading, setTemplatesLoading] = useState(false);
-  const [templatesSaving, setTemplatesSaving] = useState(false);
-  const canReadSettings = canRole(user?.role, "settings:read");
-  const canWriteSettings = canRole(user?.role, "settings:write");
-  const canManageUsers = canRole(user?.role, "users:manage");
-
-  async function loadTemplates(preferredTemplateId?: string) {
-    try {
-      setTemplatesLoading(true);
-      const data = await settingsJson<TemplatesResponse>("/api/settings/request-checklists", {
-        cache: "no-store"
-      });
-      const nextSelected =
-        data.templates.find((template) => template.id === preferredTemplateId) ??
-        data.templates.find((template) => template.id === selectedTemplateId) ??
-        data.templates[0] ??
-        null;
-
-      setTemplates(data.templates);
-      setSelectedTemplateId(nextSelected?.id ?? "");
-      setTemplateDraft(nextSelected ? copyTemplate(nextSelected) : null);
-      setMessage("Request checklist templates are loaded.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to load checklist templates.");
-    } finally {
-      setTemplatesLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!isLoading && canReadSettings) {
-      void loadTemplates();
-    }
-  }, [isLoading, canReadSettings]);
-
-  if (!isLoading && !canReadSettings) {
-    return (
-      <section className="panel settings-panel" aria-labelledby="settings-title">
-        <div className="panel-header">
-          <div>
-            <h2 id="settings-title">Workspace Settings</h2>
-            <p className="panel-note">
-              Your role does not allow access to workspace settings.
-            </p>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function toggleSetting(key: keyof typeof defaultSettings) {
-    setSettings((current) => ({
-      ...current,
-      [key]: !current[key]
-    }));
-    setMessage("You have unsaved local setting changes.");
-  }
-
-  function saveSettings() {
-    setMessage("Settings saved locally for this starter mockup.");
-  }
-
-  function resetSettings() {
-    setSettings(defaultSettings);
-    setMessage("Settings reset to Pulse starter defaults.");
-  }
-
-  function selectTemplate(templateId: string) {
-    const template = templates.find((candidate) => candidate.id === templateId);
-    setSelectedTemplateId(templateId);
-    setTemplateDraft(template ? copyTemplate(template) : null);
-  }
-
-  function updateTemplateDraft(
-    updates: Partial<Pick<RequestChecklistTemplateRecord, "name" | "requestType" | "serviceCategory" | "active">>
-  ) {
-    setTemplateDraft((current) => (current ? { ...current, ...updates } : current));
-  }
-
-  function updateTemplateItem(
-    index: number,
-    updates: Partial<RequestChecklistTemplateItemRecord>
-  ) {
-    setTemplateDraft((current) => {
-      if (!current) {
-        return current;
-      }
-
-      const items = sortedItems(current.items).map((item, itemIndex) =>
-        itemIndex === index ? { ...item, ...updates } : item
-      );
-
-      return { ...current, items };
-    });
-  }
-
-  function addTemplateItem() {
-    setTemplateDraft((current) => {
-      if (!current) {
-        return current;
-      }
-
-      const nextSortOrder =
-        current.items.reduce((largest, item) => Math.max(largest, item.sortOrder), 0) + 1;
-
-      return {
-        ...current,
-        items: [
-          ...current.items,
-          {
-            id: "",
-            label: "New checklist item",
-            description: "",
-            required: true,
-            appliesWhen: "",
-            sortOrder: nextSortOrder,
-            group: "Intake",
-            active: true
-          }
-        ]
-      };
-    });
-  }
-
-  async function saveTemplate() {
-    if (!templateDraft || !canWriteSettings) {
-      setMessage("Your role does not allow editing checklist templates.");
+  async function savePassword(event: React.FormEvent) {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setMessage("New passwords do not match.");
       return;
     }
-
     try {
-      setTemplatesSaving(true);
-      const data = await settingsJson<TemplateResponse>(
-        `/api/settings/request-checklists/${templateDraft.id}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            name: templateDraft.name,
-            requestType: templateDraft.requestType,
-            serviceCategory: templateDraft.serviceCategory,
-            active: templateDraft.active,
-            items: sortedItems(templateDraft.items).map((item) => ({
-              id: item.id,
-              label: item.label,
-              description: item.description,
-              required: item.required,
-              appliesWhen: item.appliesWhen,
-              sortOrder: item.sortOrder,
-              group: item.group,
-              active: item.active
-            }))
-          })
-        }
-      );
-
-      setTemplates((current) =>
-        current.map((template) => (template.id === data.template.id ? data.template : template))
-      );
-      setSelectedTemplateId(data.template.id);
-      setTemplateDraft(copyTemplate(data.template));
-      setMessage(`${data.template.name} saved for future Requests.`);
+      setSaving(true);
+      await responseJson(await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword })
+      }));
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage("Password updated.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to save checklist template.");
+      setMessage(error instanceof Error ? error.message : "Unable to change password.");
     } finally {
-      setTemplatesSaving(false);
+      setSaving(false);
     }
   }
 
-  const draftItems = templateDraft ? sortedItems(templateDraft.items) : [];
+  if (!user) return <div className="settings-empty">Loading account…</div>;
+  return (
+    <div className="settings-content-stack">
+      <section className="settings-card">
+        <div className="settings-card-heading">
+          <div className="settings-icon-box"><UserRound size={20} /></div>
+          <div><h2>Your account</h2><p>Identity and access assigned to your Pulse account.</p></div>
+        </div>
+        <dl className="settings-definition-grid">
+          <div><dt>Name</dt><dd>{user.name}</dd></div>
+          <div><dt>Email</dt><dd>{user.email}</dd></div>
+          <div><dt>Role</dt><dd>{user.roleLabel}</dd></div>
+          <div><dt>Sign-in provider</dt><dd>{user.authProvider === "LOCAL" ? "Local account" : "Microsoft Entra"}</dd></div>
+        </dl>
+      </section>
+      <section className="settings-card">
+        <div className="settings-card-heading">
+          <div className="settings-icon-box"><KeyRound size={20} /></div>
+          <div><h2>Password</h2><p>Use at least 10 characters and avoid reused passwords.</p></div>
+        </div>
+        {user.authProvider === "LOCAL" ? (
+          <form className="settings-form settings-password-form" onSubmit={savePassword}>
+            <label><span>Current password</span><input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
+            <label><span>New password</span><input type="password" autoComplete="new-password" minLength={10} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label>
+            <label><span>Confirm new password</span><input type="password" autoComplete="new-password" minLength={10} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></label>
+            <div className="settings-form-actions">
+              {message ? <p className="settings-inline-message" aria-live="polite">{message}</p> : <span />}
+              <button className="primary-button" disabled={saving}>{saving ? "Updating…" : "Update password"}</button>
+            </div>
+          </form>
+        ) : <p className="settings-callout">Password changes are managed by your Microsoft Entra administrator.</p>}
+      </section>
+    </div>
+  );
+}
+
+const modes: Array<{ value: ThemeMode; label: string; description: string }> = [
+  { value: "system", label: "System", description: "Follow this device" },
+  { value: "light", label: "Light", description: "Bright surfaces" },
+  { value: "dark", label: "Dark", description: "Low-light comfort" }
+];
+const accents: Array<{ value: AccentTheme; label: string }> = [
+  { value: "blue", label: "Blue" },
+  { value: "violet", label: "Violet" },
+  { value: "teal", label: "Teal" },
+  { value: "orange", label: "Orange" }
+];
+
+function AppearanceSection() {
+  const { themeMode, accentTheme, saveAppearance } = usePulsePreferences();
+  const [message, setMessage] = useState("");
+
+  async function update(next: { themeMode: ThemeMode; accentTheme: AccentTheme }) {
+    try {
+      setMessage("Saving…");
+      await saveAppearance(next);
+      setMessage("Appearance saved to your account.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to save appearance.");
+    }
+  }
 
   return (
-    <section className="panel settings-panel" aria-labelledby="settings-title">
-      <div className="panel-header">
-        <div>
-          <h2 id="settings-title">Workspace Settings</h2>
-          <p className="panel-note">{message}</p>
+    <div className="settings-content-stack">
+      <section className="settings-card">
+        <div className="settings-card-heading">
+          <div className="settings-icon-box"><Palette size={20} /></div>
+          <div><h2>Color mode</h2><p>Choose a mode or let Pulse follow this device.</p></div>
         </div>
-        <div className="workspace-actions">
-          <button className="toolbar-button compact" type="button" onClick={resetSettings}>
-            <RotateCcw size={17} />
-            Reset
-          </button>
-          <button className="primary-button" type="button" onClick={saveSettings}>
-            <CheckCircle2 size={17} />
-            Save Settings
-          </button>
-        </div>
-      </div>
-
-      <div className="settings-grid">
-        <button className="setting-row" type="button" onClick={() => toggleSetting("localLogin")}>
-          <span>
-            <strong>Local development login</strong>
-            <small>Keep the current local user picker available while Entra ID is designed.</small>
-          </span>
-          <span className={settings.localLogin ? "toggle on" : "toggle"} />
-        </button>
-        <button className="setting-row" type="button" onClick={() => toggleSetting("approvalAlerts")}>
-          <span>
-            <strong>Approval alerts</strong>
-            <small>Show quote and billing approval reminders in Pulse.</small>
-          </span>
-          <span className={settings.approvalAlerts ? "toggle on" : "toggle"} />
-        </button>
-        <button className="setting-row" type="button" onClick={() => toggleSetting("commandView")}>
-          <span>
-            <strong>Command view</strong>
-            <small>Keep the read-only operations board visible on the hub.</small>
-          </span>
-          <span className={settings.commandView ? "toggle on" : "toggle"} />
-        </button>
-        <button className="setting-row" type="button" onClick={() => toggleSetting("proposalOutputs")}>
-          <span>
-            <strong>Quote proposal outputs</strong>
-            <small>Manage client proposal outputs as a quote subcategory.</small>
-          </span>
-          <span className={settings.proposalOutputs ? "toggle on" : "toggle"} />
-        </button>
-        <button className="setting-row disabled" type="button" onClick={() => toggleSetting("serviceModule")}>
-          <span>
-            <strong>Service module</strong>
-            <small>Out of scope for the current Pulse starter.</small>
-          </span>
-          <span className={settings.serviceModule ? "toggle on" : "toggle"} />
-        </button>
-      </div>
-
-      {canManageUsers && user ? <SettingsAccountsSection currentUserId={user.id} /> : null}
-
-      <section className="settings-checklist-workspace" aria-labelledby="request-checklists-title">
-        <div className="settings-section-header">
-          <div>
-            <h3 id="request-checklists-title">Request Checklists</h3>
-            <p>Templates saved here apply to new Requests only.</p>
-          </div>
-          <button
-            className="toolbar-button compact"
-            type="button"
-            onClick={() => void loadTemplates(selectedTemplateId)}
-            disabled={templatesLoading}
-          >
-            <RotateCcw size={16} />
-            Refresh
-          </button>
-        </div>
-
-        <div className="settings-checklist-layout">
-          <div className="settings-template-list" aria-label="Request checklist templates">
-            {templates.map((template) => (
-              <button
-                key={template.id}
-                className={
-                  template.id === selectedTemplateId
-                    ? "settings-template-button active"
-                    : "settings-template-button"
-                }
-                type="button"
-                onClick={() => selectTemplate(template.id)}
-              >
-                <strong>{template.name}</strong>
-                <small>
-                  {template.serviceCategory || template.requestType || "Fallback"} -{" "}
-                  {template.active ? "Active" : "Inactive"}
-                </small>
-              </button>
-            ))}
-          </div>
-
-          <div className="settings-checklist-editor">
-            {templateDraft ? (
-              <>
-                <div className="settings-form-grid">
-                  <label>
-                    <span>Template name</span>
-                    <input
-                      value={templateDraft.name}
-                      onChange={(event) => updateTemplateDraft({ name: event.target.value })}
-                      disabled={!canWriteSettings}
-                    />
-                  </label>
-                  <label>
-                    <span>Service category</span>
-                    <select
-                      value={templateDraft.serviceCategory}
-                      onChange={(event) =>
-                        updateTemplateDraft({
-                          serviceCategory: event.target.value as RequestChecklistTemplateRecord["serviceCategory"]
-                        })
-                      }
-                      disabled={!canWriteSettings}
-                    >
-                      <option value="">None</option>
-                      {serviceCategories.map((category) => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>Request type</span>
-                    <select
-                      value={templateDraft.requestType}
-                      onChange={(event) =>
-                        updateTemplateDraft({
-                          requestType: event.target.value as RequestChecklistTemplateRecord["requestType"]
-                        })
-                      }
-                      disabled={!canWriteSettings}
-                    >
-                      <option value="">None</option>
-                      {requestTypes.map((requestType) => (
-                        <option key={requestType} value={requestType}>{requestType}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="settings-checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={templateDraft.active}
-                      onChange={(event) => updateTemplateDraft({ active: event.target.checked })}
-                      disabled={!canWriteSettings || templateDraft.key === "general"}
-                    />
-                    <span>Active template</span>
-                  </label>
-                </div>
-
-                <div className="settings-item-toolbar">
-                  <strong>Template Items</strong>
-                  <button
-                    className="toolbar-button compact"
-                    type="button"
-                    onClick={addTemplateItem}
-                    disabled={!canWriteSettings}
-                  >
-                    <Plus size={16} />
-                    Add Item
-                  </button>
-                </div>
-
-                <div className="settings-item-list">
-                  {draftItems.map((item, index) => (
-                    <article
-                      className={item.active ? "settings-item-row" : "settings-item-row inactive"}
-                      key={item.id || `new-${index}`}
-                    >
-                      <label>
-                        <span>Label</span>
-                        <input
-                          value={item.label}
-                          onChange={(event) => updateTemplateItem(index, { label: event.target.value })}
-                          disabled={!canWriteSettings}
-                        />
-                      </label>
-                      <label>
-                        <span>Group</span>
-                        <input
-                          value={item.group}
-                          onChange={(event) => updateTemplateItem(index, { group: event.target.value })}
-                          disabled={!canWriteSettings}
-                        />
-                      </label>
-                      <label>
-                        <span>Description</span>
-                        <input
-                          value={item.description}
-                          onChange={(event) => updateTemplateItem(index, { description: event.target.value })}
-                          disabled={!canWriteSettings}
-                        />
-                      </label>
-                      <label>
-                        <span>Applies when</span>
-                        <select
-                          value={item.appliesWhen}
-                          onChange={(event) => updateTemplateItem(index, { appliesWhen: event.target.value })}
-                          disabled={!canWriteSettings}
-                        >
-                          <option value="">Always</option>
-                          <option value="siteVisitRequired">Site visit required</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Order</span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={item.sortOrder}
-                          onChange={(event) =>
-                            updateTemplateItem(index, {
-                              sortOrder: Number.parseInt(event.target.value, 10) || 0
-                            })
-                          }
-                          disabled={!canWriteSettings}
-                        />
-                      </label>
-                      <label className="settings-checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={item.required}
-                          onChange={(event) => updateTemplateItem(index, { required: event.target.checked })}
-                          disabled={!canWriteSettings}
-                        />
-                        <span>Required</span>
-                      </label>
-                      <label className="settings-checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={item.active}
-                          onChange={(event) => updateTemplateItem(index, { active: event.target.checked })}
-                          disabled={!canWriteSettings}
-                        />
-                        <span>Active</span>
-                      </label>
-                    </article>
-                  ))}
-                </div>
-
-                <div className="settings-editor-actions">
-                  <button
-                    className="primary-button"
-                    type="button"
-                    onClick={() => void saveTemplate()}
-                    disabled={!canWriteSettings || templatesSaving}
-                  >
-                    <CheckCircle2 size={17} />
-                    Save Template
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="panel-note">No request checklist templates are available.</p>
-            )}
-          </div>
+        <div className="appearance-choice-grid">
+          {modes.map((mode) => (
+            <button key={mode.value} className={themeMode === mode.value ? "appearance-choice selected" : "appearance-choice"} onClick={() => void update({ themeMode: mode.value, accentTheme })}>
+              <span className={`appearance-preview ${mode.value}`} />
+              <strong>{mode.label}{themeMode === mode.value ? <Check size={16} /> : null}</strong>
+              <small>{mode.description}</small>
+            </button>
+          ))}
         </div>
       </section>
+      <section className="settings-card">
+        <div className="settings-card-heading"><div><h2>Accent color</h2><p>Used for navigation, focus, and primary actions.</p></div></div>
+        <div className="accent-choice-row">
+          {accents.map((accent) => (
+            <button key={accent.value} className={accentTheme === accent.value ? "accent-choice selected" : "accent-choice"} onClick={() => void update({ themeMode, accentTheme: accent.value })}>
+              <span className={`accent-swatch ${accent.value}`} />
+              {accent.label}{accentTheme === accent.value ? <Check size={15} /> : null}
+            </button>
+          ))}
+        </div>
+        <p className="settings-inline-message" aria-live="polite">{message}</p>
+      </section>
+    </div>
+  );
+}
+
+function GeneralSection() {
+  const { workspace, setWorkspaceContext } = usePulsePreferences();
+  const [draft, setDraft] = useState<WorkspaceSettingsRecord>(workspace);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const timeZones = useMemo(() => {
+    const supportedValuesOf = (Intl as unknown as {
+      supportedValuesOf?: (key: "timeZone") => string[];
+    }).supportedValuesOf;
+    return supportedValuesOf
+      ? supportedValuesOf("timeZone")
+      : ["America/Puerto_Rico", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "UTC"];
+  }, []);
+  useEffect(() => setDraft(workspace), [workspace]);
+  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(workspace), [draft, workspace]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      setSaving(true);
+      const data = await responseJson<{ workspace: WorkspaceSettingsRecord }>(await fetch("/api/settings/workspace", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft)
+      }));
+      setWorkspaceContext(data.workspace);
+      setDraft(data.workspace);
+      setMessage("Workspace settings saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to save workspace.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="settings-card">
+      <div className="settings-card-heading">
+        <div className="settings-icon-box"><Building2 size={20} /></div>
+        <div><h2>Workspace identity & region</h2><p>These defaults format dates and provide workspace context across Pulse.</p></div>
+      </div>
+      <form className="settings-form settings-general-form" onSubmit={save}>
+        <label className="wide"><span>Workspace name</span><input value={draft.name} maxLength={80} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
+        <label className="wide"><span>Time zone</span><input list="pulse-time-zones" value={draft.timeZone} onChange={(event) => setDraft({ ...draft, timeZone: event.target.value })} /><datalist id="pulse-time-zones">{timeZones.map((zone) => <option key={zone} value={zone} />)}</datalist></label>
+        <label><span>Formatting locale</span><select value={draft.locale} onChange={(event) => setDraft({ ...draft, locale: event.target.value as WorkspaceSettingsRecord["locale"] })}><option value="en-US">English (United States)</option><option value="es-PR">Español (Puerto Rico)</option></select></label>
+        <label><span>Date format</span><select value={draft.dateFormat} onChange={(event) => setDraft({ ...draft, dateFormat: event.target.value as WorkspaceSettingsRecord["dateFormat"] })}><option>MM/DD/YYYY</option><option>DD/MM/YYYY</option><option>YYYY-MM-DD</option></select></label>
+        <label><span>Week starts on</span><select value={draft.weekStartsOn} onChange={(event) => setDraft({ ...draft, weekStartsOn: Number(event.target.value) as 0 | 1 })}><option value={0}>Sunday</option><option value={1}>Monday</option></select></label>
+        <div className="settings-form-actions wide">
+          <p className="settings-inline-message" aria-live="polite">{message || (dirty ? "You have unsaved changes." : "")}</p>
+          <button className="primary-button" disabled={!dirty || saving}>{saving ? "Saving…" : "Save changes"}</button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function RoadmapSection() {
+  const cards = [
+    { icon: Bell, title: "Notifications", text: "A real inbox, read state, and delivery preferences will arrive together." },
+    { icon: ShieldCheck, title: "Microsoft Entra", text: "Single sign-on and directory provisioning are planned after local access is stabilized." },
+    { icon: Plug, title: "Integrations", text: "Connected services will appear here only when status and setup controls are useful." }
+  ];
+  return (
+    <div className="settings-roadmap-grid">
+      {cards.map((card) => <article className="settings-card roadmap-card" key={card.title}><div className="settings-icon-box"><card.icon size={21} /></div><span className="status-pill">Planned</span><h2>{card.title}</h2><p>{card.text}</p></article>)}
+    </div>
+  );
+}
+
+export function SettingsWorkspace({ section }: { section: SettingsSection }) {
+  const { user, isLoading } = useCurrentUser();
+  const isAdmin = canRole(user?.role, "settings:read");
+  const tabs = isAdmin ? [...personalTabs, ...adminTabs] : personalTabs;
+  const allowed = tabs.some((tab) => tab.key === section);
+  const active = allowed ? section : "account";
+
+  if (isLoading) return <div className="settings-shell settings-loading" aria-live="polite">Loading settings…</div>;
+  return (
+    <section className="settings-shell">
+      <div className="settings-intro">
+        <div><p className="settings-eyebrow">Preferences & administration</p><h1>Settings</h1><p>Manage your account and the way this workspace operates.</p></div>
+      </div>
+      <nav className="settings-tabs" aria-label="Settings categories">
+        {tabs.map((tab) => <Link key={tab.key} href={`/settings/${tab.key}`} className={active === tab.key ? "settings-tab active" : "settings-tab"} aria-current={active === tab.key ? "page" : undefined}><tab.icon size={17} /><span>{tab.label}</span></Link>)}
+      </nav>
+      <label className="settings-mobile-nav"><span>Settings category</span><select value={active} onChange={(event) => { window.location.href = `/settings/${event.target.value}`; }}>{tabs.map((tab) => <option value={tab.key} key={tab.key}>{tab.label}</option>)}</select></label>
+      <div className="settings-content">
+        {active === "account" ? <AccountSection /> : null}
+        {active === "appearance" ? <AppearanceSection /> : null}
+        {active === "general" ? <GeneralSection /> : null}
+        {active === "users" && user ? <SettingsAccountsSection currentUserId={user.id} /> : null}
+        {active === "request-checklists" ? <SettingsChecklistsSection /> : null}
+        {active === "roadmap" ? <RoadmapSection /> : null}
+      </div>
     </section>
   );
 }

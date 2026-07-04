@@ -34,7 +34,7 @@ type EditFormState = {
   title: string;
   requestType: RequestType;
   source: RequestSource;
-  serviceCategory: ServiceCategory;
+  serviceCategories: ServiceCategory[];
   priority: RequestPriority;
   clientId: string;
   contactId: string;
@@ -96,7 +96,7 @@ function formFromRequest(request: RequestRecord): EditFormState {
     title: request.title,
     requestType: request.requestType,
     source: request.source,
-    serviceCategory: request.serviceCategory,
+    serviceCategories: request.serviceCategories,
     priority: request.priority,
     clientId: request.clientId ?? "",
     contactId: request.contactId ?? "",
@@ -125,6 +125,7 @@ function formFromRequest(request: RequestRecord): EditFormState {
 function validate(form: EditFormState): EditErrors {
   const errors: EditErrors = {};
   if (!form.title.trim()) errors.title = "Request title is required.";
+  if (!form.serviceCategories.length) errors.serviceCategories = "Select at least one trade.";
   if (!form.companyName.trim() && !form.contactName.trim()) {
     errors.companyName = "Add a company or contact name.";
   }
@@ -428,12 +429,17 @@ export function RequestEditWorkspace({
                   {requestSources.map((source) => <option key={source}>{source}</option>)}
                 </select>
               </label>
-              <label>
-                Service category
-                <select value={form.serviceCategory} onChange={(event) => updateField("serviceCategory", event.target.value as ServiceCategory)}>
-                  {serviceCategories.map((category) => <option key={category}>{category}</option>)}
-                </select>
-              </label>
+              <fieldset className="request-edit-trades wide">
+                <legend>Trades</legend>
+                <p>Changing trades adds or retires Request checklist sections without deleting history.</p>
+                <div>
+                  {serviceCategories.map((category) => <label key={category} className={form.serviceCategories.includes(category) ? "selected" : ""}>
+                    <input type="checkbox" checked={form.serviceCategories.includes(category)} onChange={(event) => updateField("serviceCategories", event.target.checked ? [...form.serviceCategories, category] : form.serviceCategories.filter((value) => value !== category))} />
+                    <span>{category}</span>
+                  </label>)}
+                </div>
+                {errors.serviceCategories ? <small>{errors.serviceCategories}</small> : null}
+              </fieldset>
               <label>
                 Priority
                 <select value={form.priority} onChange={(event) => updateField("priority", event.target.value as RequestPriority)}>

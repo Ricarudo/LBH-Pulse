@@ -318,9 +318,9 @@ export function RequestsMobileView({
                   </span>
                 </div>
                 <div className="requests-mobile-badge-row">
-                  <MobileBadge tone={categoryTone(request.serviceCategory)}>
-                    {request.serviceCategory}
-                  </MobileBadge>
+                  {request.serviceCategories.map((category) => (
+                    <MobileBadge key={category} tone={categoryTone(category)}>{category}</MobileBadge>
+                  ))}
                   <MobileBadge tone={priorityTone(request.priority)}>
                     {request.priority}
                   </MobileBadge>

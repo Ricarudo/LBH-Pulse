@@ -16,6 +16,7 @@ import {
 // a new client behaves consistently no matter where it is created.
 import { FormRequestError, formJson } from "@/lib/forms/sanitization";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { formatWorkspaceDate } from "@/lib/formatting";
 import {
   ArrowLeft,
   Building2,
@@ -62,20 +63,7 @@ function serviceSummary(client: ClientRecord) {
 }
 
 function displayDate(date: string) {
-  if (!date) {
-    return "No activity";
-  }
-
-  const parsed = new Date(`${date}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return date;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  }).format(parsed);
+  return formatWorkspaceDate(date) || "No activity";
 }
 
 function compactValue(value: string | number | null | undefined) {

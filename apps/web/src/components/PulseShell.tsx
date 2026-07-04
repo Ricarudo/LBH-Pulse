@@ -9,12 +9,18 @@ import {
   useEffect,
   useState
 } from "react";
-import { canRole, type AuthenticatedUser } from "@/lib/auth/permissions";
+import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import type {
+  AccentTheme,
+  ThemeMode,
+  UserPreferencesRecord,
+  WorkspaceSettingsRecord
+} from "@/types/settings";
+import { setWorkspaceFormatting } from "@/lib/formatting";
 import { MobileBottomNav } from "@/components/mobile/MobilePrimitives";
 import { PageTransition } from "@/components/PageTransition";
 import {
   BarChart3,
-  Bell,
   Building2,
   ChevronDown,
   ChevronsLeft,
@@ -23,16 +29,40 @@ import {
   FolderKanban,
   Home,
   Menu,
-  Moon,
   ReceiptText,
   Search,
   Settings,
-  Sun,
   UserRound
 } from "lucide-react";
 
-const themeStorageKey = "pulse.theme";
-type PulseTheme = "light" | "dark";
+const themeModeStorageKey = "pulse.themeMode";
+const accentStorageKey = "pulse.accentTheme";
+
+const defaultWorkspace: WorkspaceSettingsRecord = {
+  name: "R2 Communications",
+  timeZone: "America/Puerto_Rico",
+  locale: "en-US",
+  dateFormat: "MM/DD/YYYY",
+  weekStartsOn: 0,
+  updatedAt: ""
+};
+
+type PulsePreferencesContextValue = {
+  themeMode: ThemeMode;
+  accentTheme: AccentTheme;
+  resolvedTheme: "light" | "dark";
+  workspace: WorkspaceSettingsRecord;
+  saveAppearance: (preferences: UserPreferencesRecord) => Promise<void>;
+  setWorkspaceContext: (workspace: WorkspaceSettingsRecord) => void;
+};
+
+const PulsePreferencesContext = createContext<PulsePreferencesContextValue | null>(null);
+
+export function usePulsePreferences() {
+  const value = useContext(PulsePreferencesContext);
+  if (!value) throw new Error("usePulsePreferences must be used inside PulseShell.");
+  return value;
+}
 
 type PulsePage =
   | "hub"
@@ -209,7 +239,7 @@ function getShellRouteMeta(pathname: string): ShellRouteMeta {
     return {
       activePage: "settings",
       title: "Settings",
-      subtitle: "Workspace preferences, Admin accounts, and request checklist templates."
+      subtitle: "Personal preferences, workspace administration, and Request checklist templates."
     };
   }
 
@@ -260,10 +290,12 @@ function PulseShellFrame({
   const [changePasswordError, setChangePasswordError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
-  const [theme, setTheme] = useState<PulseTheme>("light");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("system");
+  const [accentTheme, setAccentTheme] = useState<AccentTheme>("blue");
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+  const [workspace, setWorkspace] = useState<WorkspaceSettingsRecord>(defaultWorkspace);
   const pathname = usePathname();
   const routeMeta = getShellRouteMeta(pathname);
   const activeShellPage = activePage ?? routeMeta.activePage;
@@ -283,12 +315,10 @@ function PulseShellFrame({
       : activeShellPage;
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem(themeStorageKey);
-
-    if (savedTheme === "dark" || savedTheme === "light") {
-      setTheme(savedTheme);
-      document.documentElement.dataset.theme = savedTheme;
-    }
+    const savedMode = window.localStorage.getItem(themeModeStorageKey);
+    const savedAccent = window.localStorage.getItem(accentStorageKey);
+    if (savedMode === "system" || savedMode === "light" || savedMode === "dark") setThemeMode(savedMode);
+    if (savedAccent === "blue" || savedAccent === "violet" || savedAccent === "teal" || savedAccent === "orange") setAccentTheme(savedAccent);
 
     async function loadSession() {
       try {
@@ -306,6 +336,56 @@ function PulseShellFrame({
   }, []);
 
   useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    function apply() {
+      const storedMode = window.localStorage.getItem(themeModeStorageKey);
+      const initialMode = themeMode === "system" &&
+        (storedMode === "light" || storedMode === "dark")
+        ? storedMode
+        : themeMode;
+      const storedAccent = window.localStorage.getItem(accentStorageKey);
+      const initialAccent = accentTheme === "blue" &&
+        (storedAccent === "violet" || storedAccent === "teal" || storedAccent === "orange")
+        ? storedAccent
+        : accentTheme;
+      const next = initialMode === "system" ? (media.matches ? "dark" : "light") : initialMode;
+      setResolvedTheme(next);
+      document.documentElement.dataset.theme = next;
+      document.documentElement.dataset.accent = initialAccent;
+    }
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [themeMode, accentTheme]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    async function loadSettingsContext() {
+      try {
+        const [preferencesResponse, workspaceResponse] = await Promise.all([
+          fetch("/api/settings/preferences", { cache: "no-store" }),
+          fetch("/api/settings/workspace", { cache: "no-store" })
+        ]);
+        if (preferencesResponse.ok) {
+          const data = await preferencesResponse.json() as { preferences: UserPreferencesRecord };
+          setThemeMode(data.preferences.themeMode);
+          setAccentTheme(data.preferences.accentTheme);
+          window.localStorage.setItem(themeModeStorageKey, data.preferences.themeMode);
+          window.localStorage.setItem(accentStorageKey, data.preferences.accentTheme);
+        }
+        if (workspaceResponse.ok) {
+          const data = await workspaceResponse.json() as { workspace: WorkspaceSettingsRecord };
+          setWorkspace(data.workspace);
+          setWorkspaceFormatting(data.workspace);
+        }
+      } catch {
+        // The cached appearance and safe workspace defaults remain usable offline.
+      }
+    }
+    void loadSettingsContext();
+  }, [currentUser?.id]);
+
+  useEffect(() => {
     function handleResize() {
       if (window.innerWidth < 980) {
         setCollapsed(true);
@@ -317,11 +397,22 @@ function PulseShellFrame({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  function toggleTheme() {
-    const nextTheme = theme === "dark" ? "light" : "dark";
-    setTheme(nextTheme);
-    window.localStorage.setItem(themeStorageKey, nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
+  async function saveAppearance(preferences: UserPreferencesRecord) {
+    const previous = { themeMode, accentTheme };
+    setThemeMode(preferences.themeMode);
+    setAccentTheme(preferences.accentTheme);
+    window.localStorage.setItem(themeModeStorageKey, preferences.themeMode);
+    window.localStorage.setItem(accentStorageKey, preferences.accentTheme);
+    const response = await fetch("/api/settings/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(preferences)
+    });
+    if (!response.ok) {
+      setThemeMode(previous.themeMode);
+      setAccentTheme(previous.accentTheme);
+      throw new Error("Unable to save appearance preferences.");
+    }
   }
 
   function handleCollapsedToggle() {
@@ -331,7 +422,7 @@ function PulseShellFrame({
     setCollapsed((value) => !value);
   }
 
-  const canOpenSettings = canRole(currentUser?.role, "settings:read");
+  const canOpenSettings = Boolean(currentUser);
   const pageTitle = shellTitle || pageLabels[activeShellPage];
   const breadcrumbLabel = pageTitle;
   const pageIntro = shellCompactHeader ? "" : shellSubtitle;
@@ -528,6 +619,17 @@ function PulseShellFrame({
 
   return (
     <PulseShellContext.Provider value>
+      <PulsePreferencesContext.Provider value={{
+        themeMode,
+        accentTheme,
+        resolvedTheme,
+        workspace,
+        saveAppearance,
+        setWorkspaceContext: (next) => {
+          setWorkspace(next);
+          setWorkspaceFormatting(next);
+        }
+      }}>
       <div className={collapsed ? "app-shell sidebar-collapsed" : "app-shell"}>
       <header className="global-topbar">
         <Link className="global-brand" href="/hub" aria-label="Pulse dashboard">
@@ -548,38 +650,14 @@ function PulseShellFrame({
         </form>
 
         <div className="global-actions">
+          <span className="workspace-context">{workspace.name}</span>
           <span className="environment-badge">Local Dev</span>
-          <div className="topbar-popover-anchor">
-            <button
-              className="notification-button"
-              type="button"
-              aria-label="Notifications"
-              aria-expanded={notificationsOpen}
-              onClick={() => {
-                setNotificationsOpen((value) => !value);
-                setProfileOpen(false);
-              }}
-            >
-              <Bell size={21} />
-              <span>6</span>
-            </button>
-            {notificationsOpen ? (
-              <div className="mini-popover notifications-popover">
-                <strong>Notifications</strong>
-                <p>Visual placeholder only. Notification workflows will connect later.</p>
-                <p>3 quotes awaiting approval</p>
-                <p>2 projects waiting on materials</p>
-                <p>1 invoice overdue</p>
-              </div>
-            ) : null}
-          </div>
           <button
             className="profile-chip"
             type="button"
             aria-expanded={profileOpen}
             onClick={() => {
               setProfileOpen((value) => !value);
-              setNotificationsOpen(false);
             }}
           >
             <div className="avatar">
@@ -602,6 +680,7 @@ function PulseShellFrame({
               <strong>{currentUser.name}</strong>
               <p>{currentUser.email}</p>
               <p>{currentUser.roleLabel}</p>
+              <p>{workspace.name}</p>
               <div className="profile-menu-section">
                 <span>Switch role / dev user</span>
                 {devUserLabels.map((label) => (
@@ -611,13 +690,12 @@ function PulseShellFrame({
                 ))}
                 <small>Sign out, then use the local login screen to switch users.</small>
               </div>
-              <Link href="/settings" onClick={() => setProfileOpen(false)}>
+              <Link href="/settings/account" onClick={() => setProfileOpen(false)}>
                 Settings
               </Link>
-              <button type="button" onClick={toggleTheme}>
-                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-                {theme === "dark" ? "Light mode" : "Dark mode"}
-              </button>
+              <Link href="/settings/appearance" onClick={() => setProfileOpen(false)}>
+                Appearance
+              </Link>
               <button type="button" onClick={() => void logout()}>
                 Sign out
               </button>
@@ -689,6 +767,7 @@ function PulseShellFrame({
         pathname={pathname}
       />
     </div>
+    </PulsePreferencesContext.Provider>
     </PulseShellContext.Provider>
   );
 }

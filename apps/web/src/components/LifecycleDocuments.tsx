@@ -9,6 +9,7 @@ import {
   requestDocumentCategories,
   type LifecycleDocumentRecord
 } from "@/types/document";
+import { formatWorkspaceDate } from "@/lib/formatting";
 
 type Stage = "request" | "quote" | "project";
 
@@ -191,7 +192,7 @@ function DocumentPreviewModal({
           ) : null}
         </div>
         <footer className="document-preview-footer">
-          <span>Uploaded {new Date(fileDocument.createdAt).toLocaleString()}</span>
+          <span>Uploaded {formatWorkspaceDate(fileDocument.createdAt, true)}</span>
           <span>If preview is unavailable in this browser, use Download.</span>
         </footer>
       </section>
@@ -306,7 +307,7 @@ export function LifecycleDocuments({
                   </button>
                 ) : <strong>{fileDocument.originalFileName}</strong>}
                 <small>
-                  {fileDocument.category} · {formatBytes(fileDocument.byteSize)} · {fileDocument.uploadedByName} · {new Date(fileDocument.createdAt).toLocaleDateString()}
+                  {fileDocument.category} · {formatBytes(fileDocument.byteSize)} · {fileDocument.uploadedByName} · {formatWorkspaceDate(fileDocument.createdAt)}
                   {fileDocument.inherited ? ` · ${fileDocument.sourceNumber}` : ""}
                 </small>
                 {!fileDocument.available ? <em>{fileDocument.scanStatus} — unavailable for preview or download</em> : null}

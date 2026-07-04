@@ -37,6 +37,7 @@ import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { canRole } from "@/lib/auth/permissions";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { formatWorkspaceDate } from "@/lib/formatting";
 import type { ActivityRecord } from "@/types/activity";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import {
@@ -102,14 +103,7 @@ function actionDraftFromRequest(request: RequestRecord): ActionDraft {
 }
 
 function formatDate(value: string) {
-  if (!value) return "Not set";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric"
-  }).format(date);
+  return formatWorkspaceDate(value) || "Not set";
 }
 
 function statusTone(status: RequestStatus) {
@@ -260,7 +254,10 @@ export function RequestRecordWorkspace({
   }, [closeStatus, conversionOpen]);
 
   const checklistState = useMemo(() => {
-    const sorted = [...(request?.checklistItems ?? [])].sort(
+    const sourceItems = request?.checklistInstances.length
+      ? request.checklistInstances.filter((instance) => instance.active).flatMap((instance) => instance.items)
+      : request?.checklistItems ?? [];
+    const sorted = [...sourceItems].sort(
       (left, right) =>
         left.sortOrder - right.sortOrder || left.label.localeCompare(right.label)
     );
@@ -320,7 +317,7 @@ export function RequestRecordWorkspace({
   }
 
   async function toggleChecklistItem(item: RequestChecklistItem) {
-    if (!request || !canWriteActivity || pendingChecklistIds.includes(item.id)) {
+    if (!request || !canWriteActivity || recordLocked || pendingChecklistIds.includes(item.id)) {
       return;
     }
     const previous = request;
@@ -331,7 +328,13 @@ export function RequestRecordWorkspace({
         current.id === item.id
           ? { ...current, completed: !current.completed }
           : current
-      )
+      ),
+      checklistInstances: request.checklistInstances.map((instance) => ({
+        ...instance,
+        items: instance.items.map((current) =>
+          current.id === item.id ? { ...current, completed: !current.completed } : current
+        )
+      }))
     });
     try {
       const data = await requestJson<RequestResponse>(
@@ -362,7 +365,7 @@ export function RequestRecordWorkspace({
   }
 
   async function saveChecklistNote(item: RequestChecklistItem) {
-    if (!request || !canWriteActivity || pendingChecklistIds.includes(item.id)) {
+    if (!request || !canWriteActivity || recordLocked || pendingChecklistIds.includes(item.id)) {
       return;
     }
     try {
@@ -608,7 +611,7 @@ export function RequestRecordWorkspace({
                   className="record-checklist-toggle"
                   type="button"
                   onClick={() => void toggleChecklistItem(item)}
-                  disabled={!canWriteActivity || !item.applicable || pending}
+                  disabled={!canWriteActivity || recordLocked || !item.applicable || pending}
                   aria-label={`${item.completed ? "Reopen" : "Complete"} ${item.label}`}
                 >
                   {item.completed ? <CheckCircle2 size={20} /> : <Circle size={20} />}
@@ -649,7 +652,7 @@ export function RequestRecordWorkspace({
                             [item.id]: event.target.value
                           }))
                         }
-                        disabled={!canWriteActivity || pending}
+                        disabled={!canWriteActivity || recordLocked || pending}
                         placeholder="Add context, a reference, or what was confirmed..."
                       />
                     </label>
@@ -657,7 +660,7 @@ export function RequestRecordWorkspace({
                       type="button"
                       onClick={() => void saveChecklistNote(item)}
                       disabled={
-                        !canWriteActivity || pending || noteValue === item.notes
+                        !canWriteActivity || recordLocked || pending || noteValue === item.notes
                       }
                     >
                       <Save size={15} />
@@ -710,7 +713,7 @@ export function RequestRecordWorkspace({
             <span className={`record-priority tone-${priorityTone(request.priority)}`}>
               {request.priority}
             </span>
-            <span className="record-category">{request.serviceCategory}</span>
+            {request.serviceCategories.map((category) => <span className="record-category" key={category}>{category}</span>)}
           </div>
         </div>
         <div className="request-record-actions">
@@ -889,50 +892,28 @@ export function RequestRecordWorkspace({
             </section>
           ) : null}
 
-          <section className="record-open-checklist">
-            <div className="record-section-heading">
-              <h3>Required to do</h3>
-              <span>{checklistState.openRequired.length} open</span>
-            </div>
-            {checklistState.openRequired.length ? (
-              renderChecklistItems(checklistState.openRequired)
-            ) : (
-              <div className="record-checklist-empty">
-                <CheckCircle2 size={21} />
-                <strong>All required checklist items are complete.</strong>
-              </div>
-            )}
-          </section>
-
-          {checklistState.optional.length ? (
-            <details className="record-checklist-disclosure">
-              <summary>
-                <span>Optional items</span>
-                <strong>{checklistState.optional.length}</strong>
-              </summary>
-              {renderChecklistItems(checklistState.optional)}
-            </details>
-          ) : null}
-
-          {checklistState.completed.length ? (
-            <details className="record-checklist-disclosure">
-              <summary>
-                <span>Completed</span>
-                <strong>{checklistState.completed.length}</strong>
-              </summary>
-              {renderChecklistItems(checklistState.completed)}
-            </details>
-          ) : null}
-
-          {checklistState.inactive.length ? (
-            <details className="record-checklist-disclosure">
-              <summary>
-                <span>Not applicable</span>
-                <strong>{checklistState.inactive.length}</strong>
-              </summary>
-              {renderChecklistItems(checklistState.inactive)}
-            </details>
-          ) : null}
+          <div className="record-checklist-instances">
+            {request.checklistInstances.filter((instance) => instance.active).map((instance) => {
+              const open = instance.items.filter((item) => item.applicable && item.required && !item.completed);
+              const optional = instance.items.filter((item) => item.applicable && !item.required && !item.completed);
+              const completed = instance.items.filter((item) => item.completed);
+              const inactive = instance.items.filter((item) => !item.applicable && !item.completed);
+              return <section className="record-checklist-instance" key={instance.id}>
+                <div className="record-checklist-instance-heading">
+                  <div><span>{instance.matchType === "CORE" ? "Core" : instance.matchType === "TRADE" ? "Trade" : instance.matchType === "REQUEST_TYPE" ? "Request type" : "Legacy"}</span><h3>{instance.templateName}</h3>{instance.matchValue ? <small>{instance.matchValue}</small> : null}</div>
+                  <strong>{instance.summary.requiredCompleted}/{instance.summary.requiredTotal}</strong>
+                </div>
+                <section className="record-open-checklist">
+                  <div className="record-section-heading"><h3>Required to do</h3><span>{open.length} open</span></div>
+                  {open.length ? renderChecklistItems(open) : <div className="record-checklist-empty"><CheckCircle2 size={21} /><strong>All required items in this checklist are complete.</strong></div>}
+                </section>
+                {optional.length ? <details className="record-checklist-disclosure"><summary><span>Optional items</span><strong>{optional.length}</strong></summary>{renderChecklistItems(optional)}</details> : null}
+                {completed.length ? <details className="record-checklist-disclosure"><summary><span>Completed</span><strong>{completed.length}</strong></summary>{renderChecklistItems(completed)}</details> : null}
+                {inactive.length ? <details className="record-checklist-disclosure"><summary><span>Not applicable</span><strong>{inactive.length}</strong></summary>{renderChecklistItems(inactive)}</details> : null}
+              </section>;
+            })}
+          </div>
+          {request.checklistInstances.some((instance) => !instance.active) ? <details className="record-checklist-disclosure retired"><summary><span>Retired checklist history</span><strong>{request.checklistInstances.filter((instance) => !instance.active).length}</strong></summary>{request.checklistInstances.filter((instance) => !instance.active).map((instance) => <section className="record-checklist-instance retired" key={instance.id}><div className="record-checklist-instance-heading"><div><span>Retired</span><h3>{instance.templateName}</h3></div></div>{renderChecklistItems(instance.items)}</section>)}</details> : null}
         </section>
 
         <aside className="request-action-rail">

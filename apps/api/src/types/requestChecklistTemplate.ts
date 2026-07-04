@@ -18,6 +18,8 @@ export type RequestChecklistTemplateRecord = {
   requestType: RequestType | "";
   serviceCategory: ServiceCategory | "";
   active: boolean;
+  archivedAt: string;
+  matchType: "CORE" | "TRADE" | "REQUEST_TYPE";
   createdAt: string;
   updatedAt: string;
   items: RequestChecklistTemplateItemRecord[];

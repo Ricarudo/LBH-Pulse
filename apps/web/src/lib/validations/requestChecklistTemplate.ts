@@ -34,7 +34,17 @@ export const updateRequestChecklistTemplateSchema = z.object({
   serviceCategory: optionalServiceCategorySchema,
   active: z.boolean().default(true),
   items: z.array(updateRequestChecklistTemplateItemSchema).min(1)
+}).superRefine((value, context) => {
+  if (value.requestType && value.serviceCategory) {
+    context.addIssue({
+      code: "custom",
+      message: "Choose either a trade or a request type, not both.",
+      path: ["serviceCategory"]
+    });
+  }
 });
+
+export const createRequestChecklistTemplateSchema = updateRequestChecklistTemplateSchema;
 
 export type UpdateRequestChecklistTemplateInput = z.infer<
   typeof updateRequestChecklistTemplateSchema

@@ -19,6 +19,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { formatWorkspaceDate } from "@/lib/formatting";
 import {
   requestPriorities,
   requestSources,
@@ -100,20 +101,7 @@ function dueTimestamp(request: RequestRecord) {
 }
 
 function formatShortDate(value: string) {
-  if (!value) {
-    return "Not set";
-  }
-
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: parsed.getFullYear() === new Date().getFullYear() ? undefined : "numeric"
-  }).format(parsed);
+  return formatWorkspaceDate(value) || "Not set";
 }
 
 function statusTone(status: RequestStatus) {
@@ -370,7 +358,7 @@ export function RequestsQueueWorkspace({
             request.contactName,
             request.siteName,
             request.siteAddress,
-            request.serviceCategory,
+            ...request.serviceCategories,
             request.nextAction
           ]
             .join(" ")
@@ -387,7 +375,7 @@ export function RequestsQueueWorkspace({
               ? !request.assignedToId
               : request.assignedToId === filters.owner)) &&
           (filters.category === "All" ||
-            request.serviceCategory === filters.category) &&
+            request.serviceCategories.includes(filters.category)) &&
           (filters.source === "All" || request.source === filters.source)
         );
       })
@@ -715,7 +703,7 @@ export function RequestsQueueWorkspace({
                             <strong>{request.title}</strong>
                             <span>{request.requestNumber}</span>
                           </Link>
-                          <span className="queue-category">{request.serviceCategory}</span>
+                          <span className="queue-trade-chips">{request.serviceCategories.map((category) => <span className="queue-category" key={category}>{category}</span>)}</span>
                         </td>
                         <td>
                           <strong>{request.companyName || "New prospect"}</strong>
