@@ -23,7 +23,9 @@ import {
   useRef,
   useState
 } from "react";
+import { createPortal } from "react-dom";
 import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import { useResponsiveMode } from "@/lib/responsive";
 import {
   buildQuickCreatePayload,
   createBlankQuickCreateForm,
@@ -88,6 +90,8 @@ type RequestIntakeWizardProps = {
 };
 
 type WizardStep = "client" | "relations" | "request";
+type GuidedStep = "client" | "contact" | "site" | "details" | "review";
+type GuidedCreateView = "client" | "contact" | "site" | null;
 
 type ContactDraft = {
   name: string;
@@ -468,6 +472,8 @@ function TextField<TField extends string>({
   onChange,
   prefix,
   type = "text",
+  autoComplete,
+  inputMode,
   required = false,
   maxLength,
   wide = false
@@ -479,6 +485,8 @@ function TextField<TField extends string>({
   onChange: (value: string) => void;
   prefix: string;
   type?: string;
+  autoComplete?: string;
+  inputMode?: "email" | "numeric" | "search" | "tel" | "text" | "url";
   required?: boolean;
   maxLength?: number;
   wide?: boolean;
@@ -493,7 +501,10 @@ function TextField<TField extends string>({
         {required ? <small>Required</small> : null}
       </span>
       <input
+        name={name}
         type={type}
+        autoComplete={autoComplete}
+        inputMode={inputMode}
         value={value}
         maxLength={maxLength}
         aria-invalid={Boolean(error)}
@@ -536,6 +547,7 @@ function SelectField<TField extends string>({
         {required ? <small>Required</small> : null}
       </span>
       <select
+        name={name}
         value={value}
         aria-invalid={Boolean(error)}
         aria-describedby={error ? errorId : undefined}
@@ -579,6 +591,7 @@ function TextAreaField<TField extends string>({
         {required ? <small>Required</small> : null}
       </span>
       <textarea
+        name={name}
         value={value}
         aria-invalid={Boolean(error)}
         aria-describedby={error ? errorId : undefined}
@@ -598,9 +611,15 @@ export function RequestIntakeWizard({
   onClientChanged,
   onCreated
 }: RequestIntakeWizardProps) {
+  const responsiveMode = useResponsiveMode();
+  const isGuidedLayout =
+    responsiveMode === "compact" || responsiveMode === "tablet";
   // Each step owns its local creation draft because Directory records are saved
   // immediately, while the final Request is created only from selected records.
   const [activeStep, setActiveStep] = useState<WizardStep>("client");
+  const [guidedStep, setGuidedStep] = useState<GuidedStep>("client");
+  const [guidedCreateView, setGuidedCreateView] =
+    useState<GuidedCreateView>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClientId, setSelectedClientId] = useState("");
   const [selectedContactId, setSelectedContactId] = useState("");
@@ -622,6 +641,10 @@ export function RequestIntakeWizard({
   const [isSavingSite, setIsSavingSite] = useState(false);
   const [isSavingRequest, setIsSavingRequest] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const wizardModalRef = useRef<HTMLElement>(null);
+  const guidedHeadingRef = useRef<HTMLHeadingElement>(null);
+  const previousGuidedLayoutRef = useRef(isGuidedLayout);
+  const isBusyRef = useRef(false);
 
   const selectedClient = clients.find((client) => client.id === selectedClientId) ?? null;
   const selectedContact =
@@ -630,6 +653,7 @@ export function RequestIntakeWizard({
     selectedClient?.sites.find((site) => site.id === selectedSiteId) ?? null;
   const canCreateContact = currentUser?.role === "Admin";
   const isBusy = isSavingClient || isSavingContact || isSavingSite || isSavingRequest;
+  isBusyRef.current = isBusy;
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -682,13 +706,39 @@ export function RequestIntakeWizard({
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
-    const focusTimer = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    const focusTimer = window.setTimeout(() => {
+      if (isGuidedLayout) {
+        guidedHeadingRef.current?.focus();
+      } else {
+        searchInputRef.current?.focus();
+      }
+    }, 0);
 
     // Body scroll lock makes the popup relate to the whole viewport instead of
     // the request list/detail columns underneath it.
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !isBusy) {
+      if (event.key === "Escape" && !isBusyRef.current) {
         closeWizard();
+      }
+
+      if (event.key === "Tab" && wizardModalRef.current) {
+        const focusable = Array.from(
+          wizardModalRef.current.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((element) => element.offsetParent !== null);
+
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
       }
     }
 
@@ -701,7 +751,34 @@ export function RequestIntakeWizard({
       document.removeEventListener("keydown", handleKeyDown);
       previousFocus?.focus();
     };
-  }, [isBusy, isOpen, onClose]);
+  }, [isGuidedLayout, isOpen, onClose]);
+
+  useEffect(() => {
+    if (previousGuidedLayoutRef.current === isGuidedLayout) {
+      return;
+    }
+
+    if (isGuidedLayout) {
+      setGuidedCreateView(null);
+      setGuidedStep(
+        activeStep === "client"
+          ? "client"
+          : activeStep === "relations"
+            ? "contact"
+            : "details"
+      );
+    } else {
+      setActiveStep(
+        guidedStep === "client"
+          ? "client"
+          : guidedStep === "contact" || guidedStep === "site"
+            ? "relations"
+            : "request"
+      );
+    }
+
+    previousGuidedLayoutRef.current = isGuidedLayout;
+  }, [activeStep, guidedStep, isGuidedLayout]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -740,6 +817,8 @@ export function RequestIntakeWizard({
 
   function resetWizard() {
     setActiveStep("client");
+    setGuidedStep("client");
+    setGuidedCreateView(null);
     setSearchTerm("");
     setSelectedClientId("");
     setSelectedContactId("");
@@ -773,6 +852,41 @@ export function RequestIntakeWizard({
     setSelectedSiteId("");
     setFormMessage("");
     setActiveStep("relations");
+    if (isGuidedLayout) {
+      setGuidedCreateView(null);
+      setGuidedStep("contact");
+    }
+  }
+
+  function selectContact(contactId: string) {
+    setSelectedContactId(contactId);
+    setFormMessage("");
+
+    if (isGuidedLayout) {
+      setGuidedCreateView(null);
+      setGuidedStep("site");
+    }
+  }
+
+  function selectSite(siteId: string) {
+    setSelectedSiteId(siteId);
+    setFormMessage("");
+
+    if (isGuidedLayout) {
+      setGuidedCreateView(null);
+      setGuidedStep("details");
+    }
+  }
+
+  function focusFirstInvalidField() {
+    window.setTimeout(() => {
+      const invalidField =
+        wizardModalRef.current?.querySelector<HTMLElement>(
+          '[aria-invalid="true"]'
+        );
+      invalidField?.focus();
+      invalidField?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 0);
   }
 
   function updateQuickClientField(field: QuickCreateField, value: string) {
@@ -839,6 +953,7 @@ export function RequestIntakeWizard({
 
     if (Object.keys(errors).length) {
       setQuickClientErrors(errors);
+      focusFirstInvalidField();
       return;
     }
 
@@ -864,6 +979,10 @@ export function RequestIntakeWizard({
       setQuickClientOpen(false);
       setQuickClient(createBlankQuickCreateForm());
       setActiveStep("relations");
+      if (isGuidedLayout) {
+        setGuidedCreateView(null);
+        setGuidedStep("contact");
+      }
     } catch (error) {
       if (error instanceof FormRequestError) {
         setQuickClientErrors(mapQuickCreateApiErrors(error));
@@ -872,6 +991,7 @@ export function RequestIntakeWizard({
           form: error instanceof Error ? error.message : "Unable to create this client."
         });
       }
+      focusFirstInvalidField();
     } finally {
       setIsSavingClient(false);
     }
@@ -895,6 +1015,7 @@ export function RequestIntakeWizard({
 
     if (Object.keys(errors).length) {
       setContactErrors(errors);
+      focusFirstInvalidField();
       return;
     }
 
@@ -919,6 +1040,10 @@ export function RequestIntakeWizard({
       setSelectedContactId(createdContact?.id ?? "");
       setContactOpen(false);
       setContactDraft(blankContactDraft());
+      if (isGuidedLayout) {
+        setGuidedCreateView(null);
+        setGuidedStep("site");
+      }
     } catch (error) {
       if (error instanceof FormRequestError) {
         setContactErrors(
@@ -929,6 +1054,7 @@ export function RequestIntakeWizard({
           form: error instanceof Error ? error.message : "Unable to create this point of contact."
         });
       }
+      focusFirstInvalidField();
     } finally {
       setIsSavingContact(false);
     }
@@ -947,6 +1073,7 @@ export function RequestIntakeWizard({
 
     if (Object.keys(errors).length) {
       setSiteErrors(errors);
+      focusFirstInvalidField();
       return;
     }
 
@@ -969,6 +1096,10 @@ export function RequestIntakeWizard({
       setSelectedSiteId(createdSite?.id ?? "");
       setSiteOpen(false);
       setSiteDraft(blankSiteDraft(false));
+      if (isGuidedLayout) {
+        setGuidedCreateView(null);
+        setGuidedStep("details");
+      }
     } catch (error) {
       if (error instanceof FormRequestError) {
         setSiteErrors(mapApiErrors(error, (path) => apiFieldFromPath(siteFields, path)));
@@ -977,6 +1108,7 @@ export function RequestIntakeWizard({
           form: error instanceof Error ? error.message : "Unable to create this site."
         });
       }
+      focusFirstInvalidField();
     } finally {
       setIsSavingSite(false);
     }
@@ -1002,12 +1134,15 @@ export function RequestIntakeWizard({
     return true;
   }
 
-  async function createRequest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function createRequest(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
 
     if (!selectedClient || !selectedContact || !selectedSite) {
       setFormMessage("Complete client, point of contact, and site before saving.");
       setActiveStep(!selectedClient ? "client" : "relations");
+      setGuidedStep(
+        !selectedClient ? "client" : !selectedContact ? "contact" : "site"
+      );
       return;
     }
 
@@ -1017,6 +1152,8 @@ export function RequestIntakeWizard({
     if (Object.keys(errors).length) {
       setRequestErrors(errors);
       setActiveStep("request");
+      setGuidedStep("details");
+      focusFirstInvalidField();
       return;
     }
 
@@ -1068,6 +1205,8 @@ export function RequestIntakeWizard({
           mapApiErrors(error, (path) => apiFieldFromPath(requestInfoFields, path))
         );
         setFormMessage(error.message);
+        setGuidedStep("details");
+        focusFirstInvalidField();
       } else {
         setFormMessage(error instanceof Error ? error.message : "Unable to create this request.");
       }
@@ -1103,11 +1242,920 @@ export function RequestIntakeWizard({
     }
   }
 
-  if (!isOpen) {
+  function validateGuidedRequestDetails() {
+    const { normalized, errors } = validateRequestInfoDraft(requestInfo);
+    setRequestInfo(normalized);
+    setRequestErrors(errors);
+
+    if (Object.keys(errors).length) {
+      focusFirstInvalidField();
+      return false;
+    }
+
+    setFormMessage("");
+    setGuidedStep("review");
+    return true;
+  }
+
+  function goBackGuided() {
+    setFormMessage("");
+
+    if (guidedCreateView) {
+      setGuidedCreateView(null);
+      return;
+    }
+
+    if (guidedStep === "review") setGuidedStep("details");
+    else if (guidedStep === "details") setGuidedStep("site");
+    else if (guidedStep === "site") setGuidedStep("contact");
+    else if (guidedStep === "contact") setGuidedStep("client");
+    else closeWizard();
+  }
+
+  if (!isOpen || typeof document === "undefined") {
     return null;
   }
 
-  return (
+  if (isGuidedLayout) {
+    const guidedSteps: Array<{ id: GuidedStep; label: string }> = [
+      { id: "client", label: "Client" },
+      { id: "contact", label: "Contact" },
+      { id: "site", label: "Site" },
+      { id: "details", label: "Details" },
+      { id: "review", label: "Review" }
+    ];
+    const guidedStepIndex = guidedSteps.findIndex(
+      (step) => step.id === guidedStep
+    );
+    const guidedTitle = guidedCreateView
+      ? `Create ${
+          guidedCreateView === "contact"
+            ? "Point of Contact"
+            : guidedCreateView[0].toUpperCase() + guidedCreateView.slice(1)
+        }`
+      : guidedSteps[guidedStepIndex].label;
+
+    return createPortal(
+      <div className="request-wizard-backdrop request-wizard-guided-backdrop">
+        <section
+          ref={wizardModalRef}
+          className={`request-wizard-modal request-wizard-guided-modal request-wizard-guided-${responsiveMode}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="request-guided-title"
+        >
+          <header className="request-wizard-guided-header">
+            <button
+              className="request-wizard-guided-back"
+              type="button"
+              onClick={goBackGuided}
+              disabled={isBusy}
+              aria-label={
+                guidedCreateView || guidedStep !== "client"
+                  ? "Go back"
+                  : "Cancel request intake"
+              }
+            >
+              <ArrowLeft size={19} />
+            </button>
+            <div>
+              <span>New Request</span>
+              <h2
+                id="request-guided-title"
+                ref={guidedHeadingRef}
+                tabIndex={-1}
+              >
+                {guidedTitle}
+              </h2>
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Close request intake"
+              onClick={closeWizard}
+              disabled={isBusy}
+            >
+              <X size={19} />
+            </button>
+          </header>
+
+          <div
+            className="request-wizard-guided-progress"
+            role="status"
+            aria-live="polite"
+          >
+            <div>
+              <strong>Step {guidedStepIndex + 1} of {guidedSteps.length}</strong>
+            </div>
+            <span className="request-wizard-guided-progress-track">
+              <i
+                style={{
+                  width: `${((guidedStepIndex + 1) / guidedSteps.length) * 100}%`
+                }}
+              />
+            </span>
+          </div>
+
+          <div className="request-wizard-guided-body">
+            {guidedCreateView === "client" ? (
+              <form
+                id="guided-create-client"
+                className="request-wizard-guided-form"
+                onSubmit={createClient}
+              >
+                <div className="request-wizard-guided-intro">
+                  <strong>Add a client without leaving intake</strong>
+                  <span>Capture the account and its first contact now. You can enrich the Directory record later.</span>
+                </div>
+                <div className="request-wizard-field-grid">
+                  <TextField
+                    label="Client Name"
+                    name="clientName"
+                    value={quickClient.clientName}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="organization"
+                    maxLength={quickCreateLimits.clientName + 16}
+                    required
+                    onChange={(value) => updateQuickClientField("clientName", value)}
+                  />
+                  <SelectField
+                    label="Client Industry"
+                    name="industry"
+                    value={quickClient.industry}
+                    options={["", ...clientIndustries]}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    required
+                    onChange={(value) => updateQuickClientField("industry", value)}
+                  />
+                  <TextField
+                    label="Point of Contact Name"
+                    name="contactName"
+                    value={quickClient.contactName}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="name"
+                    maxLength={quickCreateLimits.contactName + 16}
+                    onChange={(value) => updateQuickClientField("contactName", value)}
+                  />
+                  <TextField
+                    label="Point of Contact Email"
+                    name="contactEmail"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    value={quickClient.contactEmail}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    maxLength={quickCreateLimits.contactEmail + 16}
+                    onChange={(value) => updateQuickClientField("contactEmail", value)}
+                  />
+                  <TextField
+                    label="Point of Contact Phone"
+                    name="contactPhone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={quickClient.contactPhone}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    maxLength={quickCreateLimits.contactPhone + 16}
+                    onChange={(value) => updateQuickClientField("contactPhone", value)}
+                  />
+                  <TextField
+                    label="Point of Contact Role"
+                    name="contactRole"
+                    value={quickClient.contactRole}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    maxLength={quickCreateLimits.contactRole + 16}
+                    onChange={(value) => updateQuickClientField("contactRole", value)}
+                  />
+                </div>
+                {quickClientErrors.form ? (
+                  <div className="form-alert error">{quickClientErrors.form}</div>
+                ) : null}
+                <button
+                  className="primary-button request-wizard-guided-inline-save"
+                  type="submit"
+                  disabled={isSavingClient}
+                >
+                  <Save size={17} />
+                  {isSavingClient ? "Saving..." : "Save Client and Continue"}
+                </button>
+              </form>
+            ) : null}
+
+            {guidedCreateView === "contact" ? (
+              <form
+                id="guided-create-contact"
+                className="request-wizard-guided-form"
+                onSubmit={createContact}
+              >
+                <div className="request-wizard-guided-context">
+                  <Building2 size={18} />
+                  <span>
+                    <small>Client</small>
+                    <strong>{selectedClient?.displayName}</strong>
+                  </span>
+                </div>
+                <div className="request-wizard-field-grid">
+                  <TextField
+                    label="Name"
+                    name="name"
+                    value={contactDraft.name}
+                    errors={contactErrors}
+                    prefix="guided-contact"
+                    autoComplete="name"
+                    maxLength={contactFieldLimits.name + 16}
+                    required
+                    onChange={(value) => updateContactField("name", value)}
+                  />
+                  <TextField
+                    label="Role"
+                    name="role"
+                    value={contactDraft.role}
+                    errors={contactErrors}
+                    prefix="guided-contact"
+                    maxLength={contactFieldLimits.role + 16}
+                    onChange={(value) => updateContactField("role", value)}
+                  />
+                  <TextField
+                    label="Title"
+                    name="title"
+                    value={contactDraft.title}
+                    errors={contactErrors}
+                    prefix="guided-contact"
+                    autoComplete="organization-title"
+                    maxLength={contactFieldLimits.title + 16}
+                    onChange={(value) => updateContactField("title", value)}
+                  />
+                  <SelectField
+                    label="Preferred Contact"
+                    name="preferredContactMethod"
+                    value={contactDraft.preferredContactMethod}
+                    options={preferredContactMethods}
+                    errors={contactErrors}
+                    prefix="guided-contact"
+                    onChange={(value) => updateContactField("preferredContactMethod", value)}
+                  />
+                  <TextField
+                    label="Email"
+                    name="email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    value={contactDraft.email}
+                    errors={contactErrors}
+                    prefix="guided-contact"
+                    maxLength={contactFieldLimits.email + 16}
+                    onChange={(value) => updateContactField("email", value)}
+                  />
+                  <TextField
+                    label="Phone"
+                    name="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={contactDraft.phone}
+                    errors={contactErrors}
+                    prefix="guided-contact"
+                    maxLength={contactFieldLimits.phone + 16}
+                    onChange={(value) => updateContactField("phone", value)}
+                  />
+                  <TextAreaField
+                    label="Notes"
+                    name="notes"
+                    value={contactDraft.notes}
+                    errors={contactErrors}
+                    prefix="guided-contact"
+                    onChange={(value) => updateContactField("notes", value)}
+                  />
+                </div>
+                {contactErrors.form ? (
+                  <div className="form-alert error">{contactErrors.form}</div>
+                ) : null}
+                <button
+                  className="primary-button request-wizard-guided-inline-save"
+                  type="submit"
+                  disabled={isSavingContact}
+                >
+                  <Save size={17} />
+                  {isSavingContact ? "Saving..." : "Save Contact and Continue"}
+                </button>
+              </form>
+            ) : null}
+
+            {guidedCreateView === "site" ? (
+              <form
+                id="guided-create-site"
+                className="request-wizard-guided-form"
+                onSubmit={createSite}
+              >
+                <div className="request-wizard-guided-context">
+                  <Building2 size={18} />
+                  <span>
+                    <small>Client</small>
+                    <strong>{selectedClient?.displayName}</strong>
+                  </span>
+                </div>
+                <div className="request-wizard-field-grid">
+                  <TextField
+                    label="Site Name"
+                    name="siteName"
+                    value={siteDraft.siteName}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    autoComplete="organization"
+                    maxLength={siteFieldLimits.siteName + 16}
+                    required
+                    onChange={(value) => updateSiteField("siteName", value)}
+                  />
+                  <SelectField
+                    label="Site Type"
+                    name="siteType"
+                    value={siteDraft.siteType}
+                    options={clientSiteTypes}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    onChange={(value) => updateSiteField("siteType", value)}
+                  />
+                  <TextField
+                    label="Address Line 1"
+                    name="addressLine1"
+                    value={siteDraft.addressLine1}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    autoComplete="address-line1"
+                    onChange={(value) => updateSiteField("addressLine1", value)}
+                  />
+                  <TextField
+                    label="Address Line 2"
+                    name="addressLine2"
+                    value={siteDraft.addressLine2}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    autoComplete="address-line2"
+                    onChange={(value) => updateSiteField("addressLine2", value)}
+                  />
+                  <TextField
+                    label="City"
+                    name="city"
+                    value={siteDraft.city}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    autoComplete="address-level2"
+                    onChange={(value) => updateSiteField("city", value)}
+                  />
+                  <TextField
+                    label="State"
+                    name="state"
+                    value={siteDraft.state}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    autoComplete="address-level1"
+                    onChange={(value) => updateSiteField("state", value)}
+                  />
+                  <TextField
+                    label="Postal Code"
+                    name="postalCode"
+                    value={siteDraft.postalCode}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    inputMode="numeric"
+                    autoComplete="postal-code"
+                    onChange={(value) => updateSiteField("postalCode", value)}
+                  />
+                  <TextField
+                    label="Country"
+                    name="country"
+                    value={siteDraft.country}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    autoComplete="country-name"
+                    onChange={(value) => updateSiteField("country", value)}
+                  />
+                  <TextField
+                    label="Google Maps URL"
+                    name="googleMapsUrl"
+                    type="url"
+                    inputMode="url"
+                    value={siteDraft.googleMapsUrl}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    wide
+                    onChange={(value) => updateSiteField("googleMapsUrl", value)}
+                  />
+                  <TextAreaField
+                    label="Access Instructions"
+                    name="accessInstructions"
+                    value={siteDraft.accessInstructions}
+                    errors={siteErrors}
+                    prefix="guided-site"
+                    onChange={(value) => updateSiteField("accessInstructions", value)}
+                  />
+                </div>
+                <label className="request-wizard-toggle">
+                  <input
+                    type="checkbox"
+                    checked={siteDraft.isPrimarySite}
+                    onChange={(event) =>
+                      updateSiteField("isPrimarySite", event.target.checked)
+                    }
+                  />
+                  Primary site
+                </label>
+                {siteErrors.form ? (
+                  <div className="form-alert error">{siteErrors.form}</div>
+                ) : null}
+                <button
+                  className="primary-button request-wizard-guided-inline-save"
+                  type="submit"
+                  disabled={isSavingSite}
+                >
+                  <Save size={17} />
+                  {isSavingSite ? "Saving..." : "Save Site and Continue"}
+                </button>
+              </form>
+            ) : null}
+
+            {!guidedCreateView && guidedStep === "client" ? (
+              <section className="request-wizard-guided-stage" aria-label="Choose client">
+                <div className="request-wizard-guided-intro">
+                  <strong>Who is making the request?</strong>
+                  <span>Search the Directory or create a new client.</span>
+                </div>
+                <label className="request-wizard-search">
+                  <Search size={17} />
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    inputMode="search"
+                    aria-label="Search clients"
+                    placeholder="Search clients, contacts, or sites"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                  />
+                </label>
+                <div className="request-wizard-guided-list">
+                  {filteredClients.map((client) => (
+                    <button
+                      key={client.id}
+                      type="button"
+                      className={
+                        client.id === selectedClientId
+                          ? "request-wizard-guided-choice selected"
+                          : "request-wizard-guided-choice"
+                      }
+                      onClick={() => selectClient(client.id)}
+                    >
+                      <Building2 size={19} />
+                      <span>
+                        <strong>{client.displayName}</strong>
+                        <small>{client.clientNumber} · {client.industry || "Unclassified"}</small>
+                        <em>
+                          {client.primaryContact.name ||
+                            client.contacts[0]?.name ||
+                            "No contact"}{" "}
+                          · {client.primarySite || client.sites[0]?.siteName || "No site"}
+                        </em>
+                      </span>
+                      <ArrowRight size={18} />
+                    </button>
+                  ))}
+                </div>
+                {!filteredClients.length ? (
+                  <div className="request-wizard-empty">
+                    <strong>No clients match this search.</strong>
+                  </div>
+                ) : null}
+                <button
+                  className="request-wizard-guided-create"
+                  type="button"
+                  onClick={() => {
+                    setQuickClient(createBlankQuickCreateForm());
+                    setQuickClientErrors({});
+                    setGuidedCreateView("client");
+                  }}
+                >
+                  <Plus size={18} />
+                  Create Client
+                </button>
+              </section>
+            ) : null}
+
+            {!guidedCreateView && guidedStep === "contact" ? (
+              <section className="request-wizard-guided-stage" aria-label="Choose point of contact">
+                <div className="request-wizard-guided-context">
+                  <Building2 size={18} />
+                  <span>
+                    <small>Client</small>
+                    <strong>{selectedClient?.displayName}</strong>
+                  </span>
+                  <button type="button" onClick={() => setGuidedStep("client")}>Change</button>
+                </div>
+                <div className="request-wizard-guided-intro">
+                  <strong>Who should we contact?</strong>
+                  <span>Tap a person to confirm and continue.</span>
+                </div>
+                <div className="request-wizard-guided-list">
+                  {(selectedClient?.contacts ?? []).map((contact) => (
+                    <button
+                      key={contact.id}
+                      type="button"
+                      className={
+                        contact.id === selectedContactId
+                          ? "request-wizard-guided-choice selected"
+                          : "request-wizard-guided-choice"
+                      }
+                      onClick={() => selectContact(contact.id)}
+                    >
+                      <UserRound size={19} />
+                      <span>
+                        <strong>{contact.name}</strong>
+                        <small>{contact.title || contact.role || "Contact"}</small>
+                        <em>{contact.email || contactPhone(contact) || "No contact method"}</em>
+                      </span>
+                      <ArrowRight size={18} />
+                    </button>
+                  ))}
+                </div>
+                {selectedClient && !selectedClient.contacts.length ? (
+                  <div className="request-wizard-empty">
+                    <strong>No points of contact yet.</strong>
+                    {!canCreateContact ? (
+                      <span>Admin access is required to create one.</span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {canCreateContact ? (
+                  <button
+                    className="request-wizard-guided-create"
+                    type="button"
+                    onClick={() => {
+                      setContactDraft(blankContactDraft());
+                      setContactErrors({});
+                      setGuidedCreateView("contact");
+                    }}
+                  >
+                    <Plus size={18} />
+                    New Point of Contact
+                  </button>
+                ) : null}
+              </section>
+            ) : null}
+
+            {!guidedCreateView && guidedStep === "site" ? (
+              <section className="request-wizard-guided-stage" aria-label="Choose site">
+                <div className="request-wizard-guided-context">
+                  <Building2 size={18} />
+                  <span>
+                    <small>Client</small>
+                    <strong>{selectedClient?.displayName}</strong>
+                  </span>
+                  <button type="button" onClick={() => setGuidedStep("client")}>Change</button>
+                </div>
+                <div className="request-wizard-guided-intro">
+                  <strong>Where will the work happen?</strong>
+                  <span>Tap a site to confirm and continue.</span>
+                </div>
+                <div className="request-wizard-guided-list">
+                  {(selectedClient?.sites ?? []).map((site) => (
+                    <button
+                      key={site.id}
+                      type="button"
+                      className={
+                        site.id === selectedSiteId
+                          ? "request-wizard-guided-choice selected"
+                          : "request-wizard-guided-choice"
+                      }
+                      onClick={() => selectSite(site.id)}
+                    >
+                      <MapPin size={19} />
+                      <span>
+                        <strong>{site.siteName}</strong>
+                        <small>{site.siteType || "Site"}</small>
+                        <em>{siteAddress(site) || "No address captured"}</em>
+                      </span>
+                      <ArrowRight size={18} />
+                    </button>
+                  ))}
+                </div>
+                {selectedClient && !selectedClient.sites.length ? (
+                  <div className="request-wizard-empty">
+                    <strong>No sites yet.</strong>
+                  </div>
+                ) : null}
+                <button
+                  className="request-wizard-guided-create"
+                  type="button"
+                  onClick={() => {
+                    setSiteDraft(blankSiteDraft(!(selectedClient?.sites.length)));
+                    setSiteErrors({});
+                    setGuidedCreateView("site");
+                  }}
+                >
+                  <Plus size={18} />
+                  New Site
+                </button>
+              </section>
+            ) : null}
+
+            {!guidedCreateView && guidedStep === "details" ? (
+              <form
+                id="guided-request-details"
+                className="request-wizard-guided-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  validateGuidedRequestDetails();
+                }}
+              >
+                <div className="request-wizard-guided-intro">
+                  <strong>What came in?</strong>
+                  <span>Capture the essentials now; the generated checklist will guide the follow-up.</span>
+                </div>
+                <div className="request-wizard-field-grid">
+                  <TextField
+                    label="Title"
+                    name="title"
+                    value={requestInfo.title}
+                    errors={requestErrors}
+                    prefix="guided-request"
+                    maxLength={requestFieldLimits.title + 16}
+                    required
+                    wide
+                    onChange={(value) => updateRequestInfo("title", value)}
+                  />
+                  <TextAreaField
+                    label="Description"
+                    name="description"
+                    value={requestInfo.description}
+                    errors={requestErrors}
+                    prefix="guided-request"
+                    required
+                    onChange={(value) => updateRequestInfo("description", value)}
+                  />
+                  <fieldset className="request-wizard-trade-field">
+                    <legend>Trades <span aria-hidden="true">*</span></legend>
+                    <p>Select every trade included in this request.</p>
+                    <div className="request-wizard-trade-grid">
+                      {serviceCategories.map((category) => (
+                        <label
+                          key={category}
+                          className={
+                            requestInfo.serviceCategories.includes(category)
+                              ? "selected"
+                              : ""
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            checked={requestInfo.serviceCategories.includes(category)}
+                            onChange={(event) =>
+                              updateRequestInfo(
+                                "serviceCategories",
+                                event.target.checked
+                                  ? [...requestInfo.serviceCategories, category]
+                                  : requestInfo.serviceCategories.filter(
+                                      (value) => value !== category
+                                    )
+                              )
+                            }
+                          />
+                          <span>{category}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {requestErrors.serviceCategories ? (
+                      <small className="field-error" role="alert">
+                        {requestErrors.serviceCategories}
+                      </small>
+                    ) : null}
+                  </fieldset>
+                  <TextField
+                    label="Due Date"
+                    name="dueDate"
+                    type="date"
+                    value={requestInfo.dueDate}
+                    errors={requestErrors}
+                    prefix="guided-request"
+                    required
+                    onChange={(value) => updateRequestInfo("dueDate", value)}
+                  />
+                  <SelectField
+                    label="Received By"
+                    name="source"
+                    value={requestInfo.source}
+                    options={requestSources}
+                    errors={requestErrors}
+                    prefix="guided-request"
+                    onChange={(value) =>
+                      updateRequestInfo("source", value as RequestSource)
+                    }
+                  />
+                  <SelectField
+                    label="Request Type"
+                    name="requestType"
+                    value={requestInfo.requestType}
+                    options={requestTypes}
+                    errors={requestErrors}
+                    prefix="guided-request"
+                    onChange={(value) =>
+                      updateRequestInfo("requestType", value as RequestType)
+                    }
+                  />
+                  <SelectField
+                    label="Priority"
+                    name="priority"
+                    value={requestInfo.priority}
+                    options={requestPriorities}
+                    errors={requestErrors}
+                    prefix="guided-request"
+                    onChange={(value) =>
+                      updateRequestInfo("priority", value as RequestPriority)
+                    }
+                  />
+                  <label className="request-wizard-field">
+                    <span>Owner</span>
+                    <select
+                      name="assignedToId"
+                      value={requestInfo.assignedToId}
+                      aria-invalid={Boolean(requestErrors.assignedToId)}
+                      onChange={(event) =>
+                        updateRequestInfo("assignedToId", event.target.value)
+                      }
+                    >
+                      <option value="">Unassigned</option>
+                      {assignees.map((assignee) => (
+                        <option key={assignee.id} value={assignee.id}>
+                          {assignee.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="request-wizard-toggle request-wizard-toggle-strong">
+                  <input
+                    type="checkbox"
+                    checked={requestInfo.siteVisitNeeded}
+                    onChange={(event) =>
+                      updateRequestInfo("siteVisitNeeded", event.target.checked)
+                    }
+                  />
+                  Site visit will be needed
+                </label>
+                <button
+                  className="primary-button request-wizard-guided-inline-save"
+                  type="submit"
+                  disabled={isBusy}
+                >
+                  Review Request
+                  <ArrowRight size={17} />
+                </button>
+              </form>
+            ) : null}
+
+            {!guidedCreateView && guidedStep === "review" ? (
+              <section className="request-wizard-guided-review">
+                <div className="request-wizard-guided-intro">
+                  <strong>Confirm before creating</strong>
+                  <span>Review the intake details. Nothing is submitted until you save.</span>
+                </div>
+                <section>
+                  <div className="request-wizard-guided-review-heading">
+                    <h3>Directory</h3>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Client</dt>
+                      <dd>{selectedClient?.displayName}</dd>
+                      <button type="button" onClick={() => setGuidedStep("client")}>Edit</button>
+                    </div>
+                    <div>
+                      <dt>Contact</dt>
+                      <dd>{selectedContact?.name}</dd>
+                      <button type="button" onClick={() => setGuidedStep("contact")}>Edit</button>
+                    </div>
+                    <div>
+                      <dt>Site</dt>
+                      <dd>{selectedSite?.siteName}</dd>
+                      <button type="button" onClick={() => setGuidedStep("site")}>Edit</button>
+                    </div>
+                  </dl>
+                </section>
+                <section>
+                  <div className="request-wizard-guided-review-heading">
+                    <h3>Request</h3>
+                    <button type="button" onClick={() => setGuidedStep("details")}>Edit</button>
+                  </div>
+                  <dl>
+                    <div><dt>Title</dt><dd>{requestInfo.title}</dd></div>
+                    <div><dt>Description</dt><dd>{requestInfo.description}</dd></div>
+                    <div><dt>Trades</dt><dd>{requestInfo.serviceCategories.join(", ")}</dd></div>
+                    <div><dt>Due date</dt><dd>{requestInfo.dueDate}</dd></div>
+                    <div><dt>Source</dt><dd>{requestInfo.source}</dd></div>
+                    <div><dt>Type</dt><dd>{requestInfo.requestType}</dd></div>
+                    <div><dt>Priority</dt><dd>{requestInfo.priority}</dd></div>
+                    <div>
+                      <dt>Owner</dt>
+                      <dd>
+                        {assignees.find(
+                          (assignee) => assignee.id === requestInfo.assignedToId
+                        )?.name || "Unassigned"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Site visit</dt>
+                      <dd>{requestInfo.siteVisitNeeded ? "Needed" : "Not needed"}</dd>
+                    </div>
+                  </dl>
+                </section>
+                <button
+                  className="primary-button request-wizard-guided-inline-save"
+                  type="button"
+                  disabled={isSavingRequest}
+                  onClick={() => void createRequest()}
+                >
+                  <Save size={17} />
+                  {isSavingRequest ? "Saving..." : "Create Request"}
+                </button>
+              </section>
+            ) : null}
+          </div>
+
+          {formMessage ? (
+            <div
+              className="form-alert error request-wizard-guided-alert"
+              role="alert"
+            >
+              {formMessage}
+            </div>
+          ) : null}
+
+          <footer
+            className={
+              guidedCreateView
+                ? "request-wizard-guided-actions request-wizard-guided-actions-creating"
+                : guidedStep === "details"
+                  ? "request-wizard-guided-actions request-wizard-guided-actions-details"
+                  : guidedStep === "review"
+                    ? "request-wizard-guided-actions request-wizard-guided-actions-review"
+                : "request-wizard-guided-actions"
+            }
+          >
+            <button
+              className="toolbar-button"
+              type="button"
+              onClick={goBackGuided}
+              disabled={isBusy}
+            >
+              {guidedCreateView || guidedStep !== "client" ? "Back" : "Cancel"}
+            </button>
+            {guidedCreateView ? (
+              <button
+                className="primary-button"
+                type="submit"
+                form={`guided-create-${guidedCreateView}`}
+                disabled={isBusy}
+              >
+                <Save size={17} />
+                {isBusy ? "Saving..." : `Save ${
+                  guidedCreateView === "contact"
+                    ? "Contact"
+                    : guidedCreateView[0].toUpperCase() +
+                      guidedCreateView.slice(1)
+                }`}
+              </button>
+            ) : guidedStep === "details" ? (
+              <button
+                className="primary-button"
+                type="submit"
+                form="guided-request-details"
+                disabled={isBusy}
+              >
+                Review Request
+                <ArrowRight size={17} />
+              </button>
+            ) : guidedStep === "review" ? (
+              <button
+                className="primary-button"
+                type="button"
+                disabled={isSavingRequest}
+                onClick={() => void createRequest()}
+              >
+                <Save size={17} />
+                {isSavingRequest ? "Saving..." : "Create Request"}
+              </button>
+            ) : null}
+          </footer>
+        </section>
+      </div>,
+      document.body
+    );
+  }
+
+  return createPortal(
     <div
       className="request-wizard-backdrop"
       onMouseDown={(event) => {
@@ -1117,6 +2165,7 @@ export function RequestIntakeWizard({
       }}
     >
       <section
+        ref={wizardModalRef}
         className="request-wizard-modal"
         role="dialog"
         aria-modal="true"
@@ -1789,6 +2838,7 @@ export function RequestIntakeWizard({
           )}
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
