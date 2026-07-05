@@ -1,10 +1,12 @@
 export type ThemeMode = "system" | "light" | "dark";
 export type AccentTheme = "blue" | "violet" | "teal" | "orange";
+export type MotionMode = "luxurious" | "subtle";
 export type DateFormat = "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD";
 
 export type UserPreferencesRecord = {
   themeMode: ThemeMode;
   accentTheme: AccentTheme;
+  motionMode: MotionMode;
 };
 
 export type WorkspaceSettingsRecord = {

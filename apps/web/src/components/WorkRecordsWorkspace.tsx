@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight, Plus, Save, SlidersHorizontal, X } from "lucide-react";
 import { canRole } from "@/lib/auth/permissions";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
@@ -85,6 +86,7 @@ function statusClass(status: string) {
 }
 
 export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
+  const searchParams = useSearchParams();
   const { user } = useCurrentUser();
   const [records, setRecords] = useState<WorkRecord[]>([]);
   const [clients, setClients] = useState<ClientRecord[]>([]);
@@ -96,7 +98,9 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const [message, setMessage] = useState(`Loading ${title.toLowerCase()} from Pulse...`);
   const [saving, setSaving] = useState(false);
   const [documentRecordId, setDocumentRecordId] = useState("");
+  const [focusedRecordId, setFocusedRecordId] = useState("");
   const canWrite = canRole(user?.role, "crm:write");
+  const requestedRecordId = searchParams.get("record") ?? "";
 
   const statuses =
     kind === "quotes" ? quoteStatuses : kind === "projects" ? projectStatuses : invoiceStatuses;
@@ -121,6 +125,26 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     }
     void load();
   }, [kind, title]);
+
+  useEffect(() => {
+    if (!requestedRecordId || !records.some((record) => record.id === requestedRecordId)) {
+      return;
+    }
+    setActiveFilter("All");
+    setFocusedRecordId(requestedRecordId);
+    const focusTimer = window.setTimeout(() => {
+      const row = document.querySelector<HTMLElement>(
+        `[data-work-record="${CSS.escape(requestedRecordId)}"]`
+      );
+      row?.scrollIntoView({ block: "center", behavior: "smooth" });
+      row?.focus({ preventScroll: true });
+    }, 80);
+    const clearTimer = window.setTimeout(() => setFocusedRecordId(""), 2600);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [records, requestedRecordId]);
 
   const filters = useMemo(
     () => ["All", ...Array.from(new Set(records.map(recordStatus)))],
@@ -254,7 +278,12 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
           <tbody>
             {visibleRecords.map((record) => (
               <Fragment key={record.id}>
-              <tr key={record.id}>
+              <tr
+                key={record.id}
+                data-work-record={record.id}
+                tabIndex={-1}
+                className={focusedRecordId === record.id ? "work-record-focused" : undefined}
+              >
                 <td><strong>{recordNumber(record)}</strong></td>
                 <td>{record.title}<br /><span className="table-muted">{"requestNumber" in record && record.requestNumber ? `From ${record.requestNumber}` : "quoteId" in record && record.quoteNumber ? `From ${record.quoteNumber}` : "invoiceNumber" in record && record.projectNumber ? `From ${record.projectNumber}` : "Database record"}</span></td>
                 <td>{record.clientName || "Unlinked"}</td>

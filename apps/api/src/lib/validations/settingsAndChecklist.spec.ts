@@ -30,11 +30,18 @@ test("template rules cannot target a trade and request type together", () => {
 test("appearance accepts only supported presets", () => {
   assert.equal(userPreferencesSchema.safeParse({
     themeMode: "system",
-    accentTheme: "teal"
+    accentTheme: "teal",
+    motionMode: "luxurious"
   }).success, true);
   assert.equal(userPreferencesSchema.safeParse({
     themeMode: "sepia",
-    accentTheme: "teal"
+    accentTheme: "teal",
+    motionMode: "subtle"
+  }).success, false);
+  assert.equal(userPreferencesSchema.safeParse({
+    themeMode: "dark",
+    accentTheme: "blue",
+    motionMode: "dizzy"
   }).success, false);
 });
 

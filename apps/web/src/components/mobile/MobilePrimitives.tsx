@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, ReactNode, RefObject } from "react";
+import { m } from "motion/react";
 
 type MobileNavItem = {
   href: string;
@@ -14,12 +15,20 @@ type MobileBottomNavProps = {
   items: readonly MobileNavItem[];
   activeKey: string;
   pathname: string;
+  moreOpen?: boolean;
+  onMoreClick?: () => void;
+  onNavigate?: (href: string) => void;
+  moreButtonRef?: RefObject<HTMLButtonElement | null>;
 };
 
 export function MobileBottomNav({
   items,
   activeKey,
-  pathname
+  pathname,
+  moreOpen = false,
+  onMoreClick,
+  onNavigate,
+  moreButtonRef
 }: MobileBottomNavProps) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Pulse mobile navigation">
@@ -30,15 +39,47 @@ export function MobileBottomNav({
           pathname === item.href ||
           (item.key === "requests" && pathname === "/leads") ||
           (item.key === "clients" && pathname.startsWith("/clients"));
+        const content = (
+          <>
+            {active ? (
+              <m.span
+                className="mobile-nav-active-indicator"
+                layoutId="mobile-navigation-active"
+                transition={{ type: "spring", stiffness: 430, damping: 34 }}
+              />
+            ) : null}
+            <Icon size={19} strokeWidth={1.9} />
+            <span>{item.label}</span>
+          </>
+        );
+
+        if (item.key === "more") {
+          return (
+            <button
+              key={item.key}
+              ref={moreButtonRef}
+              className={active ? "mobile-bottom-nav-link active" : "mobile-bottom-nav-link"}
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={moreOpen}
+              aria-controls="pulse-mobile-more"
+              aria-current={active ? "page" : undefined}
+              onClick={onMoreClick}
+            >
+              {content}
+            </button>
+          );
+        }
 
         return (
           <Link
             key={item.key}
             className={active ? "mobile-bottom-nav-link active" : "mobile-bottom-nav-link"}
             href={item.href}
+            aria-current={active ? "page" : undefined}
+            onNavigate={() => onNavigate?.(item.href)}
           >
-            <Icon size={19} strokeWidth={1.9} />
-            <span>{item.label}</span>
+            {content}
           </Link>
         );
       })}

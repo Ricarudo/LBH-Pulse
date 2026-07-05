@@ -7,6 +7,7 @@ import type {
 } from "@/lib/validations/settings";
 import type {
   AccentTheme,
+  MotionMode,
   ThemeMode,
   UserPreferencesRecord,
   WorkspaceSettingsRecord
@@ -24,12 +25,13 @@ const defaultWorkspaceSettings = {
 export async function getUserPreferences(userId: string): Promise<UserPreferencesRecord> {
   const user = await prisma.localUser.findUniqueOrThrow({
     where: { id: userId },
-    select: { themeMode: true, accentTheme: true }
+    select: { themeMode: true, accentTheme: true, motionMode: true }
   });
 
   return {
     themeMode: user.themeMode as ThemeMode,
-    accentTheme: user.accentTheme as AccentTheme
+    accentTheme: user.accentTheme as AccentTheme,
+    motionMode: user.motionMode as MotionMode
   };
 }
 
@@ -40,12 +42,13 @@ export async function updateUserPreferences(
   const user = await prisma.localUser.update({
     where: { id: userId },
     data: input,
-    select: { themeMode: true, accentTheme: true }
+    select: { themeMode: true, accentTheme: true, motionMode: true }
   });
 
   return {
     themeMode: user.themeMode as ThemeMode,
-    accentTheme: user.accentTheme as AccentTheme
+    accentTheme: user.accentTheme as AccentTheme,
+    motionMode: user.motionMode as MotionMode
   };
 }
 

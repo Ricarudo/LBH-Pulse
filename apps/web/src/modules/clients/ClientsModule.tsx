@@ -20,6 +20,7 @@ import { formatWorkspaceDate } from "@/lib/formatting";
 import {
   ArrowLeft,
   Building2,
+  FileSpreadsheet,
   Filter,
   Plus,
   Search,
@@ -304,6 +305,10 @@ export function ClientsModule() {
           </div>
         </div>
         <div className="clients-hero-actions">
+          <Link className="toolbar-button" href="/clients/bulk">
+            <FileSpreadsheet size={17} />
+            Import / Export
+          </Link>
           {canWriteCrm ? (
             <button className="primary-button" type="button" onClick={openQuickCreateDialog}>
               <Plus size={17} />

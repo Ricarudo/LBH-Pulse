@@ -11,6 +11,7 @@ import {
   Palette,
   Plug,
   ShieldCheck,
+  Sparkles,
   UserRound,
   UsersRound
 } from "lucide-react";
@@ -19,7 +20,12 @@ import { canRole } from "@/lib/auth/permissions";
 import { usePulsePreferences } from "@/components/PulseShell";
 import { SettingsAccountsSection } from "@/components/SettingsAccountsSection";
 import { SettingsChecklistsSection } from "@/components/SettingsChecklistsSection";
-import type { ThemeMode, AccentTheme, WorkspaceSettingsRecord } from "@/types/settings";
+import type {
+  ThemeMode,
+  AccentTheme,
+  UserPreferencesRecord,
+  WorkspaceSettingsRecord
+} from "@/types/settings";
 
 export type SettingsSection =
   | "account"
@@ -130,10 +136,10 @@ const accents: Array<{ value: AccentTheme; label: string }> = [
 ];
 
 function AppearanceSection() {
-  const { themeMode, accentTheme, saveAppearance } = usePulsePreferences();
+  const { themeMode, accentTheme, motionMode, saveAppearance } = usePulsePreferences();
   const [message, setMessage] = useState("");
 
-  async function update(next: { themeMode: ThemeMode; accentTheme: AccentTheme }) {
+  async function update(next: UserPreferencesRecord) {
     try {
       setMessage("Saving…");
       await saveAppearance(next);
@@ -152,7 +158,7 @@ function AppearanceSection() {
         </div>
         <div className="appearance-choice-grid">
           {modes.map((mode) => (
-            <button key={mode.value} className={themeMode === mode.value ? "appearance-choice selected" : "appearance-choice"} onClick={() => void update({ themeMode: mode.value, accentTheme })}>
+            <button key={mode.value} className={themeMode === mode.value ? "appearance-choice selected" : "appearance-choice"} onClick={() => void update({ themeMode: mode.value, accentTheme, motionMode })}>
               <span className={`appearance-preview ${mode.value}`} />
               <strong>{mode.label}{themeMode === mode.value ? <Check size={16} /> : null}</strong>
               <small>{mode.description}</small>
@@ -164,13 +170,53 @@ function AppearanceSection() {
         <div className="settings-card-heading"><div><h2>Accent color</h2><p>Used for navigation, focus, and primary actions.</p></div></div>
         <div className="accent-choice-row">
           {accents.map((accent) => (
-            <button key={accent.value} className={accentTheme === accent.value ? "accent-choice selected" : "accent-choice"} onClick={() => void update({ themeMode, accentTheme: accent.value })}>
+            <button key={accent.value} className={accentTheme === accent.value ? "accent-choice selected" : "accent-choice"} onClick={() => void update({ themeMode, accentTheme: accent.value, motionMode })}>
               <span className={`accent-swatch ${accent.value}`} />
               {accent.label}{accentTheme === accent.value ? <Check size={15} /> : null}
             </button>
           ))}
         </div>
         <p className="settings-inline-message" aria-live="polite">{message}</p>
+      </section>
+      <section className="settings-card">
+        <div className="settings-card-heading">
+          <div className="settings-icon-box"><Sparkles size={20} /></div>
+          <div>
+            <h2>Motion</h2>
+            <p>Choose the pace of transitions and interaction feedback across Pulse.</p>
+          </div>
+        </div>
+        <div className="motion-setting-row">
+          <div>
+            <strong>Use subtle motion</strong>
+            <span>
+              {motionMode === "subtle"
+                ? "Short, restrained transitions for faster visual scanning."
+                : "Layered page movement, spring feedback, and animated navigation."}
+            </span>
+          </div>
+          <button
+            className={motionMode === "subtle" ? "toggle on" : "toggle"}
+            type="button"
+            role="switch"
+            aria-checked={motionMode === "subtle"}
+            aria-label="Use subtle motion"
+            onClick={() => void update({
+              themeMode,
+              accentTheme,
+              motionMode: motionMode === "subtle" ? "luxurious" : "subtle"
+            })}
+          >
+            <span className="sr-only">
+              {motionMode === "subtle" ? "Disable subtle motion" : "Enable subtle motion"}
+            </span>
+          </button>
+        </div>
+        <div className="motion-preview" data-mode={motionMode} aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
       </section>
     </div>
   );

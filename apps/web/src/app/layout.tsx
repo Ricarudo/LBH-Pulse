@@ -12,11 +12,13 @@ const themeScript = `
   try {
     const mode = window.localStorage.getItem("pulse.themeMode") || "system";
     const accent = window.localStorage.getItem("pulse.accentTheme") || "blue";
+    const motion = window.localStorage.getItem("pulse.motionMode") || "luxurious";
     const theme = mode === "system"
       ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
       : mode;
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.accent = accent;
+    document.documentElement.dataset.motion = motion;
   } catch {
   }
 })();

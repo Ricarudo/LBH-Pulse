@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const userPreferencesSchema = z.object({
   themeMode: z.enum(["system", "light", "dark"]),
-  accentTheme: z.enum(["blue", "violet", "teal", "orange"])
+  accentTheme: z.enum(["blue", "violet", "teal", "orange"]),
+  motionMode: z.enum(["luxurious", "subtle"])
 });
 
 export const workspaceSettingsSchema = z.object({

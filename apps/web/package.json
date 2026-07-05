@@ -7,6 +7,7 @@
     "build": "npm run prisma:generate && next build",
     "start": "next start --hostname 0.0.0.0 --port 4300",
     "typecheck": "npm run prisma:generate && node scripts/clear-next-types.mjs && next typegen && tsc --noEmit",
+    "test": "node --test --import tsx src/lib/navigation.spec.ts",
     "responsive:check": "node scripts/check-responsive-breakpoints.mjs",
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push && tsx prisma/ensure-constraints.ts",
@@ -18,10 +19,11 @@
     "@prisma/adapter-pg": "7.8.0",
     "@prisma/client": "7.8.0",
     "lucide-react": "^1.14.0",
+    "motion": "^12.42.2",
     "next": "16.2.6",
+    "pg": "^8.16.3",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "pg": "^8.16.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

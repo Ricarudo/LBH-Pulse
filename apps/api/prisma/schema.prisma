@@ -229,6 +229,7 @@ model LocalUser {
   authProvider String     @default("LOCAL")
   themeMode    String     @default("system")
   accentTheme  String     @default("blue")
+  motionMode   String     @default("luxurious")
   entraObjectId String?
   lastLoginAt  DateTime?
   deactivatedAt DateTime?

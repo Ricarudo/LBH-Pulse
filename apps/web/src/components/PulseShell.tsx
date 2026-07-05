@@ -7,37 +7,51 @@ import {
   FormEvent,
   useContext,
   useEffect,
+  useRef,
   useState
 } from "react";
+import {
+  AnimatePresence,
+  LazyMotion,
+  MotionConfig,
+  domAnimation,
+  m
+} from "motion/react";
 import type { AuthenticatedUser } from "@/lib/auth/permissions";
 import type {
   AccentTheme,
+  MotionMode,
   ThemeMode,
   UserPreferencesRecord,
   WorkspaceSettingsRecord
 } from "@/types/settings";
 import { setWorkspaceFormatting } from "@/lib/formatting";
 import { responsiveBreakpoints } from "@/lib/responsive";
+import {
+  getMobileActiveKey,
+  isNavigationItemActive,
+  mobileOverflowGroups,
+  mobilePrimaryItems,
+  navigationGroups,
+  type PulsePage
+} from "@/lib/navigation";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import { MobileBottomNav } from "@/components/mobile/MobilePrimitives";
 import { PageTransition } from "@/components/PageTransition";
 import {
-  BarChart3,
-  Building2,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
-  FileText,
-  FolderKanban,
-  Home,
-  Menu,
-  ReceiptText,
-  Search,
-  Settings,
-  UserRound
+  LogOut,
+  Palette,
+  UserRound,
+  X
 } from "lucide-react";
 
 const themeModeStorageKey = "pulse.themeMode";
 const accentStorageKey = "pulse.accentTheme";
+const motionModeStorageKey = "pulse.motionMode";
+const sidebarStorageKey = "pulse.sidebarCollapsed";
 
 const defaultWorkspace: WorkspaceSettingsRecord = {
   name: "R2 Communications",
@@ -51,6 +65,7 @@ const defaultWorkspace: WorkspaceSettingsRecord = {
 type PulsePreferencesContextValue = {
   themeMode: ThemeMode;
   accentTheme: AccentTheme;
+  motionMode: MotionMode;
   resolvedTheme: "light" | "dark";
   workspace: WorkspaceSettingsRecord;
   saveAppearance: (preferences: UserPreferencesRecord) => Promise<void>;
@@ -65,21 +80,6 @@ export function usePulsePreferences() {
   return value;
 }
 
-type PulsePage =
-  | "hub"
-  | "requests"
-  | "directory"
-  | "leads"
-  | "clients"
-  | "quotes"
-  | "projects"
-  | "procurement"
-  | "field"
-  | "billing"
-  | "statistics"
-  | "activity"
-  | "settings";
-
 type PulseShellProps = {
   activePage?: PulsePage;
   title?: string;
@@ -88,26 +88,6 @@ type PulseShellProps = {
   hideHeader?: boolean;
   children: React.ReactNode;
 };
-
-const navItems = [
-  { href: "/hub", label: "Hub", key: "hub", icon: Home },
-  { href: "/requests", label: "Requests", key: "requests", icon: UserRound },
-  { href: "/quotes", label: "Quotes", key: "quotes", icon: FileText },
-  { href: "/projects", label: "Projects", key: "projects", icon: FolderKanban },
-  { href: "/directory", label: "Directory", key: "directory", icon: Building2 },
-  { href: "/billing", label: "Billing", key: "billing", icon: ReceiptText },
-  { href: "/statistics", label: "Analytics", key: "statistics", icon: BarChart3 },
-  { href: "/settings", label: "Settings", key: "settings", icon: Settings }
-] as const;
-
-const mobileNavItems = [
-  { href: "/hub", label: "Dashboard", key: "hub", icon: Home },
-  { href: "/requests", label: "Requests", key: "requests", icon: UserRound },
-  { href: "/clients", label: "Clients", key: "clients", icon: Building2 },
-  { href: "/quotes", label: "Quotes", key: "quotes", icon: FileText },
-  { href: "/projects", label: "Projects", key: "projects", icon: FolderKanban },
-  { href: "/directory", label: "More", key: "more", icon: Menu }
-] as const;
 
 const pageLabels: Record<PulsePage, string> = {
   hub: "Dashboard",
@@ -124,13 +104,6 @@ const pageLabels: Record<PulsePage, string> = {
   activity: "Activity",
   settings: "Settings"
 };
-
-const devUserLabels = [
-  "Admin User / Administrator",
-  "Sales User / Sales",
-  "Project Manager / Project Manager",
-  "Technician User / Technician"
-];
 
 type ShellRouteMeta = {
   activePage: PulsePage;
@@ -296,11 +269,18 @@ function PulseShellFrame({
   const [loaded, setLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [pendingHref, setPendingHref] = useState("");
   const [themeMode, setThemeMode] = useState<ThemeMode>("system");
   const [accentTheme, setAccentTheme] = useState<AccentTheme>("blue");
+  const [motionMode, setMotionMode] = useState<MotionMode>("luxurious");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
   const [workspace, setWorkspace] = useState<WorkspaceSettingsRecord>(defaultWorkspace);
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreDialogRef = useRef<HTMLDivElement>(null);
+  const hasSidebarPreferenceRef = useRef(false);
   const pathname = usePathname();
   const routeMeta = getShellRouteMeta(pathname);
   const activeShellPage = activePage ?? routeMeta.activePage;
@@ -314,23 +294,25 @@ function PulseShellFrame({
     pathname === "/contacts" ||
     pathname === "/settings" ||
     pathname.startsWith("/settings/");
-  const mobileActiveKey = pathname.startsWith("/clients")
-    ? "clients"
-    : activeShellPage === "directory" ||
-        activeShellPage === "billing" ||
-        activeShellPage === "statistics" ||
-        activeShellPage === "settings" ||
-        activeShellPage === "procurement" ||
-        activeShellPage === "field" ||
-        activeShellPage === "activity"
-      ? "more"
-      : activeShellPage;
+  const mobileActiveKey = getMobileActiveKey(pathname);
+  const environmentLabel =
+    process.env.NEXT_PUBLIC_PULSE_ENV_LABEL ||
+    (process.env.NODE_ENV === "development" ? "Local Dev" : "");
 
   useEffect(() => {
     const savedMode = window.localStorage.getItem(themeModeStorageKey);
     const savedAccent = window.localStorage.getItem(accentStorageKey);
+    const savedMotion = window.localStorage.getItem(motionModeStorageKey);
+    const savedSidebar = window.localStorage.getItem(sidebarStorageKey);
     if (savedMode === "system" || savedMode === "light" || savedMode === "dark") setThemeMode(savedMode);
     if (savedAccent === "blue" || savedAccent === "violet" || savedAccent === "teal" || savedAccent === "orange") setAccentTheme(savedAccent);
+    if (savedMotion === "luxurious" || savedMotion === "subtle") setMotionMode(savedMotion);
+    if (savedSidebar === "true" || savedSidebar === "false") {
+      hasSidebarPreferenceRef.current = true;
+      setCollapsed(savedSidebar === "true");
+    } else {
+      setCollapsed(window.innerWidth < responsiveBreakpoints.largeDesktop);
+    }
 
     async function loadSession() {
       try {
@@ -364,11 +346,12 @@ function PulseShellFrame({
       setResolvedTheme(next);
       document.documentElement.dataset.theme = next;
       document.documentElement.dataset.accent = initialAccent;
+      document.documentElement.dataset.motion = motionMode;
     }
     apply();
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [themeMode, accentTheme]);
+  }, [themeMode, accentTheme, motionMode]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -382,8 +365,10 @@ function PulseShellFrame({
           const data = await preferencesResponse.json() as { preferences: UserPreferencesRecord };
           setThemeMode(data.preferences.themeMode);
           setAccentTheme(data.preferences.accentTheme);
+          setMotionMode(data.preferences.motionMode);
           window.localStorage.setItem(themeModeStorageKey, data.preferences.themeMode);
           window.localStorage.setItem(accentStorageKey, data.preferences.accentTheme);
+          window.localStorage.setItem(motionModeStorageKey, data.preferences.motionMode);
         }
         if (workspaceResponse.ok) {
           const data = await workspaceResponse.json() as { workspace: WorkspaceSettingsRecord };
@@ -399,8 +384,8 @@ function PulseShellFrame({
 
   useEffect(() => {
     function handleResize() {
-      if (window.innerWidth < responsiveBreakpoints.desktop) {
-        setCollapsed(true);
+      if (!hasSidebarPreferenceRef.current) {
+        setCollapsed(window.innerWidth < responsiveBreakpoints.largeDesktop);
       }
     }
 
@@ -409,12 +394,137 @@ function PulseShellFrame({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  useEffect(() => {
+    setPendingHref("");
+    setMoreOpen(false);
+    setProfileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!pendingHref) return;
+    const timer = window.setTimeout(() => setPendingHref(""), 1200);
+    return () => window.clearTimeout(timer);
+  }, [pendingHref]);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+
+    function closeProfile() {
+      setProfileOpen(false);
+      window.setTimeout(() => profileButtonRef.current?.focus(), 0);
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+      if (
+        !profileMenuRef.current?.contains(target) &&
+        !profileButtonRef.current?.contains(target)
+      ) {
+        closeProfile();
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeProfile();
+        return;
+      }
+      if (event.key === "Tab") {
+        setProfileOpen(false);
+        return;
+      }
+      if (
+        event.key === "ArrowDown" ||
+        event.key === "ArrowUp" ||
+        event.key === "Home" ||
+        event.key === "End"
+      ) {
+        const items = Array.from(
+          profileMenuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []
+        );
+        if (!items.length) return;
+        event.preventDefault();
+        const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+        const nextIndex =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? items.length - 1
+              : event.key === "ArrowDown"
+                ? (currentIndex + 1 + items.length) % items.length
+                : (currentIndex - 1 + items.length) % items.length;
+        items[nextIndex]?.focus();
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.setTimeout(() => {
+      profileMenuRef.current
+        ?.querySelector<HTMLElement>('[role="menuitem"]')
+        ?.focus();
+    }, 0);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [profileOpen]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function closeMore() {
+      setMoreOpen(false);
+      window.setTimeout(() => moreButtonRef.current?.focus(), 0);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMore();
+        return;
+      }
+      if (event.key !== "Tab" || !moreDialogRef.current) return;
+      const focusable = Array.from(
+        moreDialogRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    window.setTimeout(() => {
+      moreDialogRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
+    }, 0);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [moreOpen]);
+
   async function saveAppearance(preferences: UserPreferencesRecord) {
-    const previous = { themeMode, accentTheme };
+    const previous = { themeMode, accentTheme, motionMode };
     setThemeMode(preferences.themeMode);
     setAccentTheme(preferences.accentTheme);
+    setMotionMode(preferences.motionMode);
     window.localStorage.setItem(themeModeStorageKey, preferences.themeMode);
     window.localStorage.setItem(accentStorageKey, preferences.accentTheme);
+    window.localStorage.setItem(motionModeStorageKey, preferences.motionMode);
     const response = await fetch("/api/settings/preferences", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -423,6 +533,8 @@ function PulseShellFrame({
     if (!response.ok) {
       setThemeMode(previous.themeMode);
       setAccentTheme(previous.accentTheme);
+      setMotionMode(previous.motionMode);
+      window.localStorage.setItem(motionModeStorageKey, previous.motionMode);
       throw new Error("Unable to save appearance preferences.");
     }
   }
@@ -431,10 +543,18 @@ function PulseShellFrame({
     if (window.innerWidth < responsiveBreakpoints.desktop) {
       return;
     }
-    setCollapsed((value) => !value);
+    setCollapsed((value) => {
+      const next = !value;
+      hasSidebarPreferenceRef.current = true;
+      window.localStorage.setItem(sidebarStorageKey, String(next));
+      return next;
+    });
   }
 
-  const canOpenSettings = Boolean(currentUser);
+  function beginNavigation(href: string) {
+    setPendingHref(href);
+  }
+
   const pageTitle = shellTitle || pageLabels[activeShellPage];
   const breadcrumbLabel = pageTitle;
   const pageIntro = shellCompactHeader ? "" : shellSubtitle;
@@ -521,10 +641,6 @@ function PulseShellFrame({
     } catch {
       setChangePasswordError("Unable to reach the local auth service.");
     }
-  }
-
-  function handleGlobalSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
   }
 
   if (!loaded) {
@@ -634,6 +750,7 @@ function PulseShellFrame({
       <PulsePreferencesContext.Provider value={{
         themeMode,
         accentTheme,
+        motionMode,
         resolvedTheme,
         workspace,
         saveAppearance,
@@ -642,146 +759,258 @@ function PulseShellFrame({
           setWorkspaceFormatting(next);
         }
       }}>
-      <div className={collapsed ? "app-shell sidebar-collapsed" : "app-shell"}>
-      <header className="global-topbar">
-        <Link className="global-brand" href="/hub" aria-label="Pulse dashboard">
-          <img src="/pulse-mark.svg" alt="" />
-          <span>Pulse</span>
-        </Link>
-
-        <form className="global-search" role="search" onSubmit={handleGlobalSearch}>
-          <Search size={18} />
-          <input
-            aria-label="Global app-wide search"
-            placeholder="Search across Pulse..."
-            type="search"
-            value={searchValue}
-            onChange={(event) => setSearchValue(event.target.value)}
-          />
-          <span>App-wide</span>
-        </form>
-
-        <div className="global-actions">
-          <span className="workspace-context">{workspace.name}</span>
-          <span className="environment-badge">Local Dev</span>
-          <button
-            className="profile-chip"
-            type="button"
-            aria-expanded={profileOpen}
-            onClick={() => {
-              setProfileOpen((value) => !value);
-            }}
-          >
-            <div className="avatar">
-              {currentUser.name
-                .split(" ")
-                .map((part) => part[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase()}
-            </div>
-            <div>
-              <strong>{currentUser.name}</strong>
-              <span>{currentUser.roleLabel}</span>
-            </div>
-            <ChevronDown size={16} />
-          </button>
-          <span className="role-indicator">{currentUser.roleLabel}</span>
-          {profileOpen ? (
-            <div className="mini-popover profile-popover">
-              <strong>{currentUser.name}</strong>
-              <p>{currentUser.email}</p>
-              <p>{currentUser.roleLabel}</p>
-              <p>{workspace.name}</p>
-              <div className="profile-menu-section">
-                <span>Switch role / dev user</span>
-                {devUserLabels.map((label) => (
-                  <button key={label} type="button" disabled>
-                    {label}
-                  </button>
-                ))}
-                <small>Sign out, then use the local login screen to switch users.</small>
-              </div>
-              <Link href="/settings/account" onClick={() => setProfileOpen(false)}>
-                Settings
-              </Link>
-              <Link href="/settings/appearance" onClick={() => setProfileOpen(false)}>
-                Appearance
-              </Link>
-              <button type="button" onClick={() => void logout()}>
-                Sign out
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </header>
-
-      <div className="shell-body">
-        <aside className="sidebar" aria-label="Pulse navigation">
-          <div className="sidebar-toggle-row">
-            <button
-              className="collapse-button"
-              type="button"
-              onClick={() => handleCollapsedToggle()}
-              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-              title={collapsed ? "Expand navigation" : "Collapse navigation"}
-            >
-              {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
-              <span>{collapsed ? "Expand" : "Collapse"}</span>
-            </button>
-          </div>
-
-          <nav className="nav-list">
-            {navItems
-              .filter((item) => item.key !== "settings" || canOpenSettings)
-              .map((item) => (
+        <LazyMotion features={domAnimation}>
+          <MotionConfig reducedMotion="user">
+            <div className={collapsed ? "app-shell sidebar-collapsed" : "app-shell"}>
+              <header className="global-topbar">
                 <Link
-                  key={item.key}
-                  className={
-                    activeShellPage === item.key ||
-                    pathname === item.href ||
-                    (item.key === "requests" && pathname === "/leads") ||
-                    (item.key === "directory" &&
-                      (pathname.startsWith("/clients") ||
-                        pathname.startsWith("/contacts")))
-                      ? "nav-link nav-link-active"
-                      : "nav-link"
-                  }
-                  href={item.href}
-                  title={collapsed ? item.label : undefined}
+                  className="global-brand"
+                  href="/hub"
+                  aria-label="Pulse dashboard"
+                  onNavigate={() => beginNavigation("/hub")}
                 >
-                  <item.icon size={20} strokeWidth={1.9} />
-                  <span>{item.label}</span>
+                  <img src="/pulse-mark.svg" alt="" />
+                  <span>Pulse</span>
                 </Link>
-              ))}
-          </nav>
-        </aside>
 
-        <main className="main">
-          {!shouldHideHeader ? (
-            <header className="page-header">
-              <div>
-                <nav className="breadcrumb" aria-label="Breadcrumb">
-                  <Link href="/hub">Home</Link>
-                  <span>/</span>
-                  <span>{breadcrumbLabel}</span>
-                </nav>
-                <h1 className="page-title">{pageTitle}</h1>
-                {pageIntro ? <p className="page-subtitle">{pageIntro}</p> : null}
+                <GlobalSearch onNavigationStart={beginNavigation} />
+
+                <div className="global-actions">
+                  <span className="workspace-context" title={workspace.name}>
+                    {workspace.name}
+                  </span>
+                  {environmentLabel ? (
+                    <span className="environment-badge">{environmentLabel}</span>
+                  ) : null}
+                  <button
+                    ref={profileButtonRef}
+                    className="profile-chip"
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-controls="pulse-profile-menu"
+                    aria-expanded={profileOpen}
+                    onClick={() => setProfileOpen((value) => !value)}
+                  >
+                    <div className="avatar">
+                      {currentUser.name
+                        .split(" ")
+                        .map((part) => part[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()}
+                    </div>
+                    <div>
+                      <strong>{currentUser.name}</strong>
+                      <span>{currentUser.roleLabel}</span>
+                    </div>
+                    <ChevronDown size={16} />
+                  </button>
+                  <AnimatePresence>
+                    {profileOpen ? (
+                      <m.div
+                        ref={profileMenuRef}
+                        id="pulse-profile-menu"
+                        className="mini-popover profile-popover"
+                        role="menu"
+                        initial={{ opacity: 0, y: -9, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -6, scale: 0.985 }}
+                        transition={{ duration: motionMode === "subtle" ? 0.14 : 0.24, ease: [0.22, 1, 0.36, 1] }}
+                      >
+                        <div className="profile-menu-identity">
+                          <div className="avatar">{currentUser.name.slice(0, 2).toUpperCase()}</div>
+                          <div>
+                            <strong>{currentUser.name}</strong>
+                            <p>{currentUser.email}</p>
+                            <span>{currentUser.roleLabel} · {workspace.name}</span>
+                          </div>
+                        </div>
+                        <div className="profile-menu-section compact">
+                          <span>Switch account</span>
+                          <small>Sign out, then choose another account on the local login screen.</small>
+                        </div>
+                        <Link
+                          href="/settings/account"
+                          role="menuitem"
+                          onNavigate={() => beginNavigation("/settings/account")}
+                        >
+                          <UserRound size={16} />
+                          Account settings
+                        </Link>
+                        <Link
+                          href="/settings/appearance"
+                          role="menuitem"
+                          onNavigate={() => beginNavigation("/settings/appearance")}
+                        >
+                          <Palette size={16} />
+                          Appearance
+                        </Link>
+                        <button role="menuitem" type="button" onClick={() => void logout()}>
+                          <LogOut size={16} />
+                          Sign out
+                        </button>
+                      </m.div>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
+                <AnimatePresence>
+                  {pendingHref ? (
+                    <m.div
+                      className="navigation-progress"
+                      aria-hidden="true"
+                      initial={{ scaleX: 0, opacity: 0 }}
+                      animate={{ scaleX: 0.82, opacity: 1 }}
+                      exit={{ scaleX: 1, opacity: 0 }}
+                      transition={{ duration: motionMode === "subtle" ? 0.18 : 0.42, ease: [0.22, 1, 0.36, 1] }}
+                    />
+                  ) : null}
+                </AnimatePresence>
+              </header>
+
+              <div className="shell-body">
+                <aside className="sidebar" aria-label="Pulse navigation">
+                  <div className="sidebar-toggle-row">
+                    <button
+                      className="collapse-button"
+                      type="button"
+                      onClick={handleCollapsedToggle}
+                      aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+                      title={collapsed ? "Expand navigation" : "Collapse navigation"}
+                    >
+                      {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+                      <span>{collapsed ? "Expand" : "Collapse"}</span>
+                    </button>
+                  </div>
+
+                  <nav className="nav-list">
+                    {navigationGroups.map((group) => (
+                      <div className="nav-section" key={group.label}>
+                        <span className="nav-section-label">{group.label}</span>
+                        {group.items.map((item) => {
+                          const active = isNavigationItemActive(pathname, item.key);
+                          return (
+                            <Link
+                              key={item.key}
+                              className={active ? "nav-link nav-link-active" : "nav-link"}
+                              href={item.href}
+                              title={collapsed ? item.label : undefined}
+                              aria-current={active ? "page" : undefined}
+                              onNavigate={() => beginNavigation(item.href)}
+                            >
+                              {active ? (
+                                <m.span
+                                  className="nav-active-indicator"
+                                  layoutId="desktop-navigation-active"
+                                  transition={{ type: "spring", stiffness: 430, damping: 36 }}
+                                />
+                              ) : null}
+                              <item.icon size={20} strokeWidth={1.9} />
+                              <span>{item.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </nav>
+                </aside>
+
+                <main className="main">
+                  {!shouldHideHeader ? (
+                    <header className="page-header">
+                      <div>
+                        <nav className="breadcrumb" aria-label="Breadcrumb">
+                          <Link href="/hub" onNavigate={() => beginNavigation("/hub")}>Home</Link>
+                          <span>/</span>
+                          <span>{breadcrumbLabel}</span>
+                        </nav>
+                        <h1 className="page-title">{pageTitle}</h1>
+                        {pageIntro ? <p className="page-subtitle">{pageIntro}</p> : null}
+                      </div>
+                    </header>
+                  ) : null}
+
+                  <PageTransition motionMode={motionMode}>{children}</PageTransition>
+                </main>
               </div>
-            </header>
-          ) : null}
 
-          <PageTransition>{children}</PageTransition>
-        </main>
-      </div>
-      <MobileBottomNav
-        activeKey={mobileActiveKey}
-        items={mobileNavItems}
-        pathname={pathname}
-      />
-    </div>
-    </PulsePreferencesContext.Provider>
+              <MobileBottomNav
+                activeKey={mobileActiveKey}
+                items={mobilePrimaryItems}
+                pathname={pathname}
+                moreOpen={moreOpen}
+                moreButtonRef={moreButtonRef}
+                onMoreClick={() => setMoreOpen(true)}
+                onNavigate={beginNavigation}
+              />
+
+              <AnimatePresence>
+                {moreOpen ? (
+                  <m.div
+                    className="shell-dialog-backdrop mobile-more-backdrop"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onMouseDown={(event) => {
+                      if (event.target === event.currentTarget) setMoreOpen(false);
+                    }}
+                  >
+                    <m.div
+                      ref={moreDialogRef}
+                      id="pulse-mobile-more"
+                      className="mobile-more-dialog"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="pulse-mobile-more-title"
+                      initial={{ opacity: 0, y: 54, scale: 0.975 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 32, scale: 0.985 }}
+                      transition={{ type: "spring", stiffness: 350, damping: 32 }}
+                    >
+                      <div className="mobile-more-heading">
+                        <div>
+                          <span>Pulse navigation</span>
+                          <h2 id="pulse-mobile-more-title">More</h2>
+                        </div>
+                        <button type="button" aria-label="Close navigation" onClick={() => setMoreOpen(false)}>
+                          <X size={20} />
+                        </button>
+                      </div>
+                      <div className="mobile-more-groups">
+                        {mobileOverflowGroups.map((group) => (
+                          <section key={group.label}>
+                            <h3>{group.label}</h3>
+                            <div>
+                              {group.items.map((item) => {
+                                const exactActive =
+                                  pathname === item.href ||
+                                  (item.href === "/clients" && pathname.startsWith("/clients")) ||
+                                  (item.href === "/contacts" && pathname.startsWith("/contacts")) ||
+                                  (item.href === "/settings" && pathname.startsWith("/settings"));
+                                return (
+                                  <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    aria-current={exactActive ? "page" : undefined}
+                                    className={exactActive ? "active" : undefined}
+                                    onNavigate={() => beginNavigation(item.href)}
+                                  >
+                                    <item.icon size={19} />
+                                    <span>{item.label}</span>
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    </m.div>
+                  </m.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          </MotionConfig>
+        </LazyMotion>
+      </PulsePreferencesContext.Provider>
     </PulseShellContext.Provider>
   );
 }
