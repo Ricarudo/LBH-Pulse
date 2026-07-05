@@ -92,7 +92,9 @@ export function SettingsAccountsSection({
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [revealedPassword, setRevealedPassword] = useState("");
+  const [secretBannerTitle, setSecretBannerTitle] = useState("Temporary password");
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [message, setMessage] = useState("Admin account controls are ready.");
@@ -149,6 +151,7 @@ export function SettingsAccountsSection({
 
   function updateCreateDraft(updates: Partial<CreateDraft>) {
     setCreateDraft((current) => ({ ...current, ...updates }));
+    setCreateError("");
     setMessage("You have unsaved account changes.");
   }
 
@@ -158,8 +161,19 @@ export function SettingsAccountsSection({
   }
 
   async function createAccount() {
+    if (!createDraft.name.trim() || !createDraft.email.trim()) {
+      setCreateError("Enter the user's name and a valid email address.");
+      return;
+    }
+
+    if (createDraft.password.length < 10) {
+      setCreateError("The temporary password must be at least 10 characters.");
+      return;
+    }
+
     try {
       setSaving(true);
+      setCreateError("");
       const data = await accountJson<AccountResponse>("/api/settings/accounts", {
         method: "POST",
         body: JSON.stringify(createDraft)
@@ -170,10 +184,11 @@ export function SettingsAccountsSection({
       setEditDraft(toEditDraft(data.user));
       setCreateDraft(blankCreateDraft);
       setRevealedPassword(createDraft.password);
+      setSecretBannerTitle(`${data.user.name} was created successfully`);
       setCreateOpen(false);
-      setMessage(`${data.user.name} can now sign in with a temporary password.`);
+      setMessage(`${data.user.name} can now sign in. They will be required to replace the temporary password at first sign-in.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to create Pulse account.");
+      setCreateError(error instanceof Error ? error.message : "Unable to create Pulse account.");
     } finally {
       setSaving(false);
     }
@@ -226,6 +241,7 @@ export function SettingsAccountsSection({
       setEditDraft(toEditDraft(data.user));
       setTemporaryPassword("");
       setRevealedPassword(temporaryPassword);
+      setSecretBannerTitle(`${data.user.name}'s password was reset successfully`);
       setMessage(`${data.user.name} must change password on next login.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to reset password.");
@@ -256,12 +272,13 @@ export function SettingsAccountsSection({
           <button className="primary-button" type="button" onClick={() => {
             const password = generateTemporaryPassword();
             setCreateDraft({ ...blankCreateDraft, password });
+            setCreateError("");
             setCreateOpen(true);
           }}><Plus size={17} />New user</button>
         </div>
       </div>
 
-      {revealedPassword ? <div className="settings-secret-banner" role="status"><div><strong>Temporary password</strong><p>Copy it now. It will not be shown again after you leave this screen.</p><code>{revealedPassword}</code></div><button className="toolbar-button compact" onClick={() => void navigator.clipboard.writeText(revealedPassword)}><Copy size={16} />Copy</button><button className="icon-button" aria-label="Dismiss temporary password" onClick={() => setRevealedPassword("")}><X size={16} /></button></div> : null}
+      {revealedPassword ? <div className="settings-secret-banner" role="status"><CheckCircle2 size={20} aria-hidden="true" /><div><strong>{secretBannerTitle}</strong><p>Copy this temporary password now. The user must replace it at first sign-in, and it will not be shown again.</p><code>{revealedPassword}</code></div><button className="toolbar-button compact" onClick={() => void navigator.clipboard.writeText(revealedPassword)}><Copy size={16} />Copy</button><button className="icon-button" aria-label="Dismiss temporary password" onClick={() => setRevealedPassword("")}><X size={16} /></button></div> : null}
       {message ? <div className="settings-inline-message" aria-live="polite">{message}</div> : null}
 
       <div className="settings-table-toolbar">
@@ -376,16 +393,19 @@ export function SettingsAccountsSection({
         </aside>
       </div>
 
-      {createOpen ? <div className="settings-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false); }}><section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="create-user-title"><div className="settings-section-title"><div><h2 id="create-user-title">Create local user</h2><p>The user must change this temporary password at first sign-in.</p></div><button className="icon-button" aria-label="Close" onClick={() => setCreateOpen(false)}><X size={18} /></button></div>
+      {createOpen ? <div className="settings-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false); }}><form className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="create-user-title" onSubmit={(event) => { event.preventDefault(); void createAccount(); }}><div className="settings-section-title"><div><h2 id="create-user-title">Create local user</h2><p>Create their account with a temporary password.</p></div><button type="button" className="icon-button" aria-label="Close" onClick={() => setCreateOpen(false)}><X size={18} /></button></div>
+        <div className="settings-temporary-password-note"><KeyRound size={18} aria-hidden="true" /><div><strong>This password is temporary</strong><p>The user will be required to replace it when they sign in for the first time.</p></div></div>
         <div className="settings-form settings-create-user-form">
-          <label><span>Name</span><input autoFocus value={createDraft.name} onChange={(event) => updateCreateDraft({ name: event.target.value })} /></label>
-          <label><span>Email</span><input type="email" value={createDraft.email} onChange={(event) => updateCreateDraft({ email: event.target.value })} /></label>
+          <label><span>Name</span><input autoFocus required value={createDraft.name} onChange={(event) => updateCreateDraft({ name: event.target.value })} /></label>
+          <label><span>Email</span><input type="email" required value={createDraft.email} onChange={(event) => updateCreateDraft({ email: event.target.value })} /></label>
           <label><span>Role</span><select value={createDraft.role} onChange={(event) => updateCreateDraft({ role: event.target.value as LocalRole })}>{roleOptions.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label>
-          <label><span>Temporary password</span><div className="settings-input-action"><input value={createDraft.password} minLength={10} onChange={(event) => updateCreateDraft({ password: event.target.value })} /><button type="button" onClick={() => updateCreateDraft({ password: generateTemporaryPassword() })}>Regenerate</button></div></label>
+          <label><span>Temporary password</span><div className="settings-input-action"><input required aria-describedby="create-password-requirements" aria-invalid={createDraft.password.length > 0 && createDraft.password.length < 10} value={createDraft.password} minLength={10} onChange={(event) => updateCreateDraft({ password: event.target.value })} /><button type="button" onClick={() => updateCreateDraft({ password: generateTemporaryPassword() })}>Regenerate</button></div></label>
+          <div id="create-password-requirements" className={`settings-password-requirement ${createDraft.password.length >= 10 ? "met" : ""}`}><CheckCircle2 size={15} aria-hidden="true" /><span>At least 10 characters {createDraft.password ? `(${createDraft.password.length}/10)` : ""}</span></div>
           <label className="settings-checkbox-row"><input type="checkbox" checked={createDraft.active} onChange={(event) => updateCreateDraft({ active: event.target.checked })} /><span>Active account</span></label>
         </div>
-        <div className="settings-modal-actions"><button className="toolbar-button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary-button" onClick={() => void createAccount()} disabled={saving}>{saving ? "Creating…" : "Create user"}</button></div>
-      </section></div> : null}
+        {createError ? <div className="settings-form-error" role="alert">{createError}</div> : null}
+        <div className="settings-modal-actions"><button type="button" className="toolbar-button" onClick={() => setCreateOpen(false)}>Cancel</button><button type="submit" className="primary-button" disabled={saving || createDraft.password.length < 10}>{saving ? "Creating user…" : "Create user"}</button></div>
+      </form></div> : null}
     </section>
   );
 }
