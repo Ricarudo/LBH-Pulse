@@ -17,6 +17,7 @@ import type {
   WorkspaceSettingsRecord
 } from "@/types/settings";
 import { setWorkspaceFormatting } from "@/lib/formatting";
+import { responsiveBreakpoints } from "@/lib/responsive";
 import { MobileBottomNav } from "@/components/mobile/MobilePrimitives";
 import { PageTransition } from "@/components/PageTransition";
 import {
@@ -84,6 +85,7 @@ type PulseShellProps = {
   title?: string;
   subtitle?: string;
   compactHeader?: boolean;
+  hideHeader?: boolean;
   children: React.ReactNode;
 };
 
@@ -253,6 +255,7 @@ export function PulseShell({
   title,
   subtitle,
   compactHeader = false,
+  hideHeader = false,
   children
 }: PulseShellProps) {
   const hasParentShell = useContext(PulseShellContext);
@@ -267,6 +270,7 @@ export function PulseShell({
       title={title}
       subtitle={subtitle}
       compactHeader={compactHeader}
+      hideHeader={hideHeader}
     >
       {children}
     </PulseShellFrame>
@@ -278,6 +282,7 @@ function PulseShellFrame({
   title,
   subtitle,
   compactHeader = false,
+  hideHeader = false,
   children
 }: PulseShellProps) {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
@@ -302,6 +307,13 @@ function PulseShellFrame({
   const shellTitle = title ?? routeMeta.title;
   const shellSubtitle = subtitle ?? routeMeta.subtitle;
   const shellCompactHeader = compactHeader || routeMeta.compactHeader === true;
+  const shouldHideHeader =
+    hideHeader ||
+    pathname === "/requests" ||
+    pathname === "/clients" ||
+    pathname === "/contacts" ||
+    pathname === "/settings" ||
+    pathname.startsWith("/settings/");
   const mobileActiveKey = pathname.startsWith("/clients")
     ? "clients"
     : activeShellPage === "directory" ||
@@ -387,7 +399,7 @@ function PulseShellFrame({
 
   useEffect(() => {
     function handleResize() {
-      if (window.innerWidth < 980) {
+      if (window.innerWidth < responsiveBreakpoints.desktop) {
         setCollapsed(true);
       }
     }
@@ -416,7 +428,7 @@ function PulseShellFrame({
   }
 
   function handleCollapsedToggle() {
-    if (window.innerWidth < 980) {
+    if (window.innerWidth < responsiveBreakpoints.desktop) {
       return;
     }
     setCollapsed((value) => !value);
@@ -746,17 +758,19 @@ function PulseShellFrame({
         </aside>
 
         <main className="main">
-          <header className="page-header">
-            <div>
-              <nav className="breadcrumb" aria-label="Breadcrumb">
-                <Link href="/hub">Home</Link>
-                <span>/</span>
-                <span>{breadcrumbLabel}</span>
-              </nav>
-              <h1 className="page-title">{pageTitle}</h1>
-              {pageIntro ? <p className="page-subtitle">{pageIntro}</p> : null}
-            </div>
-          </header>
+          {!shouldHideHeader ? (
+            <header className="page-header">
+              <div>
+                <nav className="breadcrumb" aria-label="Breadcrumb">
+                  <Link href="/hub">Home</Link>
+                  <span>/</span>
+                  <span>{breadcrumbLabel}</span>
+                </nav>
+                <h1 className="page-title">{pageTitle}</h1>
+                {pageIntro ? <p className="page-subtitle">{pageIntro}</p> : null}
+              </div>
+            </header>
+          ) : null}
 
           <PageTransition>{children}</PageTransition>
         </main>

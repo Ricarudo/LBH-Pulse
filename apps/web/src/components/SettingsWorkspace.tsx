@@ -257,12 +257,25 @@ export function SettingsWorkspace({ section }: { section: SettingsSection }) {
   const tabs = isAdmin ? [...personalTabs, ...adminTabs] : personalTabs;
   const allowed = tabs.some((tab) => tab.key === section);
   const active = allowed ? section : "account";
+  const activeTab = tabs.find((tab) => tab.key === active) ?? personalTabs[0];
 
   if (isLoading) return <div className="settings-shell settings-loading" aria-live="polite">Loading settings…</div>;
   return (
     <section className="settings-shell">
       <div className="settings-intro">
-        <div><p className="settings-eyebrow">Preferences & administration</p><h1>Settings</h1><p>Manage your account and the way this workspace operates.</p></div>
+        <div>
+          <nav className="breadcrumb settings-breadcrumb" aria-label="Breadcrumb">
+            <Link href="/hub">Home</Link>
+            <span>/</span>
+            <span>Settings</span>
+          </nav>
+          <h1>{activeTab.label}</h1>
+          <p className="settings-summary">
+            <strong>Preferences & administration</strong>
+            <span aria-hidden="true"> · </span>
+            Manage your account and the way this workspace operates.
+          </p>
+        </div>
       </div>
       <nav className="settings-tabs" aria-label="Settings categories">
         {tabs.map((tab) => <Link key={tab.key} href={`/settings/${tab.key}`} className={active === tab.key ? "settings-tab active" : "settings-tab"} aria-current={active === tab.key ? "page" : undefined}><tab.icon size={17} /><span>{tab.label}</span></Link>)}

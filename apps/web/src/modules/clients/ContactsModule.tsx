@@ -209,15 +209,26 @@ export function ContactsModule() {
   return (
     <div className="clients-module contacts-module">
       <section className="clients-command-bar">
-        <div>
-          <p className="eyebrow">Directory / Contacts</p>
-          <h2>Contacts</h2>
-        </div>
-        <div className="clients-hero-actions">
-          <Link className="toolbar-button compact" href="/directory">
+        <div className="clients-command-primary">
+          <Link className="toolbar-button compact clients-directory-return" href="/directory">
             <ArrowLeft size={16} />
             Directory
           </Link>
+          <div>
+            <nav className="breadcrumb clients-command-breadcrumb" aria-label="Breadcrumb">
+              <Link href="/hub">Home</Link>
+              <span>/</span>
+              <Link href="/directory">Directory</Link>
+              <span>/</span>
+              <span>Contacts</span>
+            </nav>
+            <h2>Contacts</h2>
+            <p className="clients-command-summary">
+              <strong>Directory</strong>
+              <span aria-hidden="true"> · </span>
+              People connected to client accounts, sites, and relationships.
+            </p>
+          </div>
         </div>
       </section>
 

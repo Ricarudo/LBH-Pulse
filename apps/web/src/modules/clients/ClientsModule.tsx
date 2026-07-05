@@ -282,15 +282,28 @@ export function ClientsModule() {
   return (
     <div className="clients-module">
       <section className="clients-command-bar">
-        <div>
-          <p className="eyebrow">Directory / Clients</p>
-          <h2>Clients</h2>
-        </div>
-        <div className="clients-hero-actions">
-          <Link className="toolbar-button compact" href="/directory">
+        <div className="clients-command-primary">
+          <Link className="toolbar-button compact clients-directory-return" href="/directory">
             <ArrowLeft size={16} />
             Directory
           </Link>
+          <div>
+            <nav className="breadcrumb clients-command-breadcrumb" aria-label="Breadcrumb">
+              <Link href="/hub">Home</Link>
+              <span>/</span>
+              <Link href="/directory">Directory</Link>
+              <span>/</span>
+              <span>Clients</span>
+            </nav>
+            <h2>Clients</h2>
+            <p className="clients-command-summary">
+              <strong>Directory</strong>
+              <span aria-hidden="true"> · </span>
+              Client accounts, contacts, sites, and relationship context.
+            </p>
+          </div>
+        </div>
+        <div className="clients-hero-actions">
           {canWriteCrm ? (
             <button className="primary-button" type="button" onClick={openQuickCreateDialog}>
               <Plus size={17} />

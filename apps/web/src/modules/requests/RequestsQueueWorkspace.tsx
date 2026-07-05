@@ -424,9 +424,17 @@ export function RequestsQueueWorkspace({
     <section className={`requests-queue requests-queue-${density}`}>
       <header className="requests-queue-heading">
         <div>
-          <p>Sales intake</p>
+          <nav className="breadcrumb requests-queue-breadcrumb" aria-label="Breadcrumb">
+            <Link href="/hub">Home</Link>
+            <span>/</span>
+            <span>Requests</span>
+          </nav>
           <h2>{activeViewLabel}</h2>
-          <span>Focus on ownership, timing, blockers, and the next useful action.</span>
+          <p className="requests-queue-summary">
+            <strong>Sales intake</strong>
+            <span aria-hidden="true"> · </span>
+            Focus on ownership, timing, blockers, and the next useful action.
+          </p>
         </div>
         <button
           className="primary-button compact"

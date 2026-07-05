@@ -16,6 +16,7 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
       title="Requests"
       subtitle="Incoming calls, emails, RFPs, site visits, and quote requests."
       compactHeader
+      hideHeader
     >
       {/* Keep the guided intake flow above the queue instead of replacing it. */}
       <RequestsQueueModule openNewOnLoad={params?.new === "1"} />
