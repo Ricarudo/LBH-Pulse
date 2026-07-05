@@ -7,7 +7,7 @@
     "build": "npm run prisma:generate && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "npm run prisma:generate && tsc --noEmit",
-    "test": "npm run typecheck && node --test --import tsx src/shared/api-exception.filter.spec.ts src/lib/services/documentService.spec.ts src/lib/validations/settingsAndChecklist.spec.ts",
+    "test": "npm run typecheck && node --test --import tsx src/shared/api-exception.filter.spec.ts src/lib/services/clientBulkService.spec.ts src/lib/services/documentService.spec.ts src/lib/services/searchService.spec.ts src/lib/validations/settingsAndChecklist.spec.ts",
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push && tsx prisma/ensure-constraints.ts",
     "db:push:accept-data-loss": "prisma db push --accept-data-loss && tsx prisma/ensure-constraints.ts",

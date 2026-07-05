@@ -86,6 +86,49 @@ const errorMap: Record<string, ErrorPayload> = {
   LOCAL_USER_PASSWORD_INVALID: { status: 400, body: { error: "Current password is incorrect." } },
   CLIENT_NOT_FOUND: { status: 404, body: { error: "Client not found." } },
   CONTACT_NOT_FOUND: { status: 404, body: { error: "Contact not found." } },
+  CLIENT_BULK_FILE_REQUIRED: {
+    status: 400,
+    body: { error: "Select a CSV file to upload." }
+  },
+  CLIENT_BULK_FILE_TYPE: {
+    status: 400,
+    body: { error: "Only files with the .csv extension are supported." }
+  },
+  CLIENT_BULK_FILE_TOO_LARGE: {
+    status: 413,
+    body: { error: "Client CSV files may be up to 5 MB." }
+  },
+  CLIENT_BULK_INVALID_ENCODING: {
+    status: 400,
+    body: { error: "Save the CSV using UTF-8 encoding and upload it again." }
+  },
+  CLIENT_BULK_INVALID_CSV: {
+    status: 400,
+    body: { error: "The file is not valid CSV." }
+  },
+  CLIENT_BULK_INVALID_HEADERS: {
+    status: 400,
+    body: { error: "The CSV headers do not match the client import template." }
+  },
+  CLIENT_BULK_ROW_LIMIT: {
+    status: 413,
+    body: { error: "Client CSV files may contain up to 2,000 data rows." }
+  },
+  CLIENT_BULK_EMPTY_SELECTION: {
+    status: 400,
+    body: { error: "Select at least one new or changed row." }
+  },
+  CLIENT_BULK_INVALID_SELECTION: {
+    status: 400,
+    body: { error: "The selected import rows are invalid." }
+  },
+  CLIENT_BULK_PREVIEW_STALE: {
+    status: 409,
+    body: {
+      error:
+        "The file or an existing client changed after preview. Review the CSV again before importing."
+    }
+  },
   QUOTE_NOT_FOUND: { status: 404, body: { error: "Quote not found." } },
   PROJECT_NOT_FOUND: { status: 404, body: { error: "Project not found." } },
   INVOICE_NOT_FOUND: { status: 404, body: { error: "Invoice not found." } },
