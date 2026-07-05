@@ -93,6 +93,15 @@ API health: http://localhost:4300/api/health
 Direct API health: http://localhost:3000/api/health
 ```
 
+To open Pulse from another device on the same network, use the Docker host's
+LAN address, for example `http://192.168.1.253:4300`. The default development
+allowlist accepts the `192.168.1.*` subnet. For a different subnet, set a
+comma-separated allowlist before starting Compose:
+
+```bash
+PULSE_ALLOWED_DEV_ORIGINS="10.0.0.*" docker compose up --build
+```
+
 The API development command generates Prisma but does not push schema changes
 or seed automatically. `db:setup` updates the schema without seeding. The demo
 seed is destructive and is never part of normal setup or startup.
