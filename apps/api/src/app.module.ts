@@ -11,6 +11,7 @@ import { RequestsController } from "@/controllers/requests.controller";
 import { SearchController } from "@/controllers/search.controller";
 import { SettingsController } from "@/controllers/settings.controller";
 import { DocumentsController } from "@/controllers/documents.controller";
+import { DashboardController } from "@/controllers/dashboard.controller";
 import { AuthService } from "@/shared/auth.service";
 
 @Module({
@@ -19,6 +20,7 @@ import { AuthService } from "@/shared/auth.service";
     AuthController,
     ClientBulkController,
     ClientsController,
+    DashboardController,
     DocumentsController,
     HealthController,
     InvoicesController,

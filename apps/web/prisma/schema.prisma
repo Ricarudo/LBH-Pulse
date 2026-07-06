@@ -230,6 +230,7 @@ model LocalUser {
   themeMode    String     @default("system")
   accentTheme  String     @default("blue")
   motionMode   String     @default("luxurious")
+  dashboardPreferences Json?
   entraObjectId String?
   lastLoginAt  DateTime?
   deactivatedAt DateTime?
