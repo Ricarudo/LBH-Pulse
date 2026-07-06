@@ -7,6 +7,8 @@ export default function BillingPage() {
       activePage="billing"
       title="Billing"
       subtitle="Invoices, collections follow-up, and project billing readiness."
+      compactHeader
+      hideHeader
     >
       <WorkRecordsWorkspace kind="invoices" title="Billing" valueLabel="Amount" />
     </PulseShell>

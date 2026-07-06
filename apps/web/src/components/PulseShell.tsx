@@ -289,9 +289,13 @@ function PulseShellFrame({
   const shellCompactHeader = compactHeader || routeMeta.compactHeader === true;
   const shouldHideHeader =
     hideHeader ||
+    pathname === "/hub" ||
     pathname === "/requests" ||
     pathname === "/clients" ||
     pathname === "/contacts" ||
+    pathname === "/quotes" ||
+    pathname === "/projects" ||
+    pathname === "/billing" ||
     pathname === "/settings" ||
     pathname.startsWith("/settings/");
   const mobileActiveKey = getMobileActiveKey(pathname);

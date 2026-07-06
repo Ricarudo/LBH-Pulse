@@ -7,6 +7,8 @@ export default function QuotesPage() {
       activePage="quotes"
       title="Quotes"
       subtitle="Quotes include the client-ready proposal output as a subcategory."
+      compactHeader
+      hideHeader
     >
       <WorkRecordsWorkspace kind="quotes" title="Quotes" valueLabel="Quote Total" />
     </PulseShell>
