@@ -31,6 +31,35 @@ function generateTemporaryPassword() {
   return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
 }
 
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall through for browsers that block clipboard permissions.
+    }
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = value;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.select();
+  const copied = document.execCommand("copy");
+  textArea.remove();
+
+  if (!copied) {
+    throw new Error("Clipboard access is unavailable.");
+  }
+}
+
 type CreateDraft = typeof blankCreateDraft;
 
 type EditDraft = {
@@ -93,6 +122,7 @@ export function SettingsAccountsSection({
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [revealedPassword, setRevealedPassword] = useState("");
   const [secretBannerTitle, setSecretBannerTitle] = useState("Temporary password");
+  const [copyStatus, setCopyStatus] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
   const [query, setQuery] = useState("");
@@ -122,7 +152,7 @@ export function SettingsAccountsSection({
       setUsers(sortedUsers);
       setSelectedUserId(nextSelected?.id ?? "");
       setEditDraft(nextSelected ? toEditDraft(nextSelected) : null);
-      setMessage("Pulse accounts are loaded.");
+      setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load Pulse accounts.");
     } finally {
@@ -160,8 +190,17 @@ export function SettingsAccountsSection({
     setMessage("You have unsaved account changes.");
   }
 
+  async function copyRevealedPassword() {
+    try {
+      await copyText(revealedPassword);
+      setCopyStatus("Copied");
+    } catch {
+      setCopyStatus("Copy failed — select the password and copy it manually.");
+    }
+  }
+
   async function createAccount() {
-    if (!createDraft.name.trim() || !createDraft.email.trim()) {
+    if (!createDraft.name.trim() || !isValidEmail(createDraft.email)) {
       setCreateError("Enter the user's name and a valid email address.");
       return;
     }
@@ -185,6 +224,7 @@ export function SettingsAccountsSection({
       setCreateDraft(blankCreateDraft);
       setRevealedPassword(createDraft.password);
       setSecretBannerTitle(`${data.user.name} was created successfully`);
+      setCopyStatus("");
       setCreateOpen(false);
       setMessage(`${data.user.name} can now sign in. They will be required to replace the temporary password at first sign-in.`);
     } catch (error) {
@@ -242,6 +282,7 @@ export function SettingsAccountsSection({
       setTemporaryPassword("");
       setRevealedPassword(temporaryPassword);
       setSecretBannerTitle(`${data.user.name}'s password was reset successfully`);
+      setCopyStatus("");
       setMessage(`${data.user.name} must change password on next login.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to reset password.");
@@ -259,6 +300,11 @@ export function SettingsAccountsSection({
       (statusFilter === "active" ? account.active : !account.active);
     return matchesQuery && matchesStatus;
   });
+  const canCreateAccount =
+    Boolean(createDraft.name.trim()) &&
+    isValidEmail(createDraft.email) &&
+    Boolean(createDraft.role) &&
+    createDraft.password.length >= 10;
 
   return (
     <section className="settings-accounts-workspace" aria-labelledby="accounts-title">
@@ -278,7 +324,7 @@ export function SettingsAccountsSection({
         </div>
       </div>
 
-      {revealedPassword ? <div className="settings-secret-banner" role="status"><CheckCircle2 size={20} aria-hidden="true" /><div><strong>{secretBannerTitle}</strong><p>Copy this temporary password now. The user must replace it at first sign-in, and it will not be shown again.</p><code>{revealedPassword}</code></div><button className="toolbar-button compact" onClick={() => void navigator.clipboard.writeText(revealedPassword)}><Copy size={16} />Copy</button><button className="icon-button" aria-label="Dismiss temporary password" onClick={() => setRevealedPassword("")}><X size={16} /></button></div> : null}
+      {revealedPassword ? <div className="settings-secret-banner" role="status"><CheckCircle2 size={20} aria-hidden="true" /><div><strong>{secretBannerTitle}</strong><p>Copy this temporary password now. The user must replace it at first sign-in, and it will not be shown again.</p><code>{revealedPassword}</code>{copyStatus ? <small className={copyStatus === "Copied" ? "settings-copy-status success" : "settings-copy-status error"} aria-live="polite">{copyStatus}</small> : null}</div><button type="button" className="toolbar-button compact" onClick={() => void copyRevealedPassword()}><Copy size={16} />{copyStatus === "Copied" ? "Copied" : "Copy"}</button><button type="button" className="icon-button" aria-label="Dismiss temporary password" onClick={() => { setRevealedPassword(""); setCopyStatus(""); }}><X size={16} /></button></div> : null}
       {message ? <div className="settings-inline-message" aria-live="polite">{message}</div> : null}
 
       <div className="settings-table-toolbar">
@@ -401,10 +447,9 @@ export function SettingsAccountsSection({
           <label><span>Role</span><select value={createDraft.role} onChange={(event) => updateCreateDraft({ role: event.target.value as LocalRole })}>{roleOptions.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label>
           <label><span>Temporary password</span><div className="settings-input-action"><input required aria-describedby="create-password-requirements" aria-invalid={createDraft.password.length > 0 && createDraft.password.length < 10} value={createDraft.password} minLength={10} onChange={(event) => updateCreateDraft({ password: event.target.value })} /><button type="button" onClick={() => updateCreateDraft({ password: generateTemporaryPassword() })}>Regenerate</button></div></label>
           <div id="create-password-requirements" className={`settings-password-requirement ${createDraft.password.length >= 10 ? "met" : ""}`}><CheckCircle2 size={15} aria-hidden="true" /><span>At least 10 characters {createDraft.password ? `(${createDraft.password.length}/10)` : ""}</span></div>
-          <label className="settings-checkbox-row"><input type="checkbox" checked={createDraft.active} onChange={(event) => updateCreateDraft({ active: event.target.checked })} /><span>Active account</span></label>
         </div>
         {createError ? <div className="settings-form-error" role="alert">{createError}</div> : null}
-        <div className="settings-modal-actions"><button type="button" className="toolbar-button" onClick={() => setCreateOpen(false)}>Cancel</button><button type="submit" className="primary-button" disabled={saving || createDraft.password.length < 10}>{saving ? "Creating user…" : "Create user"}</button></div>
+        <div className="settings-modal-actions"><button type="button" className="toolbar-button" onClick={() => setCreateOpen(false)}>Cancel</button><button type="submit" className="primary-button" disabled={saving || !canCreateAccount}>{saving ? "Creating user…" : "Create user"}</button></div>
       </form></div> : null}
     </section>
   );

@@ -234,7 +234,7 @@ export function SettingsChecklistsSection() {
                 <div className="checklist-item-toggles"><label><input type="checkbox" checked={item.required} disabled={Boolean(draft.archivedAt)} onChange={(event) => updateItem(index, { required: event.target.checked })} />Required</label><label><input type="checkbox" checked={item.active} disabled={Boolean(draft.archivedAt)} onChange={(event) => updateItem(index, { active: event.target.checked })} />Active</label></div>
               </article>)}
             </div>
-            <div className="sticky-save-bar"><p className="settings-inline-message" aria-live="polite">{message || (dirty ? "Unsaved changes" : "All changes saved")}</p>{!draft.archivedAt ? <button className="primary-button" disabled={!dirty || busy} onClick={() => void save()}><CheckCircle2 size={17} />{busy ? "Saving…" : "Save template"}</button> : null}</div>
+            <div className="sticky-save-bar"><p className="settings-inline-message" aria-live="polite">{message || (dirty ? "Unsaved changes" : "")}</p>{!draft.archivedAt ? <button className="primary-button" disabled={!dirty || busy} onClick={() => void save()}><CheckCircle2 size={17} />{busy ? "Saving…" : "Save template"}</button> : null}</div>
           </>
         ) : <p className="settings-empty">Select or create a template.</p>}
       </section>
