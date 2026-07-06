@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Building2, Filter, Search, UserRound, X } from "lucide-react";
+import { ArrowLeft, Building2, Filter, Plus, Search, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { canRole } from "@/lib/auth/permissions";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
   clientOwners,
   clientStatuses,
@@ -10,6 +12,7 @@ import {
   type ClientRecord,
   type ClientStatus
 } from "./clientData";
+import { ContactCreateDialog } from "./ContactCreateDialog";
 
 type ClientListResponse = {
   clients: ClientRecord[];
@@ -121,6 +124,7 @@ function ownerOptions(clients: ClientRecord[]) {
 }
 
 export function ContactsModule() {
+  const { user } = useCurrentUser();
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | ClientStatus>("All");
@@ -128,6 +132,9 @@ export function ContactsModule() {
   const [flagFilter, setFlagFilter] = useState<ContactFlagFilter>("All");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const canCreateContact = canRole(user?.role, "crm:write");
 
   useEffect(() => {
     async function loadContacts() {
@@ -206,6 +213,19 @@ export function ContactsModule() {
     setFlagFilter("All");
   }
 
+  function contactCreated(client: ClientRecord, contactName: string) {
+    setClients((current) => {
+      const exists = current.some((item) => item.id === client.id);
+      return exists
+        ? current.map((item) => (item.id === client.id ? client : item))
+        : [...current, client];
+    });
+    setCreateOpen(false);
+    setSuccessMessage(
+      `${contactName} was added to ${client.displayName}.`
+    );
+  }
+
   return (
     <div className="clients-module contacts-module">
       <section className="clients-command-bar">
@@ -230,6 +250,21 @@ export function ContactsModule() {
             </p>
           </div>
         </div>
+        {canCreateContact ? (
+          <div className="clients-hero-actions">
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => {
+                setSuccessMessage("");
+                setCreateOpen(true);
+              }}
+            >
+              <Plus size={17} />
+              New Contact
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <section className="clients-workspace contacts-workspace">
@@ -303,6 +338,11 @@ export function ContactsModule() {
           </div>
 
           {loadError ? <div className="form-alert error">{loadError}</div> : null}
+          {successMessage ? (
+            <div className="form-alert contact-create-success" role="status">
+              {successMessage}
+            </div>
+          ) : null}
 
           <div className="client-list" aria-busy={isLoading}>
             {filteredContacts.length ? (
@@ -410,6 +450,13 @@ export function ContactsModule() {
           ) : null}
         </div>
       </section>
+      {createOpen ? (
+        <ContactCreateDialog
+          clients={clients}
+          onCancel={() => setCreateOpen(false)}
+          onCreated={contactCreated}
+        />
+      ) : null}
     </div>
   );
 }

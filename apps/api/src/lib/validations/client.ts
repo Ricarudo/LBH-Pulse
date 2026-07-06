@@ -60,8 +60,21 @@ const contactPartNameText = textField({ max: 120, collapseSpaces: true });
 const contactTitleText = textField({ max: 120, collapseSpaces: true });
 const contactRoleText = textField({ max: 80, collapseSpaces: true });
 const phonePattern = /^[0-9+().\-\s]*(?:(?:x|ext\.?)\s?\d{1,8})?$/i;
+function isValidPhone(value: string) {
+  const extensionIndex = value.search(/(?:x|ext\.?)\s?\d{1,8}$/i);
+  const baseNumber =
+    extensionIndex >= 0 ? value.slice(0, extensionIndex) : value;
+  const baseDigitCount = baseNumber.replace(/\D/g, "").length;
+
+  return (
+    phonePattern.test(value) &&
+    baseDigitCount >= 7 &&
+    baseDigitCount <= 15
+  );
+}
+
 const phoneText = textField({ max: 40, collapseSpaces: true }).refine(
-  (value) => !value || (phonePattern.test(value) && value.replace(/\D/g, "").length >= 7),
+  (value) => !value || isValidPhone(value),
   "Enter a valid phone number."
 );
 const optionalUrl = textField({ max: 2048, collapseSpaces: true }).refine(

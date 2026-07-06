@@ -54,7 +54,20 @@ export function isEmailFormatValid(value: string) {
 }
 
 export function isPhoneFormatValid(value: string) {
-  return !value || (phonePattern.test(value) && value.replace(/\D/g, "").length >= 7);
+  if (!value) {
+    return true;
+  }
+
+  const extensionIndex = value.search(/(?:x|ext\.?)\s?\d{1,8}$/i);
+  const baseNumber =
+    extensionIndex >= 0 ? value.slice(0, extensionIndex) : value;
+  const baseDigitCount = baseNumber.replace(/\D/g, "").length;
+
+  return (
+    phonePattern.test(value) &&
+    baseDigitCount >= 7 &&
+    baseDigitCount <= 15
+  );
 }
 
 export function isAllowedValue<const T extends readonly string[]>(

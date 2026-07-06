@@ -126,10 +126,6 @@ export class ClientsController {
     @Body() body: unknown
   ) {
     const user = await this.auth.requireUser(request, "crm:write");
-    if (user.role !== "Admin") {
-      throw new AuthError("Admin access is required to edit client contacts.", 403);
-    }
-
     const payload = addClientContactSchema.parse(body);
     const client = await addClientContact(id, payload, user);
     return { client };

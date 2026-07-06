@@ -24,8 +24,20 @@ import {
   useState
 } from "react";
 import { createPortal } from "react-dom";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import {
+  canRole,
+  type AuthenticatedUser
+} from "@/lib/auth/permissions";
 import { useResponsiveMode } from "@/lib/responsive";
+import {
+  buildClientContactPayload,
+  clientContactFields,
+  clientContactLimits as contactFieldLimits,
+  createBlankClientContactDraft,
+  validateClientContactDraft,
+  type ClientContactDraft,
+  type ClientContactField
+} from "@/lib/forms/clientContact";
 import {
   buildQuickCreatePayload,
   createBlankQuickCreateForm,
@@ -40,11 +52,7 @@ import {
   FormRequestError,
   formJson,
   isAllowedValue,
-  isEmailFormatValid,
-  isPhoneFormatValid,
   mapApiErrors,
-  normalizeEmail,
-  normalizePhone,
   normalizeText,
   validateCleanText
 } from "@/lib/forms/sanitization";
@@ -93,17 +101,8 @@ type WizardStep = "client" | "relations" | "request";
 type GuidedStep = "client" | "contact" | "site" | "details" | "review";
 type GuidedCreateView = "client" | "contact" | "site" | null;
 
-type ContactDraft = {
-  name: string;
-  role: string;
-  title: string;
-  email: string;
-  phone: string;
-  preferredContactMethod: string;
-  notes: string;
-};
-
-type ContactField = keyof ContactDraft;
+type ContactDraft = ClientContactDraft;
+type ContactField = ClientContactField;
 
 type SiteDraft = {
   siteName: string;
@@ -148,16 +147,6 @@ const wizardSteps: Array<{ id: WizardStep; label: string }> = [
   { id: "request", label: "Request Info" }
 ];
 
-const contactFieldLimits = {
-  name: 160,
-  role: 80,
-  title: 120,
-  email: 254,
-  phone: 40,
-  preferredContactMethod: 40,
-  notes: 2000
-} as const;
-
 const siteFieldLimits: Record<SiteTextField, number> = {
   siteName: 160,
   siteType: 80,
@@ -180,7 +169,7 @@ const requestFieldLimits = {
   description: 2000
 } as const;
 
-const contactFields = Object.keys(contactFieldLimits) as ContactField[];
+const contactFields = clientContactFields;
 const siteFields = Object.keys(siteFieldLimits) as SiteTextField[];
 const requestInfoFields = Object.keys({
   title: true,
@@ -195,17 +184,7 @@ const requestInfoFields = Object.keys({
 }) as RequestInfoField[];
 
 function blankContactDraft(): ContactDraft {
-  // Draft state uses plain strings so controls stay simple; conversion to API
-  // payloads happens only after validation succeeds.
-  return {
-    name: "",
-    role: "Primary",
-    title: "",
-    email: "",
-    phone: "",
-    preferredContactMethod: "Email",
-    notes: ""
-  };
+  return createBlankClientContactDraft();
 }
 
 function blankSiteDraft(primary = false): SiteDraft {
@@ -242,14 +221,6 @@ function blankRequestInfo(defaultAssignedToId = ""): RequestInfoDraft {
   };
 }
 
-function splitContactName(contactName: string) {
-  const [firstName = "", ...lastNameParts] = contactName.split(" ");
-  return {
-    firstName,
-    lastName: lastNameParts.join(" ")
-  };
-}
-
 function siteAddress(site: ClientSite) {
   return (
     site.address ||
@@ -277,83 +248,12 @@ function apiFieldFromPath<TField extends string>(
   return fields.includes(normalized as TField) ? (normalized as TField) : "form";
 }
 
-function normalizeContactDraft(contact: ContactDraft): ContactDraft {
-  // Match Directory contact sanitation: collapse user-entered names/phones,
-  // lowercase email, and trim notes without destroying intentional line breaks.
-  return {
-    name: normalizeText(contact.name, true),
-    role: normalizeText(contact.role, true),
-    title: normalizeText(contact.title, true),
-    email: normalizeEmail(contact.email),
-    phone: normalizePhone(contact.phone),
-    preferredContactMethod: normalizeText(contact.preferredContactMethod, true) || "Email",
-    notes: normalizeText(contact.notes)
-  };
-}
-
 function validateContactDraft(contact: ContactDraft) {
-  const normalized = normalizeContactDraft(contact);
-  const errors: FieldErrors<ContactField> = {};
-
-  if (!normalized.name) {
-    errors.name = "Point of Contact Name is required.";
-  }
-
-  if (!normalized.email && !normalized.phone) {
-    errors.email = "Provide an email or phone for this contact.";
-  }
-
-  for (const field of contactFields) {
-    validateCleanText(errors, field, normalized[field], contactFieldLimits[field]);
-  }
-
-  if (normalized.email && !isEmailFormatValid(normalized.email)) {
-    errors.email = "Enter a valid email address.";
-  }
-
-  if (normalized.phone && !isPhoneFormatValid(normalized.phone)) {
-    errors.phone = "Enter a valid phone number.";
-  }
-
-  if (!isAllowedValue(normalized.preferredContactMethod, preferredContactMethods)) {
-    errors.preferredContactMethod = "Select a valid preferred contact method.";
-  }
-
-  return { normalized, errors };
+  return validateClientContactDraft(contact);
 }
 
 function contactPayload(contact: ContactDraft, siteId: string, primary: boolean): ClientContactInput {
-  const splitName = splitContactName(contact.name);
-  const preferredContactMethod = isAllowedValue(
-    contact.preferredContactMethod,
-    preferredContactMethods
-  )
-    ? contact.preferredContactMethod
-    : contact.email
-      ? "Email"
-      : "Phone";
-
-  return {
-    siteId,
-    siteLocalId: "",
-    name: contact.name,
-    role: contact.role || "Primary",
-    firstName: splitName.firstName || "Unknown",
-    lastName: splitName.lastName,
-    title: contact.title,
-    department: "",
-    email: contact.email,
-    phone: contact.phone,
-    mobile: "",
-    preferredContactMethod,
-    isPrimary: primary,
-    isBilling: false,
-    isPrimaryContact: primary,
-    isBillingContact: false,
-    isTechnicalContact: false,
-    isDecisionMaker: false,
-    notes: contact.notes
-  };
+  return buildClientContactPayload(contact, { siteId, primary });
 }
 
 function normalizeSiteDraft(site: SiteDraft): SiteDraft {
@@ -651,7 +551,7 @@ export function RequestIntakeWizard({
     selectedClient?.contacts.find((contact) => contact.id === selectedContactId) ?? null;
   const selectedSite =
     selectedClient?.sites.find((site) => site.id === selectedSiteId) ?? null;
-  const canCreateContact = currentUser?.role === "Admin";
+  const canCreateContact = canRole(currentUser?.role, "crm:write");
   const isBusy = isSavingClient || isSavingContact || isSavingSite || isSavingRequest;
   isBusyRef.current = isBusy;
 
@@ -1006,7 +906,7 @@ export function RequestIntakeWizard({
     }
 
     if (!canCreateContact) {
-      setContactErrors({ form: "Admin access is required to create points of contact." });
+      setContactErrors({ form: "CRM write access is required to create points of contact." });
       return;
     }
 
@@ -1785,7 +1685,7 @@ export function RequestIntakeWizard({
                   <div className="request-wizard-empty">
                     <strong>No points of contact yet.</strong>
                     {!canCreateContact ? (
-                      <span>Admin access is required to create one.</span>
+                      <span>CRM write access is required to create one.</span>
                     ) : null}
                   </div>
                 ) : null}
@@ -2422,7 +2322,7 @@ export function RequestIntakeWizard({
                   {selectedClient && !selectedClient.contacts.length ? (
                     <div className="request-wizard-empty">
                       <strong>No points of contact yet.</strong>
-                      {!canCreateContact ? <span>Admin access is required to create one.</span> : null}
+                      {!canCreateContact ? <span>CRM write access is required to create one.</span> : null}
                     </div>
                   ) : null}
 
