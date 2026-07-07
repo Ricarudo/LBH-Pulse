@@ -34,6 +34,10 @@ function sessionSecret() {
   return process.env.PULSE_SESSION_SECRET || "pulse-local-dev-session-secret";
 }
 
+function secureCookies() {
+  return process.env.PULSE_COOKIE_SECURE === "true" || process.env.NODE_ENV === "production";
+}
+
 function sign(value: string) {
   return createHmac("sha256", sessionSecret()).update(value).digest("base64url");
 }
@@ -117,7 +121,7 @@ export function setSessionCookie(response: NextResponse, userId: string) {
   response.cookies.set(sessionCookieName, createToken({ userId, exp }), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookies(),
     path: "/",
     maxAge: sessionTtlSeconds
   });
@@ -127,7 +131,7 @@ export function clearSessionCookie(response: NextResponse) {
   response.cookies.set(sessionCookieName, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookies(),
     path: "/",
     maxAge: 0
   });

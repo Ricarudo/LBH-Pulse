@@ -5,11 +5,18 @@ import { ApiExceptionFilter } from "@/shared/api-exception.filter";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  const frontendOrigin = process.env.FRONTEND_ORIGIN ?? "http://localhost:4300";
+  const frontendOrigins = (
+    process.env.FRONTEND_ORIGINS ??
+    process.env.FRONTEND_ORIGIN ??
+    "https://pulse.lbh.app"
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
   app.setGlobalPrefix("api");
   app.enableCors({
-    origin: frontendOrigin,
+    origin: frontendOrigins,
     credentials: true
   });
   app.useGlobalFilters(new ApiExceptionFilter());

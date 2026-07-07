@@ -900,7 +900,7 @@ export function RequestRecordWorkspace({
               const inactive = instance.items.filter((item) => !item.applicable && !item.completed);
               return <section className="record-checklist-instance" key={instance.id}>
                 <div className="record-checklist-instance-heading">
-                  <div><span>{instance.matchType === "CORE" ? "Core" : instance.matchType === "TRADE" ? "Trade" : instance.matchType === "REQUEST_TYPE" ? "Request type" : "Legacy"}</span><h3>{instance.templateName}</h3>{instance.matchValue ? <small>{instance.matchValue}</small> : null}</div>
+                  <div><span>{instance.matchType === "CORE" ? "Core" : instance.matchType === "TRADE" ? "Trade" : "Request type"}</span><h3>{instance.templateName}</h3>{instance.matchValue ? <small>{instance.matchValue}</small> : null}</div>
                   <strong>{instance.summary.requiredCompleted}/{instance.summary.requiredTotal}</strong>
                 </div>
                 <section className="record-open-checklist">

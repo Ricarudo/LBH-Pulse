@@ -1,0 +1,9 @@
+{
+	default_sni {$PULSE_LAN_IP:192.168.1.253}
+	skip_install_trust
+}
+
+https://{$PULSE_HOSTNAME:pulse.lbh.app}, https://{$PULSE_LAN_IP:192.168.1.253} {
+	tls internal
+	reverse_proxy web:4300
+}

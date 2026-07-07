@@ -32,9 +32,9 @@ INSERT INTO "LifecycleDocument" (
   "scanMessage", "uploadedByName", "createdAt", "updatedAt"
 )
 SELECT
-  "id", "requestId", "fileName", 'Unverified Legacy', 'Legacy',
+  "id", "requestId", "fileName", 'Unavailable', 'Unverified',
   'This filename-only record predates secure object storage and is not downloadable.',
-  'Legacy Import', "createdAt", "createdAt"
+  'Data Migration', "createdAt", "createdAt"
 FROM "RequestAttachment";
 
 DROP TABLE "RequestAttachment";

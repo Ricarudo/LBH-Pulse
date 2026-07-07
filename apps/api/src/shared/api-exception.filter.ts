@@ -138,7 +138,7 @@ const errorMap: Record<string, ErrorPayload> = {
   WORK_CLIENT_MISMATCH: { status: 400, body: { error: "The selected records must belong to the same client." } },
   PROJECT_CANCELLED: { status: 400, body: { error: "Cancelled projects cannot create invoices." } },
   DOCUMENT_NOT_FOUND: { status: 404, body: { error: "Document not found." } },
-  DOCUMENT_NOT_AVAILABLE: { status: 409, body: { error: "This legacy or unverified document is not available for download." } },
+  DOCUMENT_NOT_AVAILABLE: { status: 409, body: { error: "This unverified document is not available for download." } },
   DOCUMENT_FILE_REQUIRED: { status: 400, body: { error: "Select a file to upload." } },
   DOCUMENT_FILENAME_INVALID: { status: 400, body: { error: "The filename contains unsupported or unsafe characters." } },
   DOCUMENT_TYPE_INVALID: { status: 400, body: { error: "Only PDF, JPEG, PNG, and WebP files are supported." } },

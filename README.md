@@ -1,195 +1,198 @@
 # Pulse
 
-Pulse is the modern internal operations platform for R2 Communications Group. It is replacing the inherited KuoteSuite prototype with a Next.js, React, TypeScript, NestJS, Prisma, and PostgreSQL stack focused on the real operations flow:
+Pulse is LBH's internal operations platform for the workflow:
 
 ```text
-Request -> Quote Workspace -> Proposal -> Project
+Request → Quote Workspace → Proposal → Project
 ```
 
-The old Angular frontend has been removed from the active repository structure. Any remaining KuoteSuite references are historical or compatibility notes, not active frontend architecture.
+The active application consists of:
 
-## Current Status
+- `apps/web`: Next.js web application
+- `apps/api`: NestJS API
+- PostgreSQL: application database
+- MinIO: document storage
+- ClamAV: upload inspection
+- Caddy: private HTTPS gateway
 
-The active Pulse application is the Next.js app in `apps/web` backed by the NestJS API in `apps/api`. The default runtime is now a single Docker Compose app with `web`, `api`, and `postgres`.
+Docker Compose is the only supported runtime interface. The commands below work
+with Docker Desktop on macOS and Windows and with Docker Engine plus Compose on
+Linux.
 
-The current repository still includes the legacy Express backend in `backend/` as compatibility/reference code. It is no longer part of the default Pulse runtime; use `docker-compose.legacy.yml` only when explicitly checking old KuoteSuite-compatible routes.
+## Network prerequisites
 
-Do not use the removed Angular app, Angular routing, Angular Material, or Angular build patterns for new work.
+Configure the Pulse host in UniFi before distributing the URL:
 
-## Why This README Update Matters
+1. Reserve `192.168.1.253` for the Pulse host.
+2. Add a local DNS record mapping `pulse.lbh.app` to `192.168.1.253`.
+3. Confirm Teleport clients receive the UniFi DNS server and can resolve that
+   record.
 
-Pulse is the current platform direction, but the working repository still has an old backend dependency. This README separates what exists today from where the platform is going so developers do not accidentally build against the wrong assumptions.
+DNS maps the hostname to the host. Caddy listens on standard ports 80 and 443,
+so users do not enter port 4300.
 
-- Current working runtime: `apps/web`, `apps/api`, PostgreSQL, and Prisma.
-- Legacy backend still in use: `backend/` should be preserved until its useful runtime behavior and business logic are migrated or explicitly retired.
-- Active backend direction: new Pulse API work should continue in `apps/api`.
-- Active frontend direction: new Pulse UI work should continue in `apps/web`, with browser `/api/...` calls proxied to NestJS.
+## First installation
 
-This framing is grounded in `backend/package.json`, `backend/app.js`, `backend/prisma/schema.prisma`, `docker-compose.dev.yml`, `docs/PULSE_OVERVIEW.md`, `docs/checkpoints/RESTART_CHECKPOINT.md`, and `apps/api/README.md`.
+Only use the initialization command for a new, empty Pulse database:
 
-## Project Structure
+```bash
+docker compose --profile setup run --rm initialize
+docker compose up -d --build --remove-orphans
+```
+
+Initialization is guarded. It refuses to seed a database that already contains
+Pulse tables.
+
+## Normal startup and recovery
+
+Use the same reconciliation command after a reboot, source update, or container
+failure:
+
+```bash
+docker compose up -d --build --remove-orphans
+```
+
+Useful operations:
+
+```bash
+docker compose ps
+docker compose logs -f
+docker compose logs -f web api gateway
+docker compose down
+```
+
+Do not run `docker compose down -v` against Pulse. The `-v` option deletes
+database, document, and certificate volumes.
+
+The application services use `restart: unless-stopped`, so Docker restores them
+after Docker Desktop or the host restarts.
+
+## HTTPS setup
+
+Pulse is available at:
 
 ```text
-apps/web/                 Active Pulse Next.js app
-apps/api/                 Active Pulse NestJS API
-apps/worker/              Future background worker placeholder
-backend/                  Legacy Express API compatibility/reference; do not remove yet
-packages/                 Future shared package placeholders
-prisma/                   Top-level future Prisma workspace placeholder
-database-azure-backup/    PostgreSQL dump helper
-dev-tools/                Legacy helper scripts
-proxy/                    Legacy proxy Dockerfile
-docs/                     Pulse overview and restart checkpoint
-docker-compose.yml        Default Pulse compose stack
-docker-compose.dev.yml    Explicit local development compose stack
-docker-compose.legacy.yml Optional legacy Express compose service
+https://pulse.lbh.app
+https://192.168.1.253
 ```
 
-## Technology Stack
+Caddy terminates HTTPS on port 443. Do not append `:4300` for remote access;
+that port is reserved for local diagnostics on the Pulse host.
 
-| Area | Current Choice |
-| --- | --- |
-| Frontend | Next.js 16 + React 19 + TypeScript |
-| Active Pulse APIs | NestJS in `apps/api`, reached through `/api/...` |
-| Transitional web API fallback | Next.js route handlers in `apps/web/src/app/api` remain during migration |
-| Current legacy backend | Node.js + Express 4 in `backend/`; preserved outside the default runtime |
-| Database | PostgreSQL 16 |
-| ORM | Prisma 6.19.3 |
-| Validation | Zod in the Pulse web app |
-| Authentication | Local development cookie/session flow in `apps/api` |
-| Package manager | npm |
-| UI | React, custom Pulse CSS, lucide-react icons |
-| Containerization | Docker Compose for `web`, `api`, and `postgres` |
-
-## Prerequisites
-
-- Node.js compatible with the active Next.js app.
-- npm.
-- Docker Desktop for the default Pulse stack.
-
-## Default Pulse Stack
-
-For a brand-new workstation/database only, run:
+Caddy issues certificates from a private Pulse certificate authority. Export
+the public root certificate after the gateway has started:
 
 ```bash
-./first-run.sh
+docker compose cp gateway:/data/caddy/pki/authorities/local/root.crt ./pulse-local-ca.crt
 ```
 
-`first-run.sh` refuses to continue when the Pulse schema already contains
-tables. It will not reseed an existing environment. After initialization, use
-the normal startup command:
+Install that certificate once on every client that will access Pulse.
 
-Start the full local stack:
+### macOS
 
 ```bash
-docker compose up --build
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain ./pulse-local-ca.crt
 ```
 
-Default URLs:
+### Windows PowerShell as Administrator
+
+```powershell
+Import-Certificate `
+  -FilePath .\pulse-local-ca.crt `
+  -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+### Debian or Ubuntu Linux
+
+```bash
+sudo cp ./pulse-local-ca.crt /usr/local/share/ca-certificates/pulse-local-ca.crt
+sudo update-ca-certificates
+```
+
+Some browsers maintain a separate certificate store. Import
+`pulse-local-ca.crt` into the browser's Authorities store if it still reports an
+untrusted issuer.
+
+The root CA private key remains in the Docker volume. Do not copy or distribute
+anything from that volume except `root.crt`.
+
+## Local diagnostic endpoints
+
+The application and infrastructure ports are bound to localhost and are not
+directly exposed to the LAN:
 
 ```text
-Web: http://localhost:4300
-API health: http://localhost:4300/api/health
-Direct API health: http://localhost:3000/api/health
+Web:           http://localhost:4300
+API health:    http://localhost:3000/api/health
+PostgreSQL:    localhost:5432
+MinIO API:     http://localhost:9000
+MinIO console: http://localhost:9001
 ```
 
-To open Pulse from another device on the same network, use the Docker host's
-LAN address, for example `http://192.168.1.253:4300`. The default development
-allowlist accepts the `192.168.1.*` subnet. For a different subnet, set a
-comma-separated allowlist before starting Compose:
+Remote users should always use the HTTPS hostname.
+
+## CI
+
+CI runs in the isolated `lbh-pulse-ci` Compose project and cannot replace the
+running Pulse services.
+
+Run the same check used by GitHub Actions:
 
 ```bash
-PULSE_ALLOWED_DEV_ORIGINS="10.0.0.*" docker compose up --build
+docker compose -f compose.ci.yaml up \
+  --build --abort-on-container-exit --exit-code-from checks
+docker compose -f compose.ci.yaml down -v --remove-orphans
 ```
 
-The API development command generates Prisma but does not push schema changes
-or seed automatically. `db:setup` updates the schema without seeding. The demo
-seed is destructive and is never part of normal setup or startup.
+The check uses an ephemeral database and runs API initialization, tests,
+type-checking and builds, followed by the web tests, type-checking and build.
 
-## Manual App Commands
+## Database operations
 
-From `apps/api`:
+Schema setup does not run during normal startup.
 
 ```bash
-npm install
-npm run db:setup
-npm run typecheck
-npm run build
-npm run dev
+docker compose exec api npm run db:setup
 ```
 
-From `apps/web`:
+The demo reset deletes data and must be requested explicitly:
 
 ```bash
-npm install
-npm run typecheck
-npm run build
-npm run dev
+docker compose exec api npm run db:reset-demo
 ```
 
-## Local Test Accounts
+Never run the reset against data that must be retained.
 
-These accounts are for workstation/local testing only:
+## Configuration
+
+The checked-in defaults serve `pulse.lbh.app` and `192.168.1.253`. To change
+them, copy `.env.example` to `.env` and update:
 
 ```text
-Admin: admin@r2.local / PulseAdmin123!
-Sales: sales@r2.local / PulseSales123!
-Project Manager: project.manager@r2.local / PulsePm123!
-Technician: technician@r2.local / PulseTech123!
+PULSE_HOSTNAME
+PULSE_LAN_IP
 ```
 
-## Useful Pulse Commands
+Restart with the normal reconciliation command after changing either value.
 
-From `apps/api` or `apps/web`:
+## Troubleshooting
+
+If the host responds to ping but Pulse does not open:
 
 ```bash
-npm run prisma:generate
-npm run db:push
-npm run db:setup
-npm run typecheck
-npm run build
-npm run dev
+docker compose ps
+docker compose logs --tail=100 gateway web api
+curl -I http://localhost:4300
 ```
 
-Destructive demo data commands must be run explicitly:
+Expected state:
 
-```bash
-npm run db:reset-demo  # accept schema data loss, then destructive seed
-```
+- `postgres`, `minio`, `clamav`, `api`, `web`, and `gateway` are healthy.
+- Port 80 redirects to HTTPS.
+- Port 443 serves a certificate for `pulse.lbh.app` and `192.168.1.253`.
+- Port 4300 is reachable only from the Pulse host.
 
-Direct `npm run db:seed` is guarded and refuses unless
-`PULSE_ALLOW_DESTRUCTIVE_SEED=1` is deliberately supplied. Do not run the reset
-or override against an environment containing users, uploaded documents, or
-other data that must be preserved.
-
-## Compatibility Backend
-
-The `backend/` service still uses Express, Prisma, and PostgreSQL for old KuoteSuite-compatible REST routes. Keep it available until its remaining useful business logic has been migrated or explicitly retired.
-
-It is available through a separate legacy Compose file and is not part of `docker compose up`:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.legacy.yml --profile legacy up legacy-backend
-```
-
-Useful backend commands:
-
-```bash
-cd backend
-npm run prisma:validate
-npm run db:setup
-npm test
-```
-
-## Documentation
-
-- `docs/PULSE_OVERVIEW.md`: short practical overview of Pulse.
-- `docs/checkpoints/RESTART_CHECKPOINT.md`: source of truth for current state, condensed history, architecture notes, and recovery guidance.
-
-## Known Issues
-
-- Legacy API routes in `backend/` are still not production-authenticated.
-- Some active Pulse service code is intentionally copied between `apps/web` and `apps/api` during the first NestJS parity pass; consolidate into shared packages after runtime migration settles.
-- Quotes and Projects in `apps/web` are still starter workflows and need real quote workspace/database implementation.
-- Some compatibility docs and backend code still mention legacy KuoteSuite table names because the Express backend has not been fully retired.
-- The Windows sandbox runner can fail before process startup; see `docs/checkpoints/RESTART_CHECKPOINT.md` for command guidance.
+Use `docker compose up -d --build --remove-orphans` to reconcile the stack.
+A plain `docker compose restart` does not rebuild images or correct changed
+service definitions.

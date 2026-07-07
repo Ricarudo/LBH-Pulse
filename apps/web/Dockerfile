@@ -2,7 +2,7 @@ FROM node:24-alpine AS base
 
 WORKDIR /usr/src/app
 COPY package.json package-lock.json* ./
-EXPOSE 3000
+EXPOSE 4300
 
 FROM base AS dev
 ENV NODE_ENV=development
@@ -15,5 +15,4 @@ ENV NODE_ENV=production
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY . .
 RUN npm run build
-RUN npm prune --omit=dev
 CMD ["npm", "run", "start"]

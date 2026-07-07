@@ -83,12 +83,12 @@ INSERT INTO "RequestChecklistInstance" (
   "matchValue"
 )
 SELECT
-  'legacy_' || md5(r."id"),
+  'migrated_' || md5(r."id"),
   r."id",
   r."checklistTemplateId",
-  COALESCE(t."key", 'legacy'),
+  COALESCE(t."key", 'migrated'),
   COALESCE(r."checklistTemplateNameSnapshot", t."name", 'Request Intake'),
-  'LEGACY',
+  'TRADE',
   r."serviceCategory"
 FROM "Request" r
 LEFT JOIN "RequestChecklistTemplate" t ON t."id" = r."checklistTemplateId"
@@ -97,11 +97,11 @@ WHERE EXISTS (
 );
 
 UPDATE "RequestChecklistItem"
-SET "checklistInstanceId" = 'legacy_' || md5("requestId")
+SET "checklistInstanceId" = 'migrated_' || md5("requestId")
 WHERE EXISTS (
   SELECT 1
   FROM "RequestChecklistInstance" ci
-  WHERE ci."id" = 'legacy_' || md5("RequestChecklistItem"."requestId")
+  WHERE ci."id" = 'migrated_' || md5("RequestChecklistItem"."requestId")
 );
 
 CREATE INDEX "RequestChecklistTemplate_archivedAt_idx"

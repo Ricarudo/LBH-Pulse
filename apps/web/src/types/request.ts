@@ -116,7 +116,7 @@ export type RequestChecklistInstanceRecord = {
   templateId: string | null;
   templateKey: string;
   templateName: string;
-  matchType: "CORE" | "TRADE" | "REQUEST_TYPE" | "LEGACY";
+  matchType: "CORE" | "TRADE" | "REQUEST_TYPE";
   matchValue: string;
   active: boolean;
   retiredAt: string;

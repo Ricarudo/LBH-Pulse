@@ -1,0 +1,29 @@
+name: lbh-pulse-ci
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse_ci_password
+      POSTGRES_DB: pulse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  checks:
+    build:
+      context: .
+      dockerfile: docker/ci/Dockerfile
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://pulse:pulse_ci_password@postgres:5432/pulse?schema=pulse
+      PULSE_SESSION_SECRET: pulse-ci-session-secret
+      PULSE_COOKIE_SECURE: "true"
+      FRONTEND_ORIGINS: https://pulse.lbh.app
+      PULSE_API_URL: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy

@@ -335,7 +335,7 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
         templateId: instance.templateId,
         templateKey: instance.templateKeySnapshot,
         templateName: instance.templateNameSnapshot,
-        matchType: instance.matchType as "CORE" | "TRADE" | "REQUEST_TYPE" | "LEGACY",
+        matchType: instance.matchType as "CORE" | "TRADE" | "REQUEST_TYPE",
         matchValue: instance.matchValue ?? "",
         active: instance.active,
         retiredAt: formatDateTime(instance.retiredAt),
@@ -455,9 +455,7 @@ async function reconcileRequestChecklists(
   const desiredKeys = new Set(desired.map((match) => `${match.matchType}:${match.matchValue ?? ""}`));
 
   for (const instance of existing.filter((candidate) => candidate.active)) {
-    const key = instance.matchType === "LEGACY"
-      ? `TRADE:${instance.matchValue ?? ""}`
-      : `${instance.matchType}:${instance.matchValue ?? ""}`;
+    const key = `${instance.matchType}:${instance.matchValue ?? ""}`;
     if (!desiredKeys.has(key)) {
       await tx.requestChecklistInstance.update({
         where: { id: instance.id },
@@ -467,12 +465,7 @@ async function reconcileRequestChecklists(
   }
 
   for (const match of desired) {
-    const equivalent = existing.find((instance) => {
-      if (instance.templateId === match.template.id) return true;
-      return instance.matchType === "LEGACY" &&
-        match.matchType === "TRADE" &&
-        instance.matchValue === match.matchValue;
-    });
+    const equivalent = existing.find((instance) => instance.templateId === match.template.id);
     if (equivalent) {
       if (!equivalent.active) {
         await tx.requestChecklistInstance.update({
@@ -623,7 +616,7 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
     if (!matches.some((match) => match.matchType === "CORE")) {
       throw new Error("REQUEST_CHECKLIST_TEMPLATE_FALLBACK_REQUIRED");
     }
-    const legacyTemplate = matches.find((match) => match.matchType === "TRADE")?.template ??
+    const selectedTemplate = matches.find((match) => match.matchType === "TRADE")?.template ??
       matches.find((match) => match.matchType === "CORE")?.template;
 
     const created = await tx.request.create({
@@ -658,8 +651,8 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
         description: input.description || null,
         internalNotes: input.internalNotes || null,
         relatedQuoteId: input.relatedQuoteId || null,
-        checklistTemplateId: legacyTemplate?.id ?? null,
-        checklistTemplateNameSnapshot: legacyTemplate?.name ?? null,
+        checklistTemplateId: selectedTemplate?.id ?? null,
+        checklistTemplateNameSnapshot: selectedTemplate?.name ?? null,
         lastActivityAt: now,
         trades: {
           create: serviceCategories.map((serviceCategory) => ({ serviceCategory }))

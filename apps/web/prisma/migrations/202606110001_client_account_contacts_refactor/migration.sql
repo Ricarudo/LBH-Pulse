@@ -1,4 +1,4 @@
--- Move client phone/email data onto PointOfContact before removing legacy Client columns.
+-- Move client phone/email data onto PointOfContact before removing redundant Client columns.
 -- Prisma does not support PostgreSQL partial unique indexes directly, so the
 -- one-primary-contact rule is enforced here with raw SQL and mirrored in the
 -- service layer transactions.

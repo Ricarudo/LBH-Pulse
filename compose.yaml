@@ -1,0 +1,184 @@
+name: lbh-pulse
+
+x-api-environment: &api-environment
+  NODE_ENV: development
+  DATABASE_URL: postgresql://pulse:pulse_dev_password@postgres:5432/pulse?schema=pulse
+  PULSE_SESSION_SECRET: pulse-local-dev-session-secret
+  PULSE_COOKIE_SECURE: "true"
+  FRONTEND_ORIGINS: https://pulse.lbh.app,https://192.168.1.253
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: us-east-1
+  S3_BUCKET: pulse-documents
+  S3_ACCESS_KEY: pulse_minio
+  S3_SECRET_KEY: pulse_minio_local_password
+  S3_FORCE_PATH_STYLE: "true"
+  CLAMAV_HOST: clamav
+  CLAMAV_PORT: "3310"
+  CLAMAV_TIMEOUT_MS: "180000"
+  DOCUMENT_TEMP_DIR: /tmp/pulse-uploads
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse_dev_password
+      POSTGRES_DB: pulse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: pulse_minio
+      MINIO_ROOT_PASSWORD: pulse_minio_local_password
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set pulse http://minio:9000 pulse_minio pulse_minio_local_password &&
+      mc mb --ignore-existing pulse/pulse-documents &&
+      mc anonymous set none pulse/pulse-documents
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  clamav:
+    image: clamav/clamav:stable
+    platform: linux/amd64
+    restart: unless-stopped
+    volumes:
+      - clamav-data:/var/lib/clamav
+      - ./docker/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  api:
+    build:
+      context: ./apps/api
+      target: dev
+    command: npm run dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment: *api-environment
+    volumes:
+      - ./apps/api:/usr/src/app
+      - api-node-modules:/usr/src/app/node_modules
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
+
+  initialize:
+    profiles: ["setup"]
+    build:
+      context: ./apps/api
+      target: dev
+    command: npm run db:initialize
+    environment:
+      DATABASE_URL: postgresql://pulse:pulse_dev_password@postgres:5432/pulse?schema=pulse
+      PULSE_SESSION_SECRET: pulse-local-dev-session-secret
+    volumes:
+      - ./apps/api:/usr/src/app
+      - api-node-modules:/usr/src/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/web
+      target: dev
+    command: npm run dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4300:4300"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://pulse:pulse_dev_password@postgres:5432/pulse?schema=pulse
+      PULSE_API_URL: http://api:3000
+      PULSE_SESSION_SECRET: pulse-local-dev-session-secret
+      PULSE_COOKIE_SECURE: "true"
+      PULSE_ALLOWED_DEV_ORIGINS: pulse.lbh.app,192.168.1.253
+    volumes:
+      - ./apps/web:/usr/src/app
+      - web-node-modules:/usr/src/app/node_modules
+      - web-next:/usr/src/app/.next
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4300/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    depends_on:
+      api:
+        condition: service_healthy
+
+  gateway:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PULSE_HOSTNAME: ${PULSE_HOSTNAME:-pulse.lbh.app}
+      PULSE_LAN_IP: ${PULSE_LAN_IP:-192.168.1.253}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  minio-data:
+  clamav-data:
+  api-node-modules:
+  web-node-modules:
+  web-next:
+  caddy-data:
+  caddy-config:
