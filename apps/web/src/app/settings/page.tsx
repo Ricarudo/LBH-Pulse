@@ -1,5 +1,10 @@
-import { redirect } from "next/navigation";
+import { PulseShell } from "@/components/PulseShell";
+import { SettingsWorkspace } from "@/components/SettingsWorkspace";
 
 export default function SettingsPage() {
-  redirect("/settings/account");
+  return (
+    <PulseShell activePage="settings" title="Settings" compactHeader>
+      <SettingsWorkspace section="account" />
+    </PulseShell>
+  );
 }

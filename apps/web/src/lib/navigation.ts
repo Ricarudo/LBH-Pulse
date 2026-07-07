@@ -75,7 +75,7 @@ export const navigationGroups: readonly NavigationGroup[] = [
   {
     label: "Workspace",
     items: [
-      { href: "/settings", label: "Settings", key: "settings", icon: Settings }
+      { href: "/settings/account", label: "Settings", key: "settings", icon: Settings }
     ]
   }
 ] as const;
@@ -112,7 +112,7 @@ export const mobileOverflowGroups = [
   {
     label: "Workspace",
     items: [
-      { href: "/settings", label: "Settings", icon: Settings }
+      { href: "/settings/account", label: "Settings", icon: Settings }
     ]
   }
 ] as const;

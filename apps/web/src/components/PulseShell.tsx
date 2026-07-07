@@ -993,7 +993,7 @@ function PulseShellFrame({
                                   pathname === item.href ||
                                   (item.href === "/clients" && pathname.startsWith("/clients")) ||
                                   (item.href === "/contacts" && pathname.startsWith("/contacts")) ||
-                                  (item.href === "/settings" && pathname.startsWith("/settings"));
+                                  (item.href === "/settings/account" && pathname.startsWith("/settings"));
                                 return (
                                   <Link
                                     key={item.href}
