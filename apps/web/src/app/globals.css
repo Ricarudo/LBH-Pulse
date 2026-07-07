@@ -1203,7 +1203,6 @@ a {
 
 .page-transition {
   min-height: 100%;
-  animation: page-enter 150ms ease-out both;
 }
 
 .route-loading-shell {
@@ -10765,8 +10764,70 @@ a {
   border: 0 !important;
 }
 
+.page-transition-stage {
+  position: relative;
+  min-height: 100%;
+  isolation: isolate;
+  contain: paint;
+  overflow: hidden;
+  background: var(--pulse-bg);
+}
+
+.route-transition-frame {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--pulse-blue) 9%, transparent), transparent 38%),
+    linear-gradient(180deg, var(--pulse-muted-surface) 0%, var(--pulse-bg) 68%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -1px 0 color-mix(in srgb, var(--pulse-line) 72%, transparent);
+}
+
+.route-transition-frame::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -26%;
+  width: 38%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--pulse-blue), var(--pulse-cyan), transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--pulse-blue) 54%, transparent);
+  animation: route-frame-glint 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .page-transition {
+  position: relative;
+  z-index: 3;
+  min-height: 100%;
+  background: var(--pulse-bg);
+  transform-origin: center top;
+  will-change: transform, opacity, filter;
   animation: none;
+}
+
+@keyframes route-frame-glint {
+  from {
+    transform: translateX(0) scaleX(0.72);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  to {
+    transform: translateX(340%) scaleX(1);
+    opacity: 0;
+  }
+}
+
+[data-motion="subtle"] .route-transition-frame::after {
+  animation-duration: 300ms;
+  opacity: 0.58;
 }
 
 .global-topbar {
@@ -11230,60 +11291,118 @@ a {
 
 .motion-preview {
   position: relative;
-  display: flex;
-  min-height: 76px;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
+  min-height: 92px;
   overflow: hidden;
   border: 1px solid var(--pulse-line);
   border-radius: 14px;
-  background: var(--pulse-surface-soft);
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--pulse-blue-soft) 58%, transparent), transparent 48%),
+    var(--pulse-surface-soft);
+  isolation: isolate;
 }
 
 .motion-preview span {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: var(--pulse-blue-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pulse-blue) 22%, transparent);
-  animation: motion-preview-luxurious 1.8s var(--pulse-motion-ease) infinite;
+  position: absolute;
+  border-radius: 11px;
+  box-shadow:
+    0 14px 28px rgba(21, 39, 71, 0.11),
+    inset 0 0 0 1px color-mix(in srgb, var(--pulse-line) 86%, transparent);
+}
+
+.motion-preview span:nth-child(1) {
+  z-index: 2;
+  inset: 13px 15px;
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--pulse-blue) 11%, transparent), transparent 42%),
+    linear-gradient(180deg, var(--pulse-muted-surface), var(--pulse-bg));
+  animation: motion-preview-frame 1.95s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.motion-preview span:nth-child(1)::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -20%;
+  width: 34%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--pulse-blue), var(--pulse-cyan), transparent);
+  animation: motion-preview-glint 1.95s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.motion-preview span:nth-child(2),
+.motion-preview span:nth-child(3) {
+  left: 23px;
+  width: calc(100% - 46px);
+  height: 46px;
+  background: var(--pulse-surface);
 }
 
 .motion-preview span:nth-child(2) {
-  animation-delay: 90ms;
-  background: var(--pulse-purple-soft);
+  z-index: 1;
+  top: 23px;
+  animation: motion-preview-outgoing 1.95s cubic-bezier(0.4, 0, 1, 1) infinite;
 }
 
 .motion-preview span:nth-child(3) {
-  animation-delay: 180ms;
-  background: var(--pulse-green-soft);
+  z-index: 3;
+  top: 23px;
+  background:
+    linear-gradient(90deg, var(--pulse-blue-soft), var(--pulse-purple-soft)),
+    var(--pulse-surface);
+  animation: motion-preview-incoming 1.95s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 
 .motion-preview[data-mode="subtle"] span {
-  animation-name: motion-preview-subtle;
-  animation-duration: 1.3s;
+  animation-duration: 1.35s;
 }
 
-@keyframes motion-preview-luxurious {
-  0%, 100% {
-    opacity: 0.62;
-    transform: translateY(8px) scale(0.9);
+.motion-preview[data-mode="subtle"] span:nth-child(1)::after {
+  animation-duration: 1.35s;
+}
+
+@keyframes motion-preview-frame {
+  0%, 14%, 78%, 100% {
+    opacity: 0;
   }
-  46%, 62% {
+  26%, 68% {
     opacity: 1;
-    transform: translateY(-5px) scale(1.04);
   }
 }
 
-@keyframes motion-preview-subtle {
-  0%, 100% {
-    opacity: 0.75;
-    transform: translateY(2px);
+@keyframes motion-preview-glint {
+  0%, 24% {
+    opacity: 0;
+    transform: translateX(0) scaleX(0.7);
   }
-  50% {
+  42% {
     opacity: 1;
-    transform: translateY(-2px);
+  }
+  78%, 100% {
+    opacity: 0;
+    transform: translateX(360%) scaleX(1);
+  }
+}
+
+@keyframes motion-preview-outgoing {
+  0%, 18% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  34%, 100% {
+    opacity: 0;
+    transform: translateX(-12px) translateY(-3px) scale(0.997);
+  }
+}
+
+@keyframes motion-preview-incoming {
+  0%, 34% {
+    opacity: 0;
+    transform: translateX(24px) translateY(4px) scale(0.988);
+  }
+  64%, 100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
   }
 }
 
@@ -11418,6 +11537,9 @@ a {
 
 @media (prefers-reduced-motion: reduce) {
   .motion-preview span,
+  .motion-preview span::after,
+  .route-transition-frame,
+  .route-transition-frame::after,
   .work-record-focused,
   .spin {
     animation: none !important;

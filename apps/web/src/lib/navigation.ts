@@ -187,17 +187,48 @@ const topLevelOrder: NavigationKey[] = [
   "settings"
 ];
 
-export function routeMotionDirection(previousPath: string, nextPath: string) {
-  const previousSegments = previousPath.split("/").filter(Boolean).length;
-  const nextSegments = nextPath.split("/").filter(Boolean).length;
+export type RouteMotionKind = "lateral" | "drill-in" | "drill-out" | "replace";
 
-  if (nextSegments !== previousSegments) {
-    return nextSegments > previousSegments ? 1 : -1;
+export type RouteMotionProfile = {
+  kind: RouteMotionKind;
+  direction: -1 | 0 | 1;
+};
+
+function routeSegmentCount(pathname: string) {
+  return pathname.split("?")[0].split("#")[0].split("/").filter(Boolean).length;
+}
+
+export function routeMotionProfile(
+  previousPath: string,
+  nextPath: string
+): RouteMotionProfile {
+  const previousSegments = routeSegmentCount(previousPath);
+  const nextSegments = routeSegmentCount(nextPath);
+
+  if (nextSegments > previousSegments) {
+    return { kind: "drill-in", direction: 1 };
   }
 
-  const previousIndex = topLevelOrder.indexOf(
-    getActiveNavigationKey(previousPath)
-  );
-  const nextIndex = topLevelOrder.indexOf(getActiveNavigationKey(nextPath));
-  return nextIndex >= previousIndex ? 1 : -1;
+  if (nextSegments < previousSegments) {
+    return { kind: "drill-out", direction: -1 };
+  }
+
+  const previousKey = getActiveNavigationKey(previousPath);
+  const nextKey = getActiveNavigationKey(nextPath);
+
+  if (previousKey === nextKey) {
+    return { kind: "replace", direction: 0 };
+  }
+
+  const previousIndex = topLevelOrder.indexOf(previousKey);
+  const nextIndex = topLevelOrder.indexOf(nextKey);
+  return {
+    kind: "lateral",
+    direction: nextIndex >= previousIndex ? 1 : -1
+  };
+}
+
+export function routeMotionDirection(previousPath: string, nextPath: string) {
+  const profile = routeMotionProfile(previousPath, nextPath);
+  return profile.direction === 0 ? 1 : profile.direction;
 }

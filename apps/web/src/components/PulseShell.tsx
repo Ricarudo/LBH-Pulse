@@ -919,21 +919,25 @@ function PulseShellFrame({
                 </aside>
 
                 <main className="main">
-                  {!shouldHideHeader ? (
-                    <header className="page-header">
-                      <div>
-                        <nav className="breadcrumb" aria-label="Breadcrumb">
-                          <Link href="/hub" onNavigate={() => beginNavigation("/hub")}>Home</Link>
-                          <span>/</span>
-                          <span>{breadcrumbLabel}</span>
-                        </nav>
-                        <h1 className="page-title">{pageTitle}</h1>
-                        {pageIntro ? <p className="page-subtitle">{pageIntro}</p> : null}
-                      </div>
-                    </header>
-                  ) : null}
-
-                  <PageTransition motionMode={motionMode}>{children}</PageTransition>
+                  <PageTransition
+                    header={!shouldHideHeader ? (
+                      <header className="page-header">
+                        <div>
+                          <nav className="breadcrumb" aria-label="Breadcrumb">
+                            <Link href="/hub" onNavigate={() => beginNavigation("/hub")}>Home</Link>
+                            <span>/</span>
+                            <span>{breadcrumbLabel}</span>
+                          </nav>
+                          <h1 className="page-title">{pageTitle}</h1>
+                          {pageIntro ? <p className="page-subtitle">{pageIntro}</p> : null}
+                        </div>
+                      </header>
+                    ) : null}
+                    isNavigating={Boolean(pendingHref)}
+                    motionMode={motionMode}
+                  >
+                    {children}
+                  </PageTransition>
                 </main>
               </div>
 

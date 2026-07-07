@@ -4,6 +4,7 @@ import {
   getActiveNavigationKey,
   getMobileActiveKey,
   routeMotionDirection,
+  routeMotionProfile,
   searchResultHref
 } from "@/lib/navigation";
 
@@ -33,4 +34,27 @@ test("route motion follows hierarchy and navigation order", () => {
   assert.equal(routeMotionDirection("/quotes", "/hub"), -1);
   assert.equal(routeMotionDirection("/requests", "/requests/rq-1"), 1);
   assert.equal(routeMotionDirection("/requests/rq-1", "/requests"), -1);
+});
+
+test("route motion profiles route relationship", () => {
+  assert.deepEqual(routeMotionProfile("/hub", "/quotes"), {
+    kind: "lateral",
+    direction: 1
+  });
+  assert.deepEqual(routeMotionProfile("/quotes", "/hub"), {
+    kind: "lateral",
+    direction: -1
+  });
+  assert.deepEqual(routeMotionProfile("/requests", "/requests/rq-1"), {
+    kind: "drill-in",
+    direction: 1
+  });
+  assert.deepEqual(routeMotionProfile("/requests/rq-1", "/requests"), {
+    kind: "drill-out",
+    direction: -1
+  });
+  assert.deepEqual(routeMotionProfile("/settings/account", "/settings/appearance"), {
+    kind: "replace",
+    direction: 0
+  });
 });
