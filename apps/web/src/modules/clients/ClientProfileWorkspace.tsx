@@ -457,7 +457,7 @@ function QuotesTable({
         {quotes.map((quote) => (
           <tr key={quote.id}>
             <td>
-              <strong>{quote.quoteNumber}</strong>
+              <Link href={`/quotes/${quote.id}`}><strong>{quote.quoteNumber}</strong></Link>
               <br />
               <span className="table-muted">{quote.title}</span>
             </td>

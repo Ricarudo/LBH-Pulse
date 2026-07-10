@@ -1,4 +1,5 @@
 import type { LifecycleDocumentRecord } from "@/types/document";
+import type { QuoteItemRecord } from "@/types/item";
 
 export const quoteStatuses = [
   "Draft",
@@ -49,6 +50,30 @@ export type QuoteRecord = {
   createdAt: string;
   updatedAt: string;
   documents: LifecycleDocumentRecord[];
+};
+
+export type QuoteContextSnapshot = {
+  sourceRequestId: string | null;
+  requestNumber: string;
+  requestTitle: string;
+  requestType: string;
+  serviceCategory: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  siteName: string;
+  siteAddress: string;
+  city: string;
+  state: string;
+  scopeDescription: string;
+  internalNotes: string;
+};
+
+export type QuoteDetailRecord = QuoteRecord & {
+  context: QuoteContextSnapshot;
+  proposalNotes: string;
+  proposalPreparedAt: string;
+  items: QuoteItemRecord[];
 };
 
 export type ProjectRecord = {

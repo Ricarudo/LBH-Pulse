@@ -1205,7 +1205,23 @@ export async function convertRequest(
             clientName: existingRequest.companyName || existingRequest.client?.displayName || null,
             status: "Draft",
             owner: existingRequest.assignedTo?.name ?? "Unassigned",
-            total: 0
+            total: 0,
+            sourceRequestIdSnapshot: existingRequest.id,
+            requestNumberSnapshot: existingRequest.requestNumber,
+            requestTitleSnapshot: existingRequest.title,
+            requestTypeSnapshot: existingRequest.requestType,
+            serviceCategorySnapshot: existingRequest.trades.length
+              ? existingRequest.trades.map((trade) => trade.serviceCategory).join(", ")
+              : existingRequest.serviceCategory,
+            contactNameSnapshot: existingRequest.contactName || existingRequest.contact?.name || null,
+            contactEmailSnapshot: existingRequest.contactEmail || existingRequest.contact?.email || null,
+            contactPhoneSnapshot: existingRequest.contactPhone || existingRequest.contact?.phone || null,
+            siteNameSnapshot: existingRequest.siteName || existingRequest.site?.siteName || null,
+            siteAddressSnapshot: existingRequest.siteAddress || existingRequest.site?.addressLine1 || null,
+            citySnapshot: existingRequest.city || existingRequest.site?.city || null,
+            stateSnapshot: existingRequest.state || existingRequest.site?.state || null,
+            scopeDescriptionSnapshot: existingRequest.description,
+            internalNotesSnapshot: existingRequest.internalNotes
           }
         })
       : null;

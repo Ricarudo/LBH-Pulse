@@ -9,6 +9,24 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ItemType {
+  PRODUCT
+  LABOR
+  SERVICE
+}
+
+enum ItemStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ItemRelationType {
+  KIT_COMPONENT
+  RELATED
+  REQUIRED
+  OPTIONAL
+}
+
 model Request {
   id              String              @id @default(cuid())
   requestNumber   String              @unique
@@ -307,6 +325,22 @@ model Quote {
   status      String    @default("Draft")
   owner       String    @default("Unassigned")
   total       Decimal   @default(0) @db.Decimal(12, 2)
+  sourceRequestIdSnapshot String?
+  requestNumberSnapshot String?
+  requestTitleSnapshot String?
+  requestTypeSnapshot String?
+  serviceCategorySnapshot String?
+  contactNameSnapshot String?
+  contactEmailSnapshot String?
+  contactPhoneSnapshot String?
+  siteNameSnapshot String?
+  siteAddressSnapshot String?
+  citySnapshot String?
+  stateSnapshot String?
+  scopeDescriptionSnapshot String?
+  internalNotesSnapshot String?
+  proposalNotes String?
+  proposalPreparedAt DateTime?
   archivedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -314,11 +348,108 @@ model Quote {
   requests    Request[]
   project     Project?
   documents   LifecycleDocument[]
+  items        QuoteItem[]
 
   @@index([status])
   @@index([owner])
   @@index([clientId])
+  @@index([sourceRequestIdSnapshot])
   @@index([archivedAt])
+}
+
+model Item {
+  id                 String             @id @default(cuid())
+  name               String
+  description        String?
+  itemType           ItemType           @default(PRODUCT)
+  status             ItemStatus         @default(ACTIVE)
+  sku                String?
+  partNumber         String?
+  manufacturer       String?
+  brand              String?
+  category           String?
+  subcategory        String?
+  unitOfMeasure      String?
+  cost               Decimal            @default(0) @db.Decimal(12, 2)
+  sellPrice          Decimal            @default(0) @db.Decimal(12, 2)
+  markupPercent      Decimal            @default(0) @db.Decimal(8, 2)
+  taxable            Boolean            @default(true)
+  primaryImageUrl    String?
+  productUrl         String?
+  datasheetUrl       String?
+  internalNotes      String?
+  quoteDescription   String?
+  defaultLaborHours  Decimal            @default(0) @db.Decimal(8, 2)
+  defaultLaborItemId String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  defaultLaborItem   Item?              @relation("DefaultLaborItem", fields: [defaultLaborItemId], references: [id], onDelete: SetNull)
+  defaultLaborFor    Item[]             @relation("DefaultLaborItem")
+  quoteItems         QuoteItem[]
+  outgoingRelations  ItemRelation[]     @relation("ItemRelationParent")
+  incomingRelations  ItemRelation[]     @relation("ItemRelationChild")
+
+  @@index([name])
+  @@index([itemType])
+  @@index([status])
+  @@index([sku])
+  @@index([partNumber])
+  @@index([category])
+  @@index([defaultLaborItemId])
+}
+
+model QuoteItem {
+  id              String    @id @default(cuid())
+  quoteId         String
+  sourceItemId    String?
+  section         String    @default("Materials")
+  name            String
+  description     String?
+  itemType        ItemType
+  sku             String?
+  partNumber      String?
+  manufacturer    String?
+  brand           String?
+  quantity        Decimal   @default(1) @db.Decimal(12, 3)
+  unitOfMeasure   String?
+  unitCost        Decimal   @default(0) @db.Decimal(12, 2)
+  unitPrice       Decimal   @default(0) @db.Decimal(12, 2)
+  markupPercent   Decimal   @default(0) @db.Decimal(8, 2)
+  discountPercent Decimal   @default(0) @db.Decimal(5, 2)
+  taxable         Boolean   @default(true)
+  imageUrl        String?
+  productUrl      String?
+  lineSubtotal    Decimal   @default(0) @db.Decimal(12, 2)
+  lineTax         Decimal   @default(0) @db.Decimal(12, 2)
+  lineTotal       Decimal   @default(0) @db.Decimal(12, 2)
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  quote           Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  sourceItem      Item?     @relation(fields: [sourceItemId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId])
+  @@index([sourceItemId])
+  @@index([itemType])
+  @@index([section])
+  @@index([sortOrder])
+}
+
+model ItemRelation {
+  id              String           @id @default(cuid())
+  parentItemId    String
+  childItemId     String
+  relationType    ItemRelationType
+  defaultQuantity Decimal          @default(1) @db.Decimal(12, 3)
+  sortOrder       Int              @default(0)
+  parentItem      Item             @relation("ItemRelationParent", fields: [parentItemId], references: [id], onDelete: Cascade)
+  childItem       Item             @relation("ItemRelationChild", fields: [childItemId], references: [id], onDelete: Cascade)
+
+  @@unique([parentItemId, childItemId, relationType])
+  @@index([parentItemId])
+  @@index([childItemId])
+  @@index([relationType])
+  @@index([sortOrder])
 }
 
 model Project {

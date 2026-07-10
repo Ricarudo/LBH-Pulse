@@ -55,7 +55,7 @@ type RequestListResponse = {
   assignees: RequestAssignee[];
 };
 type ActivityListResponse = { activities: ActivityRecord[] };
-type SupportingTab = "details" | "files" | "activity";
+type RequestRecordTab = "checklist" | "details" | "files" | "activity";
 
 type ActionDraft = {
   assignedToId: string;
@@ -66,7 +66,8 @@ type ActionDraft = {
 };
 
 const terminalStatuses: RequestStatus[] = ["No Bid", "Cancelled", "Duplicate"];
-const supportingTabs: Array<{ id: SupportingTab; label: string }> = [
+const requestRecordTabs: Array<{ id: RequestRecordTab; label: string }> = [
+  { id: "checklist", label: "Checklist" },
   { id: "details", label: "Details" },
   { id: "files", label: "Files" },
   { id: "activity", label: "Activity" }
@@ -170,7 +171,7 @@ export function RequestRecordWorkspace({
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
   const [actionDraft, setActionDraft] = useState<ActionDraft | null>(null);
-  const [activeTab, setActiveTab] = useState<SupportingTab>("details");
+  const [activeTab, setActiveTab] = useState<RequestRecordTab>("checklist");
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAction, setIsSavingAction] = useState(false);
   const [pendingChecklistIds, setPendingChecklistIds] = useState<string[]>([]);
@@ -186,7 +187,8 @@ export function RequestRecordWorkspace({
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [conversionOpen, setConversionOpen] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
-  const tabRefs = useRef<Record<SupportingTab, HTMLButtonElement | null>>({
+  const tabRefs = useRef<Record<RequestRecordTab, HTMLButtonElement | null>>({
+    checklist: null,
     details: null,
     files: null,
     activity: null
@@ -522,7 +524,7 @@ export function RequestRecordWorkspace({
     try {
       setIsConverting(true);
       const data = await requestJson<RequestResponse>(
-        `/api/requests/${request.id}/convert`,
+        `/workspace-api/requests/${request.id}/convert`,
         {
           method: "POST",
           body: JSON.stringify({ createQuote: true })
@@ -536,6 +538,9 @@ export function RequestRecordWorkspace({
           ? `Created ${data.request.relatedQuoteNumber}.`
           : "Request converted."
       );
+      if (data.request.relatedQuoteId) {
+        router.push(`/quotes/${data.request.relatedQuoteId}`);
+      }
     } catch (conversionError) {
       setError(
         conversionError instanceof Error
@@ -550,37 +555,40 @@ export function RequestRecordWorkspace({
   function handleQuoteAction() {
     if (!request) return;
     if (!request.checklistSummary.readyForQuote) {
-      const firstBlocker =
-        document.querySelector<HTMLElement>("[data-request-blocker]") ??
-        document.getElementById("request-action-panel");
-      firstBlocker?.scrollIntoView({ behavior: "smooth", block: "center" });
-      window.setTimeout(() => firstBlocker?.focus(), 350);
+      setActiveTab("checklist");
+      window.setTimeout(() => {
+        const firstBlocker =
+          document.querySelector<HTMLElement>("[data-request-blocker]") ??
+          document.getElementById("request-action-panel");
+        firstBlocker?.scrollIntoView({ behavior: "smooth", block: "center" });
+        window.setTimeout(() => firstBlocker?.focus(), 350);
+      }, 0);
       return;
     }
     setConversionOpen(true);
   }
 
-  function selectTab(tab: SupportingTab) {
+  function selectTab(tab: RequestRecordTab) {
     setActiveTab(tab);
     tabRefs.current[tab]?.focus();
   }
 
-  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tab: SupportingTab) {
-    const index = supportingTabs.findIndex((item) => item.id === tab);
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tab: RequestRecordTab) {
+    const index = requestRecordTabs.findIndex((item) => item.id === tab);
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      selectTab(supportingTabs[(index + 1) % supportingTabs.length].id);
+      selectTab(requestRecordTabs[(index + 1) % requestRecordTabs.length].id);
     } else if (event.key === "ArrowLeft") {
       event.preventDefault();
       selectTab(
-        supportingTabs[(index - 1 + supportingTabs.length) % supportingTabs.length].id
+        requestRecordTabs[(index - 1 + requestRecordTabs.length) % requestRecordTabs.length].id
       );
     } else if (event.key === "Home") {
       event.preventDefault();
-      selectTab(supportingTabs[0].id);
+      selectTab(requestRecordTabs[0].id);
     } else if (event.key === "End") {
       event.preventDefault();
-      selectTab(supportingTabs[supportingTabs.length - 1].id);
+      selectTab(requestRecordTabs[requestRecordTabs.length - 1].id);
     }
   }
 
@@ -634,14 +642,21 @@ export function RequestRecordWorkspace({
                 >
                   <span>
                     <strong>{item.label}</strong>
-                    {item.description ? <small>{item.description}</small> : null}
-                    <em>{item.required ? "Required" : "Optional"}</em>
+                    <span className="record-checklist-meta-row">
+                      <em>{item.required ? "Required" : "Optional"}</em>
+                      <em>{pending ? "Saving" : item.completed ? "Complete" : "Open"}</em>
+                    </span>
                     <RequestChecklistSignature item={item} compact />
                   </span>
                   <ChevronDown size={18} />
                 </button>
                 {expanded ? (
                   <div className="record-checklist-note">
+                    {item.description ? (
+                      <p className="record-checklist-expanded-description">
+                        {item.description}
+                      </p>
+                    ) : null}
                     <label>
                       Item note
                       <textarea
@@ -732,7 +747,7 @@ export function RequestRecordWorkspace({
               Reopen request
             </button>
           ) : isConverted ? (
-            <Link className="record-primary-action" href="/quotes">
+            <Link className="record-primary-action" href={request.relatedQuoteId ? `/quotes/${request.relatedQuoteId}` : "/quotes"}>
               <FileText size={16} />
               {request.relatedQuoteNumber || "View quotes"}
             </Link>
@@ -819,101 +834,213 @@ export function RequestRecordWorkspace({
       ) : null}
 
       <div className="request-record-workspace">
-        <section className="request-progress-workspace" id="request-blockers">
-          <div className="request-progress-heading">
-            <div>
-              <span>Progress to quote</span>
-              <h2>{request.checklistSummary.templateName}</h2>
-              <p>
-                Complete required intake and resolve record blockers before handoff.
-              </p>
-            </div>
-            <div className={request.checklistSummary.readyForQuote ? "ready" : ""}>
-              <strong>
-                {request.checklistSummary.requiredCompleted}/
-                {request.checklistSummary.requiredTotal}
-              </strong>
-              <span>required complete</span>
-            </div>
+        <section className="request-supporting-panel request-record-primary-panel">
+          <div className="request-supporting-tabs request-record-tabs" role="tablist" aria-label="Request sections">
+            {requestRecordTabs.map((tab) => (
+              <button
+                key={tab.id}
+                id={`request-tab-${tab.id}`}
+                ref={(element) => {
+                  tabRefs.current[tab.id] = element;
+                }}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls={`request-panel-${tab.id}`}
+                tabIndex={activeTab === tab.id ? 0 : -1}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
+              >
+                {tab.label}
+                {tab.id === "checklist" && blockerCount ? (
+                  <span>{blockerCount}</span>
+                ) : null}
+                {tab.id === "files" && request.documents.length ? (
+                  <span>{request.documents.length}</span>
+                ) : null}
+              </button>
+            ))}
           </div>
+
           <div
-            className="record-progress-track"
-            role="progressbar"
-            aria-label="Required checklist progress"
-            aria-valuemin={0}
-            aria-valuemax={request.checklistSummary.requiredTotal || 1}
-            aria-valuenow={request.checklistSummary.requiredCompleted}
+            id={`request-panel-${activeTab}`}
+            role="tabpanel"
+            aria-labelledby={`request-tab-${activeTab}`}
+            tabIndex={0}
+            className={
+              activeTab === "checklist"
+                ? "request-supporting-content request-checklist-tab-content"
+                : "request-supporting-content"
+            }
           >
-            <span
-              style={{
-                width: `${
-                  request.checklistSummary.requiredTotal
-                    ? Math.round(
-                        (request.checklistSummary.requiredCompleted /
-                          request.checklistSummary.requiredTotal) *
-                          100
-                      )
-                    : 0
-                }%`
-              }}
-            />
-          </div>
-
-          {checklistState.systemBlockers.length ? (
-            <section className="record-system-blockers">
-              <h3>Record blockers</h3>
-              <div>
-                {checklistState.systemBlockers.map((blocker) => (
-                  <Link
-                    key={blocker}
-                    href={
-                      blocker === "Internal owner assigned"
-                        ? "#request-action-panel"
-                        : `${editHref}#${
-                            blocker.includes("Contact") ||
-                            blocker.includes("Client")
-                              ? "client-site"
-                              : blocker.includes("Service")
-                                ? "request-basics"
-                                : "intake-context"
-                          }`
-                    }
-                    data-request-blocker
-                  >
-                    <AlertTriangle size={17} />
-                    <span>
-                      <strong>{blocker}</strong>
-                      <small>Resolve this requirement</small>
-                    </span>
-                    <ChevronRight size={17} />
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <div className="record-checklist-instances">
-            {request.checklistInstances.filter((instance) => instance.active).map((instance) => {
-              const open = instance.items.filter((item) => item.applicable && item.required && !item.completed);
-              const optional = instance.items.filter((item) => item.applicable && !item.required && !item.completed);
-              const completed = instance.items.filter((item) => item.completed);
-              const inactive = instance.items.filter((item) => !item.applicable && !item.completed);
-              return <section className="record-checklist-instance" key={instance.id}>
-                <div className="record-checklist-instance-heading">
-                  <div><span>{instance.matchType === "CORE" ? "Core" : instance.matchType === "TRADE" ? "Trade" : "Request type"}</span><h3>{instance.templateName}</h3>{instance.matchValue ? <small>{instance.matchValue}</small> : null}</div>
-                  <strong>{instance.summary.requiredCompleted}/{instance.summary.requiredTotal}</strong>
+            {activeTab === "checklist" ? (
+              <div className="request-progress-workspace request-progress-tab" id="request-blockers">
+                <div className="request-progress-heading">
+                  <div>
+                    <span>Progress to quote</span>
+                    <h2>{request.checklistSummary.templateName}</h2>
+                    <p>
+                      Complete required intake and resolve record blockers before handoff.
+                    </p>
+                  </div>
+                  <div className={request.checklistSummary.readyForQuote ? "ready" : ""}>
+                    <strong>
+                      {request.checklistSummary.requiredCompleted}/
+                      {request.checklistSummary.requiredTotal}
+                    </strong>
+                    <span>required complete</span>
+                  </div>
                 </div>
-                <section className="record-open-checklist">
-                  <div className="record-section-heading"><h3>Required to do</h3><span>{open.length} open</span></div>
-                  {open.length ? renderChecklistItems(open) : <div className="record-checklist-empty"><CheckCircle2 size={21} /><strong>All required items in this checklist are complete.</strong></div>}
+                <div
+                  className="record-progress-track"
+                  role="progressbar"
+                  aria-label="Required checklist progress"
+                  aria-valuemin={0}
+                  aria-valuemax={request.checklistSummary.requiredTotal || 1}
+                  aria-valuenow={request.checklistSummary.requiredCompleted}
+                >
+                  <span
+                    style={{
+                      width: `${
+                        request.checklistSummary.requiredTotal
+                          ? Math.round(
+                              (request.checklistSummary.requiredCompleted /
+                                request.checklistSummary.requiredTotal) *
+                                100
+                            )
+                          : 0
+                      }%`
+                    }}
+                  />
+                </div>
+
+                {checklistState.systemBlockers.length ? (
+                  <section className="record-system-blockers">
+                    <h3>Record blockers</h3>
+                    <div>
+                      {checklistState.systemBlockers.map((blocker) => (
+                        <Link
+                          key={blocker}
+                          href={
+                            blocker === "Internal owner assigned"
+                              ? "#request-action-panel"
+                              : `${editHref}#${
+                                  blocker.includes("Contact") ||
+                                  blocker.includes("Client")
+                                    ? "client-site"
+                                    : blocker.includes("Service")
+                                      ? "request-basics"
+                                      : "intake-context"
+                                }`
+                          }
+                          data-request-blocker
+                        >
+                          <AlertTriangle size={17} />
+                          <span>
+                            <strong>{blocker}</strong>
+                            <small>Resolve this requirement</small>
+                          </span>
+                          <ChevronRight size={17} />
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                <div className="record-checklist-instances">
+                  {request.checklistInstances.filter((instance) => instance.active).map((instance) => {
+                    const open = instance.items.filter((item) => item.applicable && item.required && !item.completed);
+                    const optional = instance.items.filter((item) => item.applicable && !item.required && !item.completed);
+                    const completed = instance.items.filter((item) => item.completed);
+                    const inactive = instance.items.filter((item) => !item.applicable && !item.completed);
+                    return <section className="record-checklist-instance" key={instance.id}>
+                      <div className="record-checklist-instance-heading">
+                        <div><span>{instance.matchType === "CORE" ? "Core" : instance.matchType === "TRADE" ? "Trade" : "Request type"}</span><h3>{instance.templateName}</h3>{instance.matchValue ? <small>{instance.matchValue}</small> : null}</div>
+                        <strong>{instance.summary.requiredCompleted}/{instance.summary.requiredTotal}</strong>
+                      </div>
+                      <section className="record-open-checklist">
+                        <div className="record-section-heading"><h3>Required to do</h3><span>{open.length} open</span></div>
+                        {open.length ? renderChecklistItems(open) : <div className="record-checklist-empty"><CheckCircle2 size={21} /><strong>All required items in this checklist are complete.</strong></div>}
+                      </section>
+                      {optional.length ? <details className="record-checklist-disclosure"><summary><span>Optional items</span><strong>{optional.length}</strong></summary>{renderChecklistItems(optional)}</details> : null}
+                      {completed.length ? <details className="record-checklist-disclosure"><summary><span>Completed</span><strong>{completed.length}</strong></summary>{renderChecklistItems(completed)}</details> : null}
+                      {inactive.length ? <details className="record-checklist-disclosure"><summary><span>Not applicable</span><strong>{inactive.length}</strong></summary>{renderChecklistItems(inactive)}</details> : null}
+                    </section>;
+                  })}
+                </div>
+                {request.checklistInstances.some((instance) => !instance.active) ? <details className="record-checklist-disclosure retired"><summary><span>Retired checklist history</span><strong>{request.checklistInstances.filter((instance) => !instance.active).length}</strong></summary>{request.checklistInstances.filter((instance) => !instance.active).map((instance) => <section className="record-checklist-instance retired" key={instance.id}><div className="record-checklist-instance-heading"><div><span>Retired</span><h3>{instance.templateName}</h3></div></div>{renderChecklistItems(instance.items)}</section>)}</details> : null}
+              </div>
+            ) : null}
+
+            {activeTab === "details" ? (
+              <div className="request-details-grid">
+                <section>
+                  <span>Client and site</span>
+                  <h3>{request.companyName || "New prospect"}</h3>
+                  <p>{siteSummary(request)}</p>
+                  <small>{request.requestType} · {request.source}</small>
                 </section>
-                {optional.length ? <details className="record-checklist-disclosure"><summary><span>Optional items</span><strong>{optional.length}</strong></summary>{renderChecklistItems(optional)}</details> : null}
-                {completed.length ? <details className="record-checklist-disclosure"><summary><span>Completed</span><strong>{completed.length}</strong></summary>{renderChecklistItems(completed)}</details> : null}
-                {inactive.length ? <details className="record-checklist-disclosure"><summary><span>Not applicable</span><strong>{inactive.length}</strong></summary>{renderChecklistItems(inactive)}</details> : null}
-              </section>;
-            })}
+                <section>
+                  <span>Contact</span>
+                  <h3>{request.contactName || "Not captured"}</h3>
+                  <p>{request.contactEmail || "No email"}</p>
+                  <small>{request.contactPhone || "No phone"}</small>
+                </section>
+                <section className="wide">
+                  <span>Intake description</span>
+                  <p>{request.description || "No intake description has been added."}</p>
+                </section>
+                <section className="wide">
+                  <span>Internal summary</span>
+                  <p>{request.internalNotes || "No internal summary has been added."}</p>
+                </section>
+                {request.missingInfo ? (
+                  <section className="wide warning">
+                    <span>Additional missing information</span>
+                    <p>{request.missingInfo}</p>
+                  </section>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeTab === "files" ? (
+              <LifecycleDocuments
+                stage="request"
+                recordId={request.id}
+                documents={request.documents}
+                canWrite={canWriteCrm}
+                onChange={(documents) => setRequest({ ...request, documents })}
+              />
+            ) : null}
+
+            {activeTab === "activity" ? (
+              <div className="request-activity-panel">
+                <div className="record-note-composer">
+                  <label>
+                    Add activity note
+                    <textarea
+                      value={noteText}
+                      onChange={(event) => setNoteText(event.target.value)}
+                      placeholder="Record an update, client conversation, or decision..."
+                      disabled={!canWriteActivity}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void addActivityNote()}
+                    disabled={!canWriteActivity || !noteText.trim()}
+                  >
+                    <StickyNote size={16} />
+                    Add note
+                  </button>
+                </div>
+                <ActivityTimeline
+                  activities={activities}
+                  emptyMessage="No shared activity has been recorded for this request yet."
+                />
+              </div>
+            ) : null}
           </div>
-          {request.checklistInstances.some((instance) => !instance.active) ? <details className="record-checklist-disclosure retired"><summary><span>Retired checklist history</span><strong>{request.checklistInstances.filter((instance) => !instance.active).length}</strong></summary>{request.checklistInstances.filter((instance) => !instance.active).map((instance) => <section className="record-checklist-instance retired" key={instance.id}><div className="record-checklist-instance-heading"><div><span>Retired</span><h3>{instance.templateName}</h3></div></div>{renderChecklistItems(instance.items)}</section>)}</details> : null}
         </section>
 
         <aside className="request-action-rail">
@@ -1076,109 +1203,6 @@ export function RequestRecordWorkspace({
         </aside>
       </div>
 
-      <section className="request-supporting-panel">
-        <div className="request-supporting-tabs" role="tablist" aria-label="Request supporting information">
-          {supportingTabs.map((tab) => (
-            <button
-              key={tab.id}
-              id={`request-tab-${tab.id}`}
-              ref={(element) => {
-                tabRefs.current[tab.id] = element;
-              }}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              aria-controls={`request-panel-${tab.id}`}
-              tabIndex={activeTab === tab.id ? 0 : -1}
-              onClick={() => setActiveTab(tab.id)}
-              onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
-            >
-              {tab.label}
-              {tab.id === "files" && request.documents.length ? (
-                <span>{request.documents.length}</span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-
-        <div
-          id={`request-panel-${activeTab}`}
-          role="tabpanel"
-          aria-labelledby={`request-tab-${activeTab}`}
-          tabIndex={0}
-          className="request-supporting-content"
-        >
-          {activeTab === "details" ? (
-            <div className="request-details-grid">
-              <section>
-                <span>Client and site</span>
-                <h3>{request.companyName || "New prospect"}</h3>
-                <p>{siteSummary(request)}</p>
-                <small>{request.requestType} · {request.source}</small>
-              </section>
-              <section>
-                <span>Contact</span>
-                <h3>{request.contactName || "Not captured"}</h3>
-                <p>{request.contactEmail || "No email"}</p>
-                <small>{request.contactPhone || "No phone"}</small>
-              </section>
-              <section className="wide">
-                <span>Intake description</span>
-                <p>{request.description || "No intake description has been added."}</p>
-              </section>
-              <section className="wide">
-                <span>Internal summary</span>
-                <p>{request.internalNotes || "No internal summary has been added."}</p>
-              </section>
-              {request.missingInfo ? (
-                <section className="wide warning">
-                  <span>Additional missing information</span>
-                  <p>{request.missingInfo}</p>
-                </section>
-              ) : null}
-            </div>
-          ) : null}
-
-          {activeTab === "files" ? (
-            <LifecycleDocuments
-              stage="request"
-              recordId={request.id}
-              documents={request.documents}
-              canWrite={canWriteCrm}
-              onChange={(documents) => setRequest({ ...request, documents })}
-            />
-          ) : null}
-
-          {activeTab === "activity" ? (
-            <div className="request-activity-panel">
-              <div className="record-note-composer">
-                <label>
-                  Add activity note
-                  <textarea
-                    value={noteText}
-                    onChange={(event) => setNoteText(event.target.value)}
-                    placeholder="Record an update, client conversation, or decision..."
-                    disabled={!canWriteActivity}
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void addActivityNote()}
-                  disabled={!canWriteActivity || !noteText.trim()}
-                >
-                  <StickyNote size={16} />
-                  Add note
-                </button>
-              </div>
-              <ActivityTimeline
-                activities={activities}
-                emptyMessage="No shared activity has been recorded for this request yet."
-              />
-            </div>
-          ) : null}
-        </div>
-      </section>
-
       <div className="request-mobile-action-bar">
         <Link href={editHref}><Edit3 size={17} /> Edit</Link>
         {!isConverted && !isClosed ? (
@@ -1192,7 +1216,7 @@ export function RequestRecordWorkspace({
             Reopen
           </button>
         ) : (
-          <Link href="/quotes"><FileText size={17} /> View quote</Link>
+          <Link href={request.relatedQuoteId ? `/quotes/${request.relatedQuoteId}` : "/quotes"}><FileText size={17} /> View quote</Link>
         )}
       </div>
 

@@ -467,7 +467,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   async function convertQuote(quote: QuoteRecord) {
     try {
       const data = await requestJson<{ project: ProjectRecord }>(
-        `/api/quotes/${quote.id}/convert`,
+        `/workspace-api/quotes/${quote.id}/convert`,
         {
           method: "POST",
           body: JSON.stringify({})
@@ -517,6 +517,12 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
 
     return (
       <div className={mobile ? "work-queue-card-actions" : "work-queue-actions"}>
+        {kind === "quotes" ? (
+          <Link href={`/quotes/${record.id}`}>
+            Open workspace
+            <ArrowRight size={14} />
+          </Link>
+        ) : null}
         {canShowFiles ? (
           <button
             type="button"
@@ -582,15 +588,22 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             {copy.summary}
           </p>
         </div>
-        <button
-          className="primary-button compact"
-          type="button"
-          onClick={() => openCreate()}
-          disabled={!canWrite}
-        >
-          <Plus size={17} />
-          New {copy.singular.toLowerCase()}
-        </button>
+        {kind === "quotes" ? (
+          <Link className="primary-button compact" href="/requests">
+            <Plus size={17} />
+            Create from request
+          </Link>
+        ) : (
+          <button
+            className="primary-button compact"
+            type="button"
+            onClick={() => openCreate()}
+            disabled={!canWrite}
+          >
+            <Plus size={17} />
+            New {copy.singular.toLowerCase()}
+          </button>
+        )}
       </header>
 
       <nav className="work-queue-views" aria-label={`${title} views`}>
@@ -705,7 +718,11 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                             .join(" ")}
                         >
                           <td>
-                            <strong>{record.title}</strong>
+                            {kind === "quotes" ? (
+                              <Link href={`/quotes/${record.id}`}><strong>{record.title}</strong></Link>
+                            ) : (
+                              <strong>{record.title}</strong>
+                            )}
                             <span>{recordNumber(record)}</span>
                             <small>{recordSource(record)}</small>
                           </td>
@@ -789,7 +806,13 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                         <span>{recordNumber(record)}</span>
                         {renderStatus(record, true)}
                       </div>
-                      <h3>{record.title}</h3>
+                      <h3>
+                        {kind === "quotes" ? (
+                          <Link href={`/quotes/${record.id}`}>{record.title}</Link>
+                        ) : (
+                          record.title
+                        )}
+                      </h3>
                       <p>{record.clientName || "Unlinked client"}</p>
                       <span className="work-queue-card-source">
                         {recordSource(record)}

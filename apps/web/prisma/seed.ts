@@ -860,12 +860,15 @@ async function main() {
   await prisma.requestNote.deleteMany();
   await prisma.requestTask.deleteMany();
   await prisma.requestActivity.deleteMany();
+  await prisma.quoteItem.deleteMany();
   await prisma.invoice.deleteMany();
   await prisma.project.deleteMany();
   await prisma.request.deleteMany();
   await prisma.requestChecklistTemplateItem.deleteMany();
   await prisma.requestChecklistTemplate.deleteMany();
   await prisma.quote.deleteMany();
+  await prisma.itemRelation.deleteMany();
+  await prisma.item.deleteMany();
   await prisma.opportunity.deleteMany();
   await prisma.localUser.deleteMany();
 
@@ -1234,6 +1237,129 @@ async function main() {
     metadata: { status: opportunity.status, value: Number(opportunity.value) }
   });
 
+  const laborItem = await prisma.item.create({
+    data: {
+      name: "Senior Technician Labor",
+      description: "Standard senior technician labor for quote estimates.",
+      itemType: "LABOR",
+      sku: "LAB-SR-TECH",
+      category: "Labor",
+      unitOfMeasure: "hour",
+      cost: 55,
+      sellPrice: 95,
+      markupPercent: 72.73,
+      taxable: false,
+      quoteDescription: "Senior technician labor"
+    }
+  });
+  const switchItem = await prisma.item.create({
+    data: {
+      name: "48-Port PoE Access Switch",
+      description: "Managed PoE access switch for network refresh projects.",
+      itemType: "PRODUCT",
+      sku: "NET-SW-48P",
+      partNumber: "USW-PRO-48-POE",
+      manufacturer: "Ubiquiti",
+      brand: "UniFi",
+      category: "Networking",
+      subcategory: "Switching",
+      unitOfMeasure: "each",
+      cost: 1425,
+      sellPrice: 2150,
+      markupPercent: 50.88,
+      taxable: true,
+      quoteDescription: "48-port managed PoE access switch",
+      defaultLaborHours: 2,
+      defaultLaborItemId: laborItem.id
+    }
+  });
+  const patchCableItem = await prisma.item.create({
+    data: {
+      name: "Cat6 Patch Cable 3 ft",
+      description: "Short Cat6 patch cable for rack terminations.",
+      itemType: "PRODUCT",
+      sku: "CAB-CAT6-3FT",
+      category: "Cabling",
+      subcategory: "Patch cables",
+      unitOfMeasure: "each",
+      cost: 5.25,
+      sellPrice: 12,
+      markupPercent: 128.57,
+      taxable: true
+    }
+  });
+  const configurationService = await prisma.item.create({
+    data: {
+      name: "Network Configuration Service",
+      description: "Switch configuration, VLAN setup, labeling, and handoff documentation.",
+      itemType: "SERVICE",
+      sku: "SVC-NET-CONFIG",
+      category: "Networking",
+      unitOfMeasure: "each",
+      cost: 0,
+      sellPrice: 450,
+      taxable: false,
+      quoteDescription: "Network configuration and handoff documentation"
+    }
+  });
+  const refreshKit = await prisma.item.create({
+    data: {
+      name: "Small Network Refresh Kit",
+      description: "Starter kit for a small switching refresh BOM.",
+      itemType: "PRODUCT",
+      sku: "KIT-NET-REFRESH-S",
+      category: "Networking",
+      unitOfMeasure: "kit",
+      cost: 0,
+      sellPrice: 0,
+      taxable: true,
+      quoteDescription: "Small network refresh kit"
+    }
+  });
+  await prisma.item.create({
+    data: {
+      name: "Legacy 2MP Dome Camera",
+      description: "Inactive legacy camera retained for quote history.",
+      itemType: "PRODUCT",
+      status: "INACTIVE",
+      sku: "OLD-CAM-2MP",
+      category: "CCTV / Surveillance",
+      unitOfMeasure: "each",
+      cost: 68,
+      sellPrice: 135
+    }
+  });
+  await prisma.itemRelation.createMany({
+    data: [
+      {
+        parentItemId: refreshKit.id,
+        childItemId: switchItem.id,
+        relationType: "KIT_COMPONENT",
+        defaultQuantity: 2,
+        sortOrder: 1
+      },
+      {
+        parentItemId: refreshKit.id,
+        childItemId: patchCableItem.id,
+        relationType: "KIT_COMPONENT",
+        defaultQuantity: 24,
+        sortOrder: 2
+      },
+      {
+        parentItemId: refreshKit.id,
+        childItemId: configurationService.id,
+        relationType: "REQUIRED",
+        defaultQuantity: 1,
+        sortOrder: 3
+      }
+    ]
+  });
+
+  const coastalRequest = await prisma.request.findFirst({
+    where: { requestNumber: "RQ-2026-1006" },
+    select: { id: true }
+  });
+
   const quote = await prisma.quote.create({
     data: {
       quoteNumber: "QT-2026-1001",
@@ -1242,9 +1368,65 @@ async function main() {
       clientName: "Coastal Hospitality Group",
       status: "Draft",
       owner: "Sales User",
-      total: 52400,
+      total: 0,
+      sourceRequestIdSnapshot: coastalRequest?.id ?? null,
+      requestNumberSnapshot: "RQ-2026-1006",
+      requestTitleSnapshot: "Network refresh",
+      requestTypeSnapshot: "Quote Request",
+      serviceCategorySnapshot: "Networking",
+      contactNameSnapshot: "Sofia Morales",
+      contactEmailSnapshot: "smorales@coastalhospitality.example",
+      contactPhoneSnapshot: "787-555-0166",
+      siteNameSnapshot: "Condado hotel",
+      siteAddressSnapshot: "Ashford Avenue 1102",
+      citySnapshot: "San Juan",
+      stateSnapshot: "PR",
+      scopeDescriptionSnapshot: "Replace access switches and clean up rack power. Customer requested proposal this week.",
+      internalNotesSnapshot: "Customer asked for a proposal by Friday.",
+      proposalNotes: "Draft proposal should emphasize phased implementation and minimal hotel downtime.",
       createdAt: new Date("2026-05-09T18:30:00.000Z")
     }
+  });
+
+  function quoteLine(item, quantity, sortOrder) {
+    const unitPrice = Number(item.sellPrice);
+    const lineSubtotal = Number((quantity * unitPrice).toFixed(2));
+    return {
+      quoteId: quote.id,
+      sourceItemId: item.id,
+      section: item.itemType === "LABOR" ? "Labor" : item.itemType === "SERVICE" ? "Services" : "Materials",
+      name: item.name,
+      description: item.quoteDescription || item.description,
+      itemType: item.itemType,
+      sku: item.sku,
+      partNumber: item.partNumber,
+      manufacturer: item.manufacturer,
+      brand: item.brand,
+      quantity,
+      unitOfMeasure: item.unitOfMeasure,
+      unitCost: item.cost,
+      unitPrice,
+      markupPercent: item.markupPercent,
+      discountPercent: 0,
+      taxable: item.taxable,
+      imageUrl: item.primaryImageUrl,
+      productUrl: item.productUrl,
+      lineSubtotal,
+      lineTax: 0,
+      lineTotal: lineSubtotal,
+      sortOrder
+    };
+  }
+  const quoteLines = [
+    quoteLine(switchItem, 2, 1),
+    quoteLine(laborItem, 16, 2),
+    quoteLine(configurationService, 1, 3)
+  ];
+  await prisma.quoteItem.createMany({ data: quoteLines });
+  const quoteTotal = quoteLines.reduce((total, line) => total + line.lineTotal, 0);
+  await prisma.quote.update({
+    where: { id: quote.id },
+    data: { total: quoteTotal }
   });
 
   await prisma.request.updateMany({
@@ -1304,7 +1486,7 @@ async function main() {
     title: `${quote.quoteNumber} drafted`,
     detail: quote.title,
     createdAt: new Date("2026-05-09T18:30:00.000Z"),
-    metadata: { status: quote.status, total: Number(quote.total) }
+    metadata: { status: quote.status, total: quoteTotal }
   });
 }
 
@@ -1312,7 +1494,7 @@ main()
   .then(async () => {
     await prisma.$disconnect();
     console.log(
-      `Seeded ${testUsers.length} local users, ${sampleClients.length + 1} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, and starter activity.`
+      `Seeded ${testUsers.length} local users, ${sampleClients.length + 1} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, starter items, quote BOM lines, and activity.`
     );
   })
   .catch(async (error) => {

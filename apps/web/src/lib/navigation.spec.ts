@@ -25,7 +25,7 @@ test("mobile overflow routes activate More", () => {
 test("search destinations use detail pages or focused boards", () => {
   assert.equal(searchResultHref("request", "rq-1"), "/requests/rq-1");
   assert.equal(searchResultHref("client", "cl-1"), "/clients/cl-1");
-  assert.equal(searchResultHref("quote", "qt-1"), "/quotes?record=qt-1");
+  assert.equal(searchResultHref("quote", "qt-1"), "/quotes/qt-1");
   assert.equal(searchResultHref("invoice", "in 1"), "/billing?record=in%201");
 });
 

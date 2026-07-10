@@ -882,7 +882,7 @@ export function RequestsModule({ openNewOnLoad = false }: { openNewOnLoad?: bool
 
     try {
       const data = await requestJson<RequestResponse>(
-        `/api/requests/${request.id}/convert`,
+        `/workspace-api/requests/${request.id}/convert`,
         {
           method: "POST",
           body: JSON.stringify({

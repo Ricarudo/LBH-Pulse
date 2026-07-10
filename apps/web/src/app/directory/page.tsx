@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   Building2,
+  Boxes,
   Factory,
   Handshake,
   MapPin,
@@ -25,6 +26,13 @@ const directorySections = [
     href: "/contacts",
     status: "Active",
     icon: UserRound
+  },
+  {
+    label: "Items",
+    detail: "Products, labor, services, kits, and quote BOM suggestions.",
+    href: "/directory/items",
+    status: "Active",
+    icon: Boxes
   },
   {
     label: "Sites / Locations",

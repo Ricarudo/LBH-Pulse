@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
   allowedDevOrigins,
   async rewrites() {
     return {
+      // Web-owned quote/BOM/item handlers use /workspace-api so this legacy
+      // proxy can continue serving the rest of the Nest API without shadowing them.
       beforeFiles: [
         {
           source: "/api/:path*",

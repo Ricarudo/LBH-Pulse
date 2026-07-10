@@ -478,7 +478,7 @@ export function RequestRouteWorkspace({
     }
 
     try {
-      const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/convert`, {
+      const data = await requestJson<RequestResponse>(`/workspace-api/requests/${request.id}/convert`, {
         method: "POST",
         body: JSON.stringify({ createQuote: true })
       });

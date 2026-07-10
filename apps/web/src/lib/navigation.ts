@@ -170,7 +170,7 @@ export function isNavigationItemActive(
 export function searchResultHref(kind: GlobalSearchKind, id: string) {
   if (kind === "request") return `/requests/${id}`;
   if (kind === "client") return `/clients/${id}`;
-  if (kind === "quote") return `/quotes?record=${encodeURIComponent(id)}`;
+  if (kind === "quote") return `/quotes/${id}`;
   if (kind === "project") return `/projects?record=${encodeURIComponent(id)}`;
   return `/billing?record=${encodeURIComponent(id)}`;
 }
