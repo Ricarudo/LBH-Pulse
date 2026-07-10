@@ -1,0 +1,23 @@
+{
+  "name": "lbh-pulse",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @pulse/contracts && npm run build -w @pulse/api && npm run build -w @pulse/web",
+    "typecheck": "npm run typecheck -w @pulse/contracts && npm run typecheck -w @pulse/api && npm run typecheck -w @pulse/web",
+    "test": "npm run test -w @pulse/contracts && npm run test -w @pulse/api && npm run test -w @pulse/web",
+    "dev:api": "npm run build -w @pulse/contracts && npm run dev -w @pulse/api",
+    "dev:web": "npm run build -w @pulse/contracts && npm run dev -w @pulse/web",
+    "responsive:check": "npm run responsive:check -w @pulse/web",
+    "db:initialize": "npm run db:initialize -w @pulse/api",
+    "db:setup": "npm run db:setup -w @pulse/api",
+    "db:seed": "npm run db:seed -w @pulse/api"
+  }
+}

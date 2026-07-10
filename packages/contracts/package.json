@@ -1,0 +1,87 @@
+{
+  "name": "@pulse/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "*": ["dist/*"],
+      "": ["dist/index.d.ts"]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./activity": {
+      "types": "./dist/activity.d.ts",
+      "default": "./dist/activity.js"
+    },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "default": "./dist/auth.js"
+    },
+    "./client-bulk": {
+      "types": "./dist/client-bulk.d.ts",
+      "default": "./dist/client-bulk.js"
+    },
+    "./clients": {
+      "types": "./dist/clients.d.ts",
+      "default": "./dist/clients.js"
+    },
+    "./dashboard": {
+      "types": "./dist/dashboard.d.ts",
+      "default": "./dist/dashboard.js"
+    },
+    "./documents": {
+      "types": "./dist/documents.d.ts",
+      "default": "./dist/documents.js"
+    },
+    "./items": {
+      "types": "./dist/items.d.ts",
+      "default": "./dist/items.js"
+    },
+    "./local-users": {
+      "types": "./dist/local-users.d.ts",
+      "default": "./dist/local-users.js"
+    },
+    "./requests": {
+      "types": "./dist/requests.d.ts",
+      "default": "./dist/requests.js"
+    },
+    "./request-checklists": {
+      "types": "./dist/request-checklists.d.ts",
+      "default": "./dist/request-checklists.js"
+    },
+    "./search": {
+      "types": "./dist/search.d.ts",
+      "default": "./dist/search.js"
+    },
+    "./settings": {
+      "types": "./dist/settings.d.ts",
+      "default": "./dist/settings.js"
+    },
+    "./work": {
+      "types": "./dist/work.d.ts",
+      "default": "./dist/work.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test --import tsx src/*.spec.ts"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "25.6.2",
+    "tsx": "^4.20.0",
+    "typescript": "6.0.3"
+  }
+}
