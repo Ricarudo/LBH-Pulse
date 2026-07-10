@@ -2,17 +2,14 @@
 
 import {
   ArrowLeft,
-  Building2,
   CalendarClock,
   CreditCard,
   Edit3,
   FileText,
   FolderKanban,
-  Globe,
-  Mail,
   MapPin,
   MoreHorizontal,
-  Phone,
+  Plus,
   ReceiptText,
   Save,
   Search,
@@ -42,6 +39,10 @@ import {
   type ClientSite,
   type ClientStatus
 } from "./clientData";
+import {
+  ClientProfileContactDialog,
+  ClientProfileSiteDialog
+} from "./ClientProfileDialogs";
 
 type ClientProfileWorkspaceProps = {
   clientId: string;
@@ -61,10 +62,7 @@ type ClientRelatedWorkResponse = {
 
 const clientProfileTabs = [
   "Overview",
-  "Requests",
-  "Quotes",
-  "Projects",
-  "Invoices",
+  "Work",
   "Contacts & Sites",
   "Activity",
   "Preferences"
@@ -92,6 +90,7 @@ const clientWorkFilters = [
 ] as const;
 
 type ClientWorkFilter = (typeof clientWorkFilters)[number];
+type ClientWorkType = "Requests" | "Quotes" | "Projects" | "Invoices";
 
 function clientStatusClass(status: ClientStatus) {
   if (status === "On Hold") {
@@ -135,15 +134,6 @@ function websiteHref(website: string) {
   }
 
   return website.startsWith("http") ? website : `https://${website}`;
-}
-
-function getInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
 }
 
 function matchesSearch(values: Array<string | number | null | undefined>, searchTerm: string) {
@@ -254,9 +244,9 @@ function ContactFlags({ contact }: { contact: ClientContact }) {
   );
 }
 
-function ContactCard({ contact }: { contact: ClientContact }) {
+function ContactCard({ contact, isFocused = false }: { contact: ClientContact; isFocused?: boolean }) {
   return (
-    <article className="client-360-list-card">
+    <article className={isFocused ? "client-360-list-card work-record-focused" : "client-360-list-card"}>
       <div className="client-360-list-icon">
         <UserRound size={17} />
       </div>
@@ -275,22 +265,33 @@ function ContactCard({ contact }: { contact: ClientContact }) {
 }
 
 function ContactSummary({ contact }: { contact: ClientContact }) {
+  const phone = contact.phone || contact.mobile;
   return (
     <div className="client-360-compact-summary">
       <strong>{contact.name}</strong>
       <span>{[contact.title, contact.department].filter(Boolean).join(" - ") || "No role captured"}</span>
-      <small>
-        {compactValue(contact.email)} / {compactValue(contact.phone || contact.mobile)}
-      </small>
+      {contact.email ? <a href={`mailto:${contact.email}`}>{contact.email}</a> : null}
+      {phone ? <a href={`tel:${phone.replace(/[^\d+]/g, "")}`}>{phone}</a> : null}
+      {!contact.email && !phone ? <small>No contact method captured</small> : null}
       {contact.siteName ? <small>Site: {contact.siteName}</small> : null}
       <ContactFlags contact={contact} />
     </div>
   );
 }
 
-function SiteCard({ site }: { site: ClientSite }) {
+function SiteCard({
+  site,
+  canEdit,
+  onEdit,
+  isFocused = false
+}: {
+  site: ClientSite;
+  canEdit: boolean;
+  onEdit: (site: ClientSite) => void;
+  isFocused?: boolean;
+}) {
   return (
-    <article className="client-360-list-card">
+    <article className={isFocused ? "client-360-list-card work-record-focused" : "client-360-list-card"}>
       <div className="client-360-list-icon">
         <MapPin size={17} />
       </div>
@@ -300,6 +301,11 @@ function SiteCard({ site }: { site: ClientSite }) {
         <small>{site.address || [site.city, site.state, site.country].filter(Boolean).join(", ") || "No address captured"}</small>
         {site.operationalHours ? <small>Hours: {site.operationalHours}</small> : null}
         {site.accessInstructions ? <p>{site.accessInstructions}</p> : null}
+        {canEdit ? (
+          <button className="client-360-inline-action" type="button" onClick={() => onEdit(site)}>
+            Edit details
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -312,6 +318,7 @@ function SiteSummary({ site }: { site: ClientSite }) {
       <span>{site.isPrimarySite ? `${site.siteType} - Primary Site` : site.siteType}</span>
       <small>{site.address || [site.city, site.state, site.country].filter(Boolean).join(", ") || "No address captured"}</small>
       {site.operationalHours ? <small>Hours: {site.operationalHours}</small> : null}
+      {site.googleMapsUrl ? <a href={websiteHref(site.googleMapsUrl)} target="_blank" rel="noreferrer">Open map</a> : null}
     </div>
   );
 }
@@ -502,9 +509,14 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   const [activityDetail, setActivityDetail] = useState("");
   const [profileSearch, setProfileSearch] = useState("");
   const [workspaceFilter, setWorkspaceFilter] = useState<ClientWorkFilter>("All Records");
+  const [workType, setWorkType] = useState<ClientWorkType>("Requests");
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
+  const [profileDialog, setProfileDialog] = useState<"contact" | "site" | null>(null);
+  const [siteToEdit, setSiteToEdit] = useState<ClientSite | null>(null);
+  const [focusedRecord, setFocusedRecord] = useState("");
 
   const canEditClients = user?.role === "Admin";
+  const canWriteClients = canRole(user?.role, "crm:write");
   const canWriteActivity = canRole(user?.role, "crm:activity:write");
 
   useEffect(() => {
@@ -556,6 +568,12 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
 
     void loadClientProfile();
   }, [clientId]);
+
+  useEffect(() => {
+    if (!focusedRecord) return;
+    const timer = window.setTimeout(() => setFocusedRecord(""), 2400);
+    return () => window.clearTimeout(timer);
+  }, [focusedRecord]);
 
   const normalizedSearch = profileSearch.trim().toLowerCase();
 
@@ -698,16 +716,12 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   );
 
   const workspaceResultLabel = useMemo(() => {
-    if (activeTab === "Requests") {
-      return `${filteredRequests.length} requests`;
+    if (activeTab === "Work") {
+      if (workType === "Requests") return `${filteredRequests.length} requests`;
+      if (workType === "Quotes") return `${filteredQuotes.length} quotes`;
+      if (workType === "Projects") return `${filteredProjects.length} projects`;
+      return `${filteredInvoices.length} invoices`;
     }
-
-    if (activeTab === "Quotes") {
-      return `${filteredQuotes.length} quotes`;
-    }
-
-    if (activeTab === "Projects") return `${filteredProjects.length} projects`;
-    if (activeTab === "Invoices") return `${filteredInvoices.length} invoices`;
 
     if (activeTab === "Contacts & Sites") {
       return `${filteredContacts.length + filteredSites.length} records`;
@@ -731,19 +745,18 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     filteredProjects.length,
     filteredQuotes.length,
     filteredRequests.length,
-    filteredSites.length
+    filteredSites.length,
+    workType
   ]);
 
   const availableWorkFilters = useMemo(() => {
-    // Keep each tab focused instead of exposing filters for unrelated record types.
-    if (activeTab === "Requests") return clientWorkFilters.slice(0, 3);
-    if (activeTab === "Quotes") return ["All Records", "Draft Quotes", "Other Quotes"] as ClientWorkFilter[];
-    if (activeTab === "Projects") return ["All Records", "Active Projects", "Closed Projects"] as ClientWorkFilter[];
-    if (activeTab === "Invoices") return ["All Records", "Open Invoices", "Paid / Void Invoices"] as ClientWorkFilter[];
+    if (activeTab !== "Work") return ["All Records"] as ClientWorkFilter[];
+    if (workType === "Requests") return clientWorkFilters.slice(0, 3);
+    if (workType === "Quotes") return ["All Records", "Draft Quotes", "Other Quotes"] as ClientWorkFilter[];
+    if (workType === "Projects") return ["All Records", "Active Projects", "Closed Projects"] as ClientWorkFilter[];
+    if (workType === "Invoices") return ["All Records", "Open Invoices", "Paid / Void Invoices"] as ClientWorkFilter[];
     return ["All Records"] as ClientWorkFilter[];
-  }, [activeTab]);
-
-  const website = client?.website ? websiteHref(client.website) : "";
+  }, [activeTab, workType]);
 
   async function importClientInfo() {
     if (!client || !canWriteActivity) {
@@ -814,9 +827,6 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   const primaryContact = client.contacts.find(
     (contact) => contact.isPrimary || contact.isPrimaryContact
   );
-  const billingContact = client.contacts.find(
-    (contact) => contact.isBilling || contact.isBillingContact
-  );
   const importantNotes = client.importantNotes || client.generalNotes;
   const serviceProfile = client.serviceProfile.filter(Boolean);
 
@@ -876,55 +886,11 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
       ) : null}
 
       <div className="client-360-layout">
-        <aside className="client-360-profile-panel" aria-label="Client profile">
-          <div className="client-360-profile-header">
-            <div className="client-360-avatar" aria-hidden="true">
-              {getInitials(client.displayName) || "CL"}
-            </div>
-            <div>
-              <span>{client.clientNumber}</span>
-              <h2>{client.displayName}</h2>
-              <div className="client-360-profile-badges">
-                <span className={clientStatusClass(client.status)}>{client.status}</span>
-                <span className="request-inline-flags">{compactValue(client.industry)}</span>
-              </div>
-            </div>
+        <aside className="client-360-profile-panel" aria-label="Client at a glance">
+          <div className="client-360-glance-heading">
+            <span>Account snapshot</span>
+            <h2>At a glance</h2>
           </div>
-
-          <ProfileSection title="Client Details" icon={<Building2 size={17} />}>
-            <FieldList
-              items={[
-                { label: "Legal Name", value: client.legalName },
-                { label: "Industry", value: client.industry },
-                { label: "Owner", value: client.accountOwner },
-                { label: "Source", value: client.source },
-                { label: "Language", value: client.preferredLanguage }
-              ]}
-            />
-          </ProfileSection>
-
-          <ProfileSection title="Contact Channels" icon={<Phone size={17} />}>
-            <div className="client-360-channel-list">
-              <span>
-                <Phone size={14} />
-                {primaryContact ? compactValue(primaryContact.phone || primaryContact.mobile) : "No primary contact selected."}
-              </span>
-              <span>
-                <Mail size={14} />
-                {primaryContact ? compactValue(primaryContact.email) : "No primary contact selected."}
-              </span>
-              <span>
-                <Globe size={14} />
-                {website ? (
-                  <a href={website} target="_blank" rel="noreferrer">
-                    {client.website}
-                  </a>
-                ) : (
-                  "Not captured"
-                )}
-              </span>
-            </div>
-          </ProfileSection>
 
           <ProfileSection title="Primary Contact" icon={<UserRound size={17} />}>
             {primaryContact?.name ? (
@@ -942,14 +908,22 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
             )}
           </ProfileSection>
 
+          <ProfileSection title="Requirements" icon={<CreditCard size={17} />}>
+            <FieldList
+              items={[
+                { label: "Payment Terms", value: client.paymentTerms },
+                { label: "PO Required", value: client.purchaseOrderRequired ? "Yes" : "No" },
+                { label: "Documentation", value: client.documentationRequirements }
+              ]}
+            />
+          </ProfileSection>
+
           <ProfileSection title="Important Notes" icon={<StickyNote size={17} />}>
             <p className="lead-notes">{importantNotes || "No important notes captured."}</p>
           </ProfileSection>
 
-          <ProfileSection title="Documentation" icon={<FileText size={17} />}>
-            <p className="lead-notes">
-              {client.documentationRequirements || "No documentation requirements captured."}
-            </p>
+          <ProfileSection title="Latest Activity" icon={<CalendarClock size={17} />}>
+            <ClientActivityTimeline activities={client.recentActivity.slice(0, 1)} />
           </ProfileSection>
         </aside>
 
@@ -1002,16 +976,6 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               value={formatMoney(workSummary.outstandingInvoiceBalance)}
               icon={<CreditCard size={18} />}
             />
-            <ClientMetricCard
-              label="Lifetime Value"
-              value={formatMoney(client.lifetimeValue)}
-              icon={<Building2 size={18} />}
-            />
-            <ClientMetricCard
-              label="Last Activity"
-              value={displayDate(client.lastActivity)}
-              icon={<CalendarClock size={18} />}
-            />
           </section>
 
           <section className="client-360-tabs-panel">
@@ -1040,24 +1004,19 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                     <h3>Relationship</h3>
                     <FieldList
                       items={[
-                        { label: "Industry", value: client.industry },
                         { label: "Source", value: client.source },
-                        { label: "Payment Terms", value: client.paymentTerms },
+                        { label: "Preferred Language", value: client.preferredLanguage },
                         { label: "Open Opportunities", value: client.openOpportunities },
-                        { label: "Created", value: displayDate(client.createdAt) },
-                        { label: "Updated", value: displayDate(client.updatedAt) }
+                        { label: "Client Since", value: displayDate(client.createdAt) }
                       ]}
                     />
                   </section>
                   <section className="client-360-tab-card">
-                    <h3>Billing</h3>
+                    <h3>Billing & Finance</h3>
                     <FieldList
                       items={[
-                        { label: "Billing Contact", value: billingContact?.name },
-                        { label: "Billing Email", value: billingContact?.email },
                         { label: "Currency", value: client.preferredCurrency },
                         { label: "Tax ID", value: client.taxId },
-                        { label: "PO Required", value: client.purchaseOrderRequired ? "Yes" : "No" },
                         { label: "Invoice", value: client.invoiceRequirements }
                       ]}
                     />
@@ -1077,90 +1036,26 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                     )}
                   </section>
                   <section className="client-360-tab-card">
-                    <h3>Billing Contact</h3>
-                    {billingContact?.name ? (
-                      <ContactSummary contact={billingContact} />
-                    ) : (
-                      <p className="lead-notes">No billing contact captured.</p>
-                    )}
-                  </section>
-                  <section className="client-360-tab-card client-360-wide-section">
-                    <h3>Active Requests</h3>
-                    <RequestsTable
-                      requests={filteredActiveRequests.slice(0, 5)}
-                      emptyTitle={
-                        profileSearch || workspaceFilter !== "All Records"
-                          ? "No active requests match the current search."
-                          : "No active requests are linked to this client."
-                      }
-                      emptyDetail="Client-linked open intake work will appear here."
-                    />
-                  </section>
-                  <section className="client-360-tab-card client-360-wide-section">
-                    <h3>Related Quotes</h3>
-                    <QuotesTable
-                      quotes={filteredQuotes.slice(0, 5)}
-                      emptyTitle={
-                        profileSearch || workspaceFilter !== "All Records"
-                          ? "No quotes match the current search."
-                          : "No converted quote work is linked yet."
-                      }
-                      emptyDetail="Quotes will appear here when client-linked requests are converted."
-                    />
-                  </section>
-                  <section className="client-360-tab-card client-360-wide-section">
-                    <h3>Active Projects</h3>
-                    <ProjectsTable projects={filteredProjects.filter((project) => !["Completed", "Cancelled"].includes(project.status)).slice(0, 5)} />
-                  </section>
-                  <section className="client-360-tab-card client-360-wide-section">
-                    <h3>Open Invoices</h3>
-                    <InvoicesTable invoices={filteredInvoices.filter((invoice) => !["Paid", "Void"].includes(invoice.status)).slice(0, 5)} />
-                  </section>
-                  <section className="client-360-tab-card client-360-wide-section">
-                    <h3>Recent Activity</h3>
-                    <ClientActivityTimeline activities={filteredActivities.slice(0, 5)} />
+                    <h3>Recently Updated</h3>
+                    <ClientActivityTimeline activities={filteredActivities.slice(0, 3)} />
                   </section>
                 </div>
               </div>
             ) : null}
 
-            {activeTab === "Requests" ? (
+            {activeTab === "Work" ? (
               <div className="client-360-tab-content">
-                <RequestsTable
-                  requests={filteredRequests}
-                  emptyTitle={
-                    profileSearch || workspaceFilter !== "All Records"
-                      ? "No requests match the current search."
-                      : "No requests are linked to this client yet."
-                  }
-                  emptyDetail="Adjust the search or filter to broaden the client request list."
-                />
-              </div>
-            ) : null}
-
-            {activeTab === "Quotes" ? (
-              <div className="client-360-tab-content">
-                <QuotesTable
-                  quotes={filteredQuotes}
-                  emptyTitle={
-                    profileSearch || workspaceFilter !== "All Records"
-                      ? "No quotes match the current search."
-                      : "No converted quote work is linked yet."
-                  }
-                  emptyDetail="Adjust the search or filter to broaden the client quote list."
-                />
-              </div>
-            ) : null}
-
-            {activeTab === "Projects" ? (
-              <div className="client-360-tab-content">
-                <ProjectsTable projects={filteredProjects} />
-              </div>
-            ) : null}
-
-            {activeTab === "Invoices" ? (
-              <div className="client-360-tab-content">
-                <InvoicesTable invoices={filteredInvoices} />
+                <div className="client-360-work-switcher" role="tablist" aria-label="Client work records">
+                  {(["Requests", "Quotes", "Projects", "Invoices"] as ClientWorkType[]).map((type) => (
+                    <button key={type} type="button" role="tab" aria-selected={workType === type} className={workType === type ? "active" : ""} onClick={() => { setWorkType(type); setWorkspaceFilter("All Records"); }}>
+                      {type}
+                    </button>
+                  ))}
+                </div>
+                {workType === "Requests" ? <RequestsTable requests={filteredRequests} emptyTitle={profileSearch || workspaceFilter !== "All Records" ? "No requests match the current search." : "No requests are linked to this client yet."} emptyDetail="Adjust the search or filter to broaden the client request list." /> : null}
+                {workType === "Quotes" ? <QuotesTable quotes={filteredQuotes} emptyTitle={profileSearch || workspaceFilter !== "All Records" ? "No quotes match the current search." : "No converted quote work is linked yet."} emptyDetail="Adjust the search or filter to broaden the client quote list." /> : null}
+                {workType === "Projects" ? <ProjectsTable projects={filteredProjects} /> : null}
+                {workType === "Invoices" ? <InvoicesTable invoices={filteredInvoices} /> : null}
               </div>
             ) : null}
 
@@ -1168,11 +1063,14 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               <div className="client-360-tab-content">
                 <div className="client-360-two-column">
                   <section className="client-360-tab-card">
-                    <h3>Contacts</h3>
+                    <div className="client-360-card-heading">
+                      <h3>Contacts <span>{client.contacts.length}</span></h3>
+                      {canWriteClients ? <button className="toolbar-button compact" type="button" onClick={() => setProfileDialog("contact")}><Plus size={16} />Add Contact</button> : null}
+                    </div>
                     <div className="client-360-list-stack">
                       {filteredContacts.length ? (
                         filteredContacts.map((contact) => (
-                          <ContactCard contact={contact} key={contact.id || contact.name} />
+                          <ContactCard contact={contact} isFocused={focusedRecord === contact.name} key={contact.id || contact.name} />
                         ))
                       ) : (
                         <EmptyPanel
@@ -1183,10 +1081,13 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                     </div>
                   </section>
                   <section className="client-360-tab-card">
-                    <h3>Sites</h3>
+                    <div className="client-360-card-heading">
+                      <h3>Sites <span>{client.sites.length}</span></h3>
+                      {canWriteClients ? <button className="toolbar-button compact" type="button" onClick={() => setProfileDialog("site")}><Plus size={16} />Add Site</button> : null}
+                    </div>
                     <div className="client-360-list-stack">
                       {filteredSites.length ? (
-                        filteredSites.map((site) => <SiteCard site={site} key={site.id || site.siteName} />)
+                        filteredSites.map((site) => <SiteCard site={site} canEdit={canWriteClients} isFocused={focusedRecord === site.siteName} onEdit={(nextSite) => setSiteToEdit(nextSite)} key={site.id || site.siteName} />)
                       ) : (
                         <EmptyPanel
                           title={client.sites.length ? "No sites match the current search." : "No sites captured yet."}
@@ -1262,6 +1163,45 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
           </section>
         </main>
       </div>
+      {profileDialog === "contact" ? (
+        <ClientProfileContactDialog
+          client={client}
+          onCancel={() => setProfileDialog(null)}
+          onSaved={(nextClient, contactName) => {
+            setClient(nextClient);
+            setProfileDialog(null);
+            setActiveTab("Contacts & Sites");
+            setFocusedRecord(contactName);
+            setMessage(`${contactName} was added as a point of contact.`);
+          }}
+        />
+      ) : null}
+      {profileDialog === "site" ? (
+        <ClientProfileSiteDialog
+          client={client}
+          onCancel={() => setProfileDialog(null)}
+          onSaved={(nextClient, siteName) => {
+            setClient(nextClient);
+            setProfileDialog(null);
+            setActiveTab("Contacts & Sites");
+            setFocusedRecord(siteName);
+            setMessage(`${siteName} was added as a client site.`);
+          }}
+        />
+      ) : null}
+      {siteToEdit ? (
+        <ClientProfileSiteDialog
+          client={client}
+          site={siteToEdit}
+          onCancel={() => setSiteToEdit(null)}
+          onSaved={(nextClient, siteName) => {
+            setClient(nextClient);
+            setSiteToEdit(null);
+            setFocusedRecord(siteName);
+            setMessage(`${siteName} site details were saved.`);
+          }}
+        />
+      ) : null}
     </section>
   );
 }

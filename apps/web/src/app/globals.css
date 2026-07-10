@@ -9944,6 +9944,27 @@ a {
   box-shadow: var(--pulse-shadow-soft);
 }
 
+.client-360-glance-heading {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--pulse-line);
+}
+
+.client-360-glance-heading span {
+  display: block;
+  color: var(--pulse-muted);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.client-360-glance-heading h2 {
+  margin: 4px 0 0;
+  color: var(--pulse-text);
+  font-size: 20px;
+  font-weight: 950;
+}
+
 .client-360-profile-header {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
@@ -10104,7 +10125,7 @@ a {
 
 .client-360-metric-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -10208,6 +10229,13 @@ a {
   font-weight: 800;
 }
 
+.client-360-compact-summary a {
+  color: var(--pulse-blue);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
 .client-360-tabs-panel {
   display: grid;
   gap: 12px;
@@ -10231,7 +10259,7 @@ a {
 
 .client-360-overview-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
 }
@@ -10286,6 +10314,177 @@ a {
   display: block;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.client-360-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.client-360-card-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.client-360-card-heading h3 span {
+  display: inline-grid;
+  min-width: 22px;
+  min-height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--pulse-muted-surface);
+  color: var(--pulse-muted);
+  font-size: 11px;
+}
+
+.client-360-inline-action {
+  width: fit-content;
+  margin-top: 9px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pulse-blue);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-360-inline-action:hover {
+  text-decoration: underline;
+}
+
+.client-360-work-switcher {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 12px;
+  background: var(--pulse-surface-soft);
+}
+
+.client-360-work-switcher button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pulse-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background-color var(--pulse-motion-fast) ease, color var(--pulse-motion-fast) ease, transform var(--pulse-motion-fast) var(--pulse-motion-ease);
+}
+
+.client-360-work-switcher button.active {
+  background: var(--pulse-surface);
+  box-shadow: var(--pulse-shadow-soft);
+  color: var(--pulse-blue);
+}
+
+.client-360-work-switcher button:active {
+  transform: scale(0.98);
+}
+
+.client-profile-dialog-backdrop {
+  position: fixed;
+  z-index: 1350;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 17, 31, 0.52);
+  backdrop-filter: blur(5px);
+  animation: client-profile-scrim-enter var(--pulse-motion-fast) ease both;
+}
+
+.client-profile-dialog {
+  display: grid;
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 40px);
+  gap: 16px;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 18px;
+  background: var(--pulse-surface);
+  box-shadow: 0 30px 90px rgba(4, 11, 22, 0.34);
+  animation: client-profile-dialog-enter var(--pulse-motion-medium) var(--pulse-motion-ease) both;
+}
+
+.client-profile-dialog-heading,
+.client-profile-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.client-profile-dialog-heading span {
+  display: block;
+  color: var(--pulse-muted);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.client-profile-dialog-heading h2 {
+  margin: 4px 0 0;
+  color: var(--pulse-text);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.client-profile-dialog-primary {
+  width: fit-content;
+}
+
+.client-profile-dialog-details {
+  display: grid;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 12px;
+  background: var(--pulse-surface-soft);
+}
+
+.client-profile-dialog-details summary {
+  color: var(--pulse-blue);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-profile-dialog-details[open] summary {
+  margin-bottom: 2px;
+}
+
+@keyframes client-profile-scrim-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes client-profile-dialog-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .client-profile-dialog-backdrop,
+  .client-profile-dialog {
+    animation: none !important;
+  }
+
+  .client-360-work-switcher button {
+    transition: none;
+  }
 }
 
 .client-360-list-card strong {
@@ -10451,6 +10650,10 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .client-360-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .client-360-toolbar {
     grid-template-columns: 1fr;
   }
@@ -10591,6 +10794,35 @@ a {
   .client-360-metric-icon {
     width: 34px;
     height: 34px;
+  }
+
+  .client-profile-dialog-backdrop {
+    align-items: end;
+    padding: 8px;
+  }
+
+  .client-profile-dialog {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .client-profile-dialog-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .client-profile-dialog-actions .toolbar-button,
+  .client-profile-dialog-actions .primary-button,
+  .client-360-card-heading .toolbar-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .client-360-card-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .lead-detail-header {
