@@ -7,7 +7,7 @@ import {
   toAuthenticatedUser,
   type AuthenticatedUser,
   type Permission
-} from "@/lib/auth/permissions";
+} from "@pulse/contracts/auth";
 
 const sessionCookieName = "pulse.session";
 const sessionTtlSeconds = 60 * 60 * 12;

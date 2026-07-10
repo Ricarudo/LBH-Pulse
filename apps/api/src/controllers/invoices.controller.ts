@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { archiveInvoice, createInvoice, getInvoiceById, listInvoices, updateInvoice } from "@/lib/services/workService";
-import { createInvoiceSchema, updateInvoiceSchema } from "@/lib/validations/work";
+import { createInvoiceSchema, updateInvoiceSchema } from "@pulse/contracts/work";
 import { AuthService } from "@/shared/auth.service";
 
 @Controller("invoices")
@@ -23,4 +23,3 @@ export class InvoicesController {
     const user = await this.auth.requireUser(request, "crm:write"); return { invoice: await archiveInvoice(id, user) };
   }
 }
-

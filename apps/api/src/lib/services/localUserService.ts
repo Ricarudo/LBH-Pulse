@@ -5,14 +5,14 @@ import {
   isLocalRole,
   roleLabels,
   type AuthenticatedUser
-} from "@/lib/auth/permissions";
+} from "@pulse/contracts/auth";
 import { recordActivity } from "@/lib/services/activityService";
 import type {
   CreateLocalUserInput,
   ResetLocalUserPasswordInput,
   UpdateLocalUserInput
-} from "@/lib/validations/localUser";
-import type { LocalAccountRecord } from "@/types/localUser";
+} from "@pulse/contracts/local-users";
+import type { LocalAccountRecord } from "@pulse/contracts/local-users";
 
 type LocalUserShape = {
   id: string;

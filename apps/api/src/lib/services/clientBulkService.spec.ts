@@ -9,7 +9,7 @@ import {
 import {
   clientBulkCsvHeaders,
   type ClientBulkCsvRow
-} from "@/types/clientBulk";
+} from "@pulse/contracts/client-bulk";
 
 function row(values: Partial<ClientBulkCsvRow> = {}): ClientBulkCsvRow {
   return Object.assign(

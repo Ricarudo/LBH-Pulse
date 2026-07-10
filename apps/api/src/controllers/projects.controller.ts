@@ -5,7 +5,7 @@ import { mkdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { diskStorage } from "multer";
 import { archiveProject, createInvoiceFromProject, createProject, getProjectById, listProjects, updateProject } from "@/lib/services/workService";
-import { createProjectInvoiceSchema, createProjectSchema, updateProjectSchema } from "@/lib/validations/work";
+import { createProjectInvoiceSchema, createProjectSchema, updateProjectSchema } from "@pulse/contracts/work";
 import { AuthService } from "@/shared/auth.service";
 import { uploadDocument } from "@/lib/services/documentService";
 

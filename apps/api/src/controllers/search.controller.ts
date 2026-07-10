@@ -1,7 +1,7 @@
 import { Controller, Get, Inject, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { searchPulse } from "@/lib/services/searchService";
-import { globalSearchQuerySchema } from "@/lib/validations/search";
+import { globalSearchQuerySchema } from "@pulse/contracts/search";
 import { AuthService } from "@/shared/auth.service";
 
 @Controller("search")

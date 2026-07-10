@@ -19,7 +19,7 @@ import {
   exportClientCsv,
   previewClientBulkCsv
 } from "@/lib/services/clientBulkService";
-import type { ClientBulkCommitSelection } from "@/types/clientBulk";
+import type { ClientBulkCommitSelection } from "@pulse/contracts/client-bulk";
 import { AuthError, AuthService } from "@/shared/auth.service";
 
 const csvUpload = FileInterceptor("file", {

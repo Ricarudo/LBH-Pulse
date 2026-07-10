@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { PrismaPg } from "@prisma/adapter-pg";
 import { scryptSync } from "node:crypto";
 import { PrismaClient } from "../src/generated/prisma/client";
@@ -11,7 +10,22 @@ const adapter = new PrismaPg(
 );
 const prisma = new PrismaClient({ adapter });
 
-function hashPassword(password, salt) {
+type ChecklistItemSeed = readonly [
+  label: string,
+  group: string,
+  required?: boolean,
+  appliesWhen?: string
+];
+
+type ChecklistTemplateSeed = {
+  key: string;
+  name: string;
+  requestType?: string;
+  serviceCategory?: string;
+  items: ChecklistItemSeed[];
+};
+
+function hashPassword(password: string, salt: string) {
   return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
 
@@ -42,7 +56,7 @@ const runtimeUsers = [
   }
 ];
 
-const checklistTemplates = [
+const checklistTemplates: ChecklistTemplateSeed[] = [
   {
     key: "general",
     name: "General Request Intake",

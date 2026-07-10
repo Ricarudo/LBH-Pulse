@@ -1,14 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import {
   clientIndustries,
   clientOwners,
   clientSiteTypes,
   clientSources,
   clientStatuses
-} from "@/types/client";
+} from "@pulse/contracts/clients";
 import {
   clientBulkCsvHeaders,
   type ClientBulkCommitResult,
@@ -19,7 +19,7 @@ import {
   type ClientBulkPreview,
   type ClientBulkPreviewRow,
   type ClientBulkRowStatus
-} from "@/types/clientBulk";
+} from "@pulse/contracts/client-bulk";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_ROWS = 2_000;

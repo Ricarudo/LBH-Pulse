@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRequestSchema } from "@/lib/validations/request";
-import { updateRequestChecklistTemplateSchema } from "@/lib/validations/requestChecklistTemplate";
+import { createRequestSchema } from "@pulse/contracts/requests";
+import { updateRequestChecklistTemplateSchema } from "@pulse/contracts/request-checklists";
 import {
   userPreferencesSchema,
   workspaceSettingsSchema
-} from "@/lib/validations/settings";
+} from "@pulse/contracts/settings";
 
 test("request input keeps distinct multi-trade selections", () => {
   const request = createRequestSchema.parse({

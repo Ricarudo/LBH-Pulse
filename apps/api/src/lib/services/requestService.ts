@@ -1,13 +1,13 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { toAuthenticatedUser, type AuthenticatedUser } from "@/lib/auth/permissions";
+import { toAuthenticatedUser, type AuthenticatedUser } from "@pulse/contracts/auth";
 import { recordActivity } from "@/lib/services/activityService";
 import { toInvoiceRecord, toProjectRecord, toQuoteRecord } from "@/lib/services/workService";
 import type {
   RequestActivityType,
   RequestAssignee,
   RequestRecord
-} from "@/types/request";
+} from "@pulse/contracts/requests";
 import type {
   ConvertRequestInput,
   CreateRequestActivityInput,
@@ -15,7 +15,7 @@ import type {
   CreateRequestTaskInput,
   UpdateRequestChecklistItemInput,
   UpdateRequestInput
-} from "@/lib/validations/request";
+} from "@pulse/contracts/requests";
 
 const requestInclude = {
   assignedTo: true,
@@ -355,13 +355,15 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
 }
 
 async function generateRequestNumber(tx: Prisma.TransactionClient) {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:request'))`;
   const count = await tx.request.count();
-  return `RQ-2026-${String(1001 + count).padStart(4, "0")}`;
+  return `RQ-${new Date().getUTCFullYear()}-${String(1001 + count).padStart(4, "0")}`;
 }
 
 async function generateQuoteNumber(tx: Prisma.TransactionClient) {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:request-quote'))`;
   const count = await tx.quote.count();
-  return `QM-2026-${String(1001 + count).padStart(4, "0")}`;
+  return `QM-${new Date().getUTCFullYear()}-${String(1001 + count).padStart(4, "0")}`;
 }
 
 async function getRequestOrThrow(id: string) {
@@ -1252,16 +1254,24 @@ export async function convertRequest(
   input: ConvertRequestInput,
   user?: AuthenticatedUser
 ) {
-  const existingRequest = await getRequestOrThrow(id);
-  const readiness = buildChecklistSummary(existingRequest);
-
-  if (!readiness.readyForQuote) {
-    throw new Error("REQUEST_NOT_READY_FOR_QUOTE");
-  }
-
   const now = new Date();
 
   const request = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Request" WHERE "id" = ${id} FOR UPDATE`;
+    const existingRequest = await tx.request.findUnique({
+      where: { id },
+      include: requestInclude
+    });
+    if (!existingRequest || existingRequest.archivedAt) {
+      throw new Error("REQUEST_NOT_FOUND");
+    }
+    if (existingRequest.status === "Converted to Quote") {
+      throw new Error("REQUEST_CONVERTED_LOCKED");
+    }
+    if (!buildChecklistSummary(existingRequest).readyForQuote) {
+      throw new Error("REQUEST_NOT_READY_FOR_QUOTE");
+    }
+
     const quote = input.createQuote
       ? await tx.quote.create({
           data: {
@@ -1271,7 +1281,30 @@ export async function convertRequest(
             clientName: existingRequest.companyName || existingRequest.client?.displayName || null,
             status: "Draft",
             owner: existingRequest.assignedTo?.name ?? "Unassigned",
-            total: 0
+            total: 0,
+            sourceRequestIdSnapshot: existingRequest.id,
+            requestNumberSnapshot: existingRequest.requestNumber,
+            requestTitleSnapshot: existingRequest.title,
+            requestTypeSnapshot: existingRequest.requestType,
+            serviceCategorySnapshot: existingRequest.trades.length
+              ? existingRequest.trades
+                  .map((trade) => trade.serviceCategory)
+                  .join(", ")
+              : existingRequest.serviceCategory,
+            contactNameSnapshot:
+              existingRequest.contactName || existingRequest.contact?.name || null,
+            contactEmailSnapshot:
+              existingRequest.contactEmail || existingRequest.contact?.email || null,
+            contactPhoneSnapshot:
+              existingRequest.contactPhone || existingRequest.contact?.phone || null,
+            siteNameSnapshot:
+              existingRequest.siteName || existingRequest.site?.siteName || null,
+            siteAddressSnapshot:
+              existingRequest.siteAddress || existingRequest.site?.addressLine1 || null,
+            citySnapshot: existingRequest.city || existingRequest.site?.city || null,
+            stateSnapshot: existingRequest.state || existingRequest.site?.state || null,
+            scopeDescriptionSnapshot: existingRequest.description,
+            internalNotesSnapshot: existingRequest.internalNotes
           }
         })
       : null;

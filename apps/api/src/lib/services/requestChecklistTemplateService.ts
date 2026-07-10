@@ -1,9 +1,11 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
-import type { RequestChecklistTemplateRecord } from "@/types/requestChecklistTemplate";
-import type { UpdateRequestChecklistTemplateInput } from "@/lib/validations/requestChecklistTemplate";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
+import type {
+  RequestChecklistTemplateRecord,
+  UpdateRequestChecklistTemplateInput
+} from "@pulse/contracts/request-checklists";
 
 type TemplateWithItems = Prisma.RequestChecklistTemplateGetPayload<{
   include: { items: true };

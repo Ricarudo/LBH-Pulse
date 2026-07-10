@@ -19,9 +19,9 @@ import {
   dashboardPreferencesSchema,
   dashboardScopeSchema,
   dashboardWidgetIdSchema
-} from "@/lib/validations/dashboard";
+} from "@pulse/contracts/dashboard";
 import { AuthService } from "@/shared/auth.service";
-import { dashboardWidgetIds, type DashboardWidgetId } from "@/types/dashboard";
+import { dashboardWidgetIds, type DashboardWidgetId } from "@pulse/contracts/dashboard";
 
 @Controller("dashboard")
 export class DashboardController {

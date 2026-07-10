@@ -1,11 +1,11 @@
-import type { LocalRole } from "@/lib/auth/permissions";
-import { dashboardPreferencesSchema } from "@/lib/validations/dashboard";
+import type { LocalRole } from "@pulse/contracts/auth";
+import { dashboardPreferencesSchema } from "@pulse/contracts/dashboard";
 import {
   dashboardWidgetIds,
   type DashboardPreferencesRecord,
   type DashboardWidgetId,
   type DashboardWidgetPlacement
-} from "@/types/dashboard";
+} from "@pulse/contracts/dashboard";
 
 const defaultPlacements: DashboardWidgetPlacement[] = [
   { id: "attention-summary", visible: true, width: "full" },

@@ -3,7 +3,7 @@ import type {
   GlobalSearchKind,
   GlobalSearchResponse,
   GlobalSearchResult
-} from "@/types/search";
+} from "@pulse/contracts/search";
 
 const candidateLimit = 12;
 const resultLimitPerKind = 5;

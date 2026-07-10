@@ -1,9 +1,20 @@
 import { Prisma } from "@/generated/prisma/client";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
 import { listProjectDocuments, listQuoteDocuments } from "@/lib/services/documentService";
-import type { LifecycleDocumentRecord } from "@/types/document";
+import type {
+  AddAdHocQuoteItemInput,
+  AddQuoteItemInput,
+  AddQuoteKitInput,
+  ItemType,
+  QuoteBomSection,
+  QuoteItemRecord,
+  ReorderQuoteItemsInput,
+  UpdateQuoteItemInput,
+  UpdateQuoteProposalInput
+} from "@pulse/contracts/items";
+import type { LifecycleDocumentRecord } from "@pulse/contracts/documents";
 import type {
   ConvertQuoteInput,
   CreateInvoiceInput,
@@ -12,9 +23,21 @@ import type {
   CreateQuoteInput,
   UpdateInvoiceInput,
   UpdateProjectInput,
-  UpdateQuoteInput
-} from "@/lib/validations/work";
-import type { InvoiceRecord, ProjectRecord, QuoteRecord } from "@/types/work";
+  UpdateQuoteInput,
+  InvoiceRecord,
+  ProjectRecord,
+  QuoteContextSnapshot,
+  QuoteDetailRecord,
+  QuoteRecord
+} from "@pulse/contracts/work";
+import {
+  planQuoteBomSources,
+  type QuoteBomCatalogItem
+} from "@/modules/quote-items/quote-bom";
+import {
+  calculateMarkupPercent,
+  calculateQuoteLine
+} from "@/modules/quote-items/quote-calculations";
 
 const quoteInclude = {
   client: { select: { id: true, displayName: true } },
@@ -22,10 +45,53 @@ const quoteInclude = {
     where: { archivedAt: null },
     orderBy: { updatedAt: "desc" },
     take: 1,
-    select: { id: true, requestNumber: true }
+    select: {
+      id: true,
+      requestNumber: true,
+      title: true,
+      requestType: true,
+      serviceCategory: true,
+      contactName: true,
+      contactEmail: true,
+      contactPhone: true,
+      siteName: true,
+      siteAddress: true,
+      city: true,
+      state: true,
+      description: true,
+      internalNotes: true,
+      trades: { select: { serviceCategory: true } },
+      contact: { select: { name: true, email: true, phone: true } },
+      site: {
+        select: {
+          siteName: true,
+          addressLine1: true,
+          city: true,
+          state: true
+        }
+      }
+    }
   },
   project: { select: { id: true } }
 } satisfies Prisma.QuoteInclude;
+
+const quoteItemsOrderBy = [
+  { sortOrder: "asc" },
+  { createdAt: "asc" }
+] satisfies Prisma.QuoteItemOrderByWithRelationInput[];
+
+const quoteDetailInclude = {
+  ...quoteInclude,
+  items: { orderBy: quoteItemsOrderBy }
+} satisfies Prisma.QuoteInclude;
+
+const itemForQuoteInclude = {
+  outgoingRelations: {
+    include: { childItem: true },
+    orderBy: [{ sortOrder: "asc" }]
+  },
+  defaultLaborItem: true
+} satisfies Prisma.ItemInclude;
 
 const projectInclude = {
   client: { select: { id: true, displayName: true } },
@@ -42,6 +108,13 @@ const invoiceInclude = {
 } satisfies Prisma.InvoiceInclude;
 
 type QuoteWithRelations = Prisma.QuoteGetPayload<{ include: typeof quoteInclude }>;
+type QuoteRecordSource = Omit<QuoteWithRelations, "requests"> & {
+  requests: Array<{ id: string; requestNumber: string }>;
+};
+type QuoteDetailWithRelations = Prisma.QuoteGetPayload<{
+  include: typeof quoteDetailInclude;
+}>;
+type ItemForQuote = Prisma.ItemGetPayload<{ include: typeof itemForQuoteInclude }>;
 type ProjectWithRelations = Prisma.ProjectGetPayload<{ include: typeof projectInclude }>;
 type InvoiceWithRelations = Prisma.InvoiceGetPayload<{ include: typeof invoiceInclude }>;
 
@@ -53,8 +126,26 @@ function dateOutput(value?: Date | null) {
   return value ? value.toISOString().slice(0, 10) : "";
 }
 
+function dateTimeOutput(value?: Date | null) {
+  return value ? value.toISOString() : "";
+}
+
+function empty(value?: string | null) {
+  return value ?? "";
+}
+
+function nullable(value?: string) {
+  return value ? value : null;
+}
+
+function quoteItemSection(itemType: ItemType): QuoteBomSection {
+  if (itemType === "LABOR") return "Labor";
+  if (itemType === "SERVICE") return "Services";
+  return "Materials";
+}
+
 export function toQuoteRecord(
-  quote: QuoteWithRelations,
+  quote: QuoteRecordSource,
   documents: LifecycleDocumentRecord[] = []
 ): QuoteRecord {
   const request = quote.requests[0];
@@ -73,6 +164,94 @@ export function toQuoteRecord(
     createdAt: dateOutput(quote.createdAt),
     updatedAt: quote.updatedAt.toISOString(),
     documents
+  };
+}
+
+function toQuoteContextSnapshot(
+  quote: QuoteDetailWithRelations
+): QuoteContextSnapshot {
+  const request = quote.requests[0];
+  const liveCategories = request?.trades.length
+    ? request.trades.map((trade) => trade.serviceCategory).join(", ")
+    : request?.serviceCategory;
+
+  return {
+    sourceRequestId: quote.sourceRequestIdSnapshot ?? request?.id ?? null,
+    requestNumber: empty(quote.requestNumberSnapshot ?? request?.requestNumber),
+    requestTitle: empty(quote.requestTitleSnapshot ?? request?.title),
+    requestType: empty(quote.requestTypeSnapshot ?? request?.requestType),
+    serviceCategory: empty(
+      quote.serviceCategorySnapshot ?? liveCategories
+    ),
+    contactName: empty(
+      quote.contactNameSnapshot ?? request?.contactName ?? request?.contact?.name
+    ),
+    contactEmail: empty(
+      quote.contactEmailSnapshot ?? request?.contactEmail ?? request?.contact?.email
+    ),
+    contactPhone: empty(
+      quote.contactPhoneSnapshot ?? request?.contactPhone ?? request?.contact?.phone
+    ),
+    siteName: empty(
+      quote.siteNameSnapshot ?? request?.siteName ?? request?.site?.siteName
+    ),
+    siteAddress: empty(
+      quote.siteAddressSnapshot ?? request?.siteAddress ?? request?.site?.addressLine1
+    ),
+    city: empty(quote.citySnapshot ?? request?.city ?? request?.site?.city),
+    state: empty(quote.stateSnapshot ?? request?.state ?? request?.site?.state),
+    scopeDescription: empty(
+      quote.scopeDescriptionSnapshot ?? request?.description
+    ),
+    internalNotes: empty(
+      quote.internalNotesSnapshot ?? request?.internalNotes
+    )
+  };
+}
+
+export function toQuoteItemRecord(
+  item: QuoteDetailWithRelations["items"][number]
+): QuoteItemRecord {
+  return {
+    id: item.id,
+    quoteId: item.quoteId,
+    sourceItemId: item.sourceItemId,
+    section: item.section as QuoteBomSection,
+    name: item.name,
+    description: empty(item.description),
+    itemType: item.itemType as ItemType,
+    sku: empty(item.sku),
+    partNumber: empty(item.partNumber),
+    manufacturer: empty(item.manufacturer),
+    brand: empty(item.brand),
+    quantity: Number(item.quantity),
+    unitOfMeasure: empty(item.unitOfMeasure),
+    unitCost: Number(item.unitCost),
+    unitPrice: Number(item.unitPrice),
+    markupPercent: Number(item.markupPercent),
+    discountPercent: Number(item.discountPercent),
+    taxable: item.taxable,
+    imageUrl: empty(item.imageUrl),
+    productUrl: empty(item.productUrl),
+    lineSubtotal: Number(item.lineSubtotal),
+    lineTax: Number(item.lineTax),
+    lineTotal: Number(item.lineTotal),
+    sortOrder: item.sortOrder,
+    createdAt: dateTimeOutput(item.createdAt),
+    updatedAt: dateTimeOutput(item.updatedAt)
+  };
+}
+
+export function toQuoteDetailRecord(
+  quote: QuoteDetailWithRelations,
+  documents: LifecycleDocumentRecord[] = []
+): QuoteDetailRecord {
+  return {
+    ...toQuoteRecord(quote, documents),
+    context: toQuoteContextSnapshot(quote),
+    proposalNotes: empty(quote.proposalNotes),
+    proposalPreparedAt: dateTimeOutput(quote.proposalPreparedAt),
+    items: quote.items.map(toQuoteItemRecord)
   };
 }
 
@@ -132,6 +311,7 @@ async function nextNumber(
   tx: Prisma.TransactionClient,
   kind: "quote" | "project" | "invoice"
 ) {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`pulse-number:${kind}`}))`;
   const year = new Date().getUTCFullYear();
   const prefix = kind === "quote" ? "QT" : kind === "project" ? "PRJ" : "INV";
   const count =
@@ -150,6 +330,27 @@ async function quoteOrThrow(id: string) {
   });
   if (!quote) throw new Error("QUOTE_NOT_FOUND");
   return quote;
+}
+
+async function quoteDetailOrThrow(id: string) {
+  const quote = await prisma.quote.findFirst({
+    where: { archivedAt: null, OR: [{ id }, { quoteNumber: id }] },
+    include: quoteDetailInclude
+  });
+  if (!quote) throw new Error("QUOTE_NOT_FOUND");
+  return quote;
+}
+
+async function activeItemOrThrow(
+  tx: Prisma.TransactionClient,
+  id: string
+) {
+  const item = await tx.item.findFirst({
+    where: { id, status: "ACTIVE" },
+    include: itemForQuoteInclude
+  });
+  if (!item) throw new Error("ITEM_NOT_FOUND");
+  return item;
 }
 
 async function projectOrThrow(id: string) {
@@ -182,9 +383,460 @@ export async function listQuotes() {
 }
 
 export async function getQuoteById(id: string) {
-  const quote = await quoteOrThrow(id);
-  return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
+  const quote = await quoteDetailOrThrow(id);
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
 }
+
+async function nextQuoteItemSortOrder(
+  tx: Prisma.TransactionClient,
+  quoteId: string
+) {
+  const aggregate = await tx.quoteItem.aggregate({
+    where: { quoteId },
+    _max: { sortOrder: true }
+  });
+  return (aggregate._max.sortOrder ?? -1) + 1;
+}
+
+async function recalculateQuoteTotal(
+  tx: Prisma.TransactionClient,
+  quoteId: string
+) {
+  const aggregate = await tx.quoteItem.aggregate({
+    where: { quoteId },
+    _sum: { lineTotal: true }
+  });
+  return tx.quote.update({
+    where: { id: quoteId },
+    data: { total: aggregate._sum.lineTotal ?? 0 }
+  });
+}
+
+function quoteItemDataFromItem(
+  item: ItemForQuote,
+  quantity: number,
+  sortOrder: number
+) {
+  const itemType = item.itemType as ItemType;
+  const unitCost = Number(item.cost);
+  const unitPrice = Number(item.sellPrice);
+  const discountPercent = 0;
+  const line = calculateQuoteLine({ quantity, unitPrice, discountPercent });
+  return {
+    sourceItemId: item.id,
+    section: quoteItemSection(itemType),
+    name: item.name,
+    description: item.quoteDescription || item.description || null,
+    itemType,
+    sku: item.sku,
+    partNumber: item.partNumber,
+    manufacturer: item.manufacturer,
+    brand: item.brand,
+    quantity,
+    unitOfMeasure: item.unitOfMeasure,
+    unitCost,
+    unitPrice,
+    markupPercent: Number(item.markupPercent) || calculateMarkupPercent(unitCost, unitPrice),
+    discountPercent,
+    taxable: item.taxable,
+    imageUrl: item.primaryImageUrl,
+    productUrl: item.productUrl,
+    ...line,
+    sortOrder
+  };
+}
+
+async function quoteIdOrThrow(tx: Prisma.TransactionClient, id: string) {
+  const quote = await tx.quote.findFirst({
+    where: { archivedAt: null, OR: [{ id }, { quoteNumber: id }] },
+    select: { id: true, quoteNumber: true }
+  });
+  if (!quote) throw new Error("QUOTE_NOT_FOUND");
+  return quote;
+}
+
+async function lockQuoteOrThrow(tx: Prisma.TransactionClient, id: string) {
+  const quote = await quoteIdOrThrow(tx, id);
+  await tx.$queryRaw`SELECT "id" FROM "Quote" WHERE "id" = ${quote.id} FOR UPDATE`;
+  return quote;
+}
+
+function toQuoteBomCatalogItem(item: ItemForQuote): QuoteBomCatalogItem {
+  return {
+    id: item.id,
+    itemType: item.itemType as ItemType,
+    status: item.status,
+    defaultLaborHours: Number(item.defaultLaborHours),
+    defaultLaborItemId: item.defaultLaborItemId,
+    relations: item.outgoingRelations.map((relation) => ({
+      childItemId: relation.childItemId,
+      relationType: relation.relationType,
+      defaultQuantity: Number(relation.defaultQuantity),
+      sortOrder: relation.sortOrder
+    }))
+  };
+}
+
+async function loadQuoteBomCatalog(
+  tx: Prisma.TransactionClient,
+  parent: ItemForQuote
+) {
+  const catalog = new Map<string, ItemForQuote>([[parent.id, parent]]);
+  const processed = new Set<string>();
+  const pending = new Set<string>(
+    parent.outgoingRelations.map((relation) => relation.childItemId)
+  );
+  if (parent.defaultLaborItemId) pending.add(parent.defaultLaborItemId);
+
+  while (true) {
+    for (const item of catalog.values()) {
+      if (processed.has(item.id)) continue;
+      processed.add(item.id);
+      if (item.itemType !== "LABOR") {
+        if (item.defaultLaborItemId) pending.add(item.defaultLaborItemId);
+        for (const relation of item.outgoingRelations) {
+          if (relation.relationType === "REQUIRED") {
+            pending.add(relation.childItemId);
+          }
+        }
+      }
+    }
+    for (const itemId of catalog.keys()) pending.delete(itemId);
+    if (!pending.size) break;
+
+    const itemIds = [...pending];
+    pending.clear();
+    const items = await tx.item.findMany({
+      where: { id: { in: itemIds } },
+      include: itemForQuoteInclude
+    });
+    for (const item of items) catalog.set(item.id, item);
+  }
+
+  return catalog;
+}
+
+async function planQuoteSources(
+  tx: Prisma.TransactionClient,
+  parent: ItemForQuote,
+  input: AddQuoteItemInput | AddQuoteKitInput,
+  mode: "ITEM" | "KIT"
+) {
+  const catalog = await loadQuoteBomCatalog(tx, parent);
+  const planned = planQuoteBomSources({
+    parentItemId: parent.id,
+    quantity: input.quantity,
+    mode,
+    suggestionItemIds: input.suggestionItemIds,
+    catalog: [...catalog.values()].map(toQuoteBomCatalogItem)
+  });
+  return planned.map((source) => {
+    const item = catalog.get(source.itemId);
+    if (!item) throw new Error("ITEM_BOM_DEPENDENCY_INACTIVE");
+    return { item, quantity: source.quantity };
+  });
+}
+
+async function createQuoteItemsFromSources(
+  tx: Prisma.TransactionClient,
+  quoteId: string,
+  sources: Array<{ item: ItemForQuote; quantity: number }>,
+  firstSortOrder?: number
+) {
+  let sortOrder = firstSortOrder ?? (await nextQuoteItemSortOrder(tx, quoteId));
+  for (const source of sources) {
+    await tx.quoteItem.create({
+      data: {
+        quoteId,
+        ...quoteItemDataFromItem(source.item, source.quantity, sortOrder)
+      }
+    });
+    sortOrder += 1;
+  }
+}
+
+export async function addQuoteItem(
+  quoteId: string,
+  input: AddQuoteItemInput,
+  user?: AuthenticatedUser
+) {
+  const result = await prisma.$transaction(async (tx) => {
+    const quote = await lockQuoteOrThrow(tx, quoteId);
+    const item = await activeItemOrThrow(tx, input.itemId);
+    const sources = await planQuoteSources(tx, item, input, "ITEM");
+
+    await createQuoteItemsFromSources(tx, quote.id, sources);
+    await recalculateQuoteTotal(tx, quote.id);
+    const updatedQuote = await tx.quote.findUniqueOrThrow({
+      where: { id: quote.id },
+      include: quoteDetailInclude
+    });
+    return { quote: updatedQuote, addedLineCount: sources.length };
+  });
+  const { quote } = result;
+
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Updated",
+    title: `${quote.quoteNumber} BOM updated`,
+    detail: `Added ${result.addedLineCount} expanded BOM line${result.addedLineCount === 1 ? "" : "s"}.`,
+    metadata: { sourceItemId: input.itemId, mode: "item", addedLineCount: result.addedLineCount }
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+export async function addQuoteKit(
+  quoteId: string,
+  input: AddQuoteKitInput,
+  user?: AuthenticatedUser
+) {
+  const result = await prisma.$transaction(async (tx) => {
+    const quote = await lockQuoteOrThrow(tx, quoteId);
+    const item = await activeItemOrThrow(tx, input.itemId);
+    const sources = await planQuoteSources(tx, item, input, "KIT");
+
+    await createQuoteItemsFromSources(tx, quote.id, sources);
+    await recalculateQuoteTotal(tx, quote.id);
+    const updatedQuote = await tx.quote.findUniqueOrThrow({
+      where: { id: quote.id },
+      include: quoteDetailInclude
+    });
+    return { quote: updatedQuote, addedLineCount: sources.length };
+  });
+  const { quote } = result;
+
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Updated",
+    title: `${quote.quoteNumber} kit added`,
+    detail: `Expanded kit into ${result.addedLineCount} BOM line${result.addedLineCount === 1 ? "" : "s"}.`,
+    metadata: { sourceItemId: input.itemId, mode: "kit", addedLineCount: result.addedLineCount }
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+export async function addAdHocQuoteItem(
+  quoteId: string,
+  input: AddAdHocQuoteItemInput,
+  user?: AuthenticatedUser
+) {
+  const quote = await prisma.$transaction(async (tx) => {
+    const quote = await lockQuoteOrThrow(tx, quoteId);
+    const quantity = input.quantity;
+    const unitCost = input.unitCost;
+    const unitPrice = input.unitPrice;
+    const line = calculateQuoteLine({
+      quantity,
+      unitPrice,
+      discountPercent: input.discountPercent
+    });
+    await tx.quoteItem.create({
+      data: {
+        quoteId: quote.id,
+        sourceItemId: null,
+        section: input.section,
+        name: input.name,
+        description: nullable(input.description),
+        itemType: input.itemType,
+        sku: nullable(input.sku),
+        partNumber: nullable(input.partNumber),
+        manufacturer: nullable(input.manufacturer),
+        brand: nullable(input.brand),
+        quantity,
+        unitOfMeasure: nullable(input.unitOfMeasure),
+        unitCost,
+        unitPrice,
+        markupPercent: calculateMarkupPercent(unitCost, unitPrice),
+        discountPercent: input.discountPercent,
+        taxable: input.taxable,
+        imageUrl: nullable(input.imageUrl),
+        productUrl: nullable(input.productUrl),
+        ...line,
+        sortOrder: input.sortOrder ?? (await nextQuoteItemSortOrder(tx, quote.id))
+      }
+    });
+    await recalculateQuoteTotal(tx, quote.id);
+    return tx.quote.findUniqueOrThrow({
+      where: { id: quote.id },
+      include: quoteDetailInclude
+    });
+  });
+
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Updated",
+    title: `${quote.quoteNumber} BOM updated`,
+    detail: "Added ad hoc BOM line."
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+export async function updateQuoteItem(
+  quoteId: string,
+  quoteItemId: string,
+  input: UpdateQuoteItemInput,
+  user?: AuthenticatedUser
+) {
+  const quote = await prisma.$transaction(async (tx) => {
+    const quote = await lockQuoteOrThrow(tx, quoteId);
+    const existing = await tx.quoteItem.findFirst({
+      where: { id: quoteItemId, quoteId: quote.id }
+    });
+    if (!existing) throw new Error("QUOTE_ITEM_NOT_FOUND");
+
+    const quantity =
+      input.quantity !== undefined ? input.quantity : Number(existing.quantity);
+    const unitCost =
+      input.unitCost !== undefined ? input.unitCost : Number(existing.unitCost);
+    const unitPrice =
+      input.unitPrice !== undefined ? input.unitPrice : Number(existing.unitPrice);
+    const discountPercent =
+      input.discountPercent !== undefined
+        ? input.discountPercent
+        : Number(existing.discountPercent);
+    const line = calculateQuoteLine({ quantity, unitPrice, discountPercent });
+
+    await tx.quoteItem.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.section !== undefined ? { section: input.section } : {}),
+        ...(input.name !== undefined ? { name: input.name || existing.name } : {}),
+        ...(input.description !== undefined ? { description: nullable(input.description) } : {}),
+        ...(input.itemType !== undefined ? { itemType: input.itemType } : {}),
+        ...(input.sku !== undefined ? { sku: nullable(input.sku) } : {}),
+        ...(input.partNumber !== undefined ? { partNumber: nullable(input.partNumber) } : {}),
+        ...(input.manufacturer !== undefined ? { manufacturer: nullable(input.manufacturer) } : {}),
+        ...(input.brand !== undefined ? { brand: nullable(input.brand) } : {}),
+        quantity,
+        ...(input.unitOfMeasure !== undefined ? { unitOfMeasure: nullable(input.unitOfMeasure) } : {}),
+        unitCost,
+        unitPrice,
+        markupPercent: calculateMarkupPercent(unitCost, unitPrice),
+        discountPercent,
+        ...(input.taxable !== undefined ? { taxable: input.taxable } : {}),
+        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+        ...line
+      }
+    });
+    await recalculateQuoteTotal(tx, quote.id);
+    return tx.quote.findUniqueOrThrow({
+      where: { id: quote.id },
+      include: quoteDetailInclude
+    });
+  });
+
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Updated",
+    title: `${quote.quoteNumber} BOM line updated`
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+export async function removeQuoteItem(
+  quoteId: string,
+  quoteItemId: string,
+  user?: AuthenticatedUser
+) {
+  const quote = await prisma.$transaction(async (tx) => {
+    const quote = await lockQuoteOrThrow(tx, quoteId);
+    const existing = await tx.quoteItem.findFirst({
+      where: { id: quoteItemId, quoteId: quote.id },
+      select: { id: true }
+    });
+    if (!existing) throw new Error("QUOTE_ITEM_NOT_FOUND");
+    await tx.quoteItem.delete({ where: { id: existing.id } });
+    await recalculateQuoteTotal(tx, quote.id);
+    return tx.quote.findUniqueOrThrow({
+      where: { id: quote.id },
+      include: quoteDetailInclude
+    });
+  });
+
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Updated",
+    title: `${quote.quoteNumber} BOM line removed`
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+export async function reorderQuoteItems(
+  quoteId: string,
+  input: ReorderQuoteItemsInput,
+  user?: AuthenticatedUser
+) {
+  const quote = await prisma.$transaction(async (tx) => {
+    const lockedQuote = await lockQuoteOrThrow(tx, quoteId);
+    const existing = await tx.quoteItem.findMany({
+      where: { quoteId: lockedQuote.id },
+      select: { id: true }
+    });
+    const currentIds = new Set(existing.map((item) => item.id));
+    if (
+      input.quoteItemIds.length !== currentIds.size ||
+      input.quoteItemIds.some((id) => !currentIds.has(id))
+    ) {
+      throw new Error("QUOTE_ITEM_REORDER_STALE");
+    }
+
+    for (const [sortOrder, id] of input.quoteItemIds.entries()) {
+      await tx.quoteItem.update({
+        where: { id },
+        data: { sortOrder }
+      });
+    }
+
+    return tx.quote.findUniqueOrThrow({
+      where: { id: lockedQuote.id },
+      include: quoteDetailInclude
+    });
+  });
+
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Updated",
+    title: `${quote.quoteNumber} BOM reordered`
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+export async function updateQuoteProposal(
+  quoteId: string,
+  input: UpdateQuoteProposalInput,
+  user?: AuthenticatedUser
+) {
+  const existing = await quoteOrThrow(quoteId);
+  const quote = await prisma.quote.update({
+    where: { id: existing.id },
+    data: {
+      proposalNotes: input.proposalNotes || null,
+      proposalPreparedAt: input.proposalNotes ? new Date() : null
+    },
+    include: quoteDetailInclude
+  });
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Updated",
+    title: `${quote.quoteNumber} proposal prep updated`
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
 
 export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedUser) {
   const client = input.clientId ? await clientOrThrow(input.clientId) : null;
@@ -333,13 +985,17 @@ export async function convertQuoteToProject(
   input: ConvertQuoteInput,
   user?: AuthenticatedUser
 ) {
-  const quote = await quoteOrThrow(id);
-  if (!quote.clientId) throw new Error("QUOTE_CLIENT_REQUIRED");
-  const project = await prisma.$transaction((tx) =>
-    createProjectData(
+  const result = await prisma.$transaction(async (tx) => {
+    const lockedQuote = await lockQuoteOrThrow(tx, id);
+    const quote = await tx.quote.findUniqueOrThrow({
+      where: { id: lockedQuote.id },
+      include: quoteInclude
+    });
+    if (!quote.clientId) throw new Error("QUOTE_CLIENT_REQUIRED");
+    const project = await createProjectData(
       {
         title: quote.title,
-        clientId: quote.clientId!,
+        clientId: quote.clientId,
         quoteId: quote.id,
         owner: quote.owner,
         status: "Ready",
@@ -348,8 +1004,10 @@ export async function convertQuoteToProject(
         dueDate: input.dueDate
       },
       tx
-    )
-  );
+    );
+    return { project, quote };
+  });
+  const { project, quote } = result;
   await Promise.all([
     recordActivity({
       user,

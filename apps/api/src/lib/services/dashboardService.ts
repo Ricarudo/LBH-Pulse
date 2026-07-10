@@ -4,13 +4,13 @@ import {
   canSeeActivity,
   type AuthenticatedUser,
   type LocalRole
-} from "@/lib/auth/permissions";
+} from "@pulse/contracts/auth";
 import {
   defaultDashboardPreferences,
   normalizeDashboardPreferences
 } from "@/lib/dashboardPreferences";
 import { prisma } from "@/lib/db";
-import type { DashboardPreferencesInput } from "@/lib/validations/dashboard";
+import type { DashboardPreferencesInput } from "@pulse/contracts/dashboard";
 import {
   dashboardWidgetIds,
   type DashboardActivityItem,
@@ -24,7 +24,7 @@ import {
   type DashboardWidgetId,
   type DashboardWidgetPayloadMap,
   type DashboardWorkItem
-} from "@/types/dashboard";
+} from "@pulse/contracts/dashboard";
 
 const terminalRequestStatuses = new Set([
   "Converted to Quote",

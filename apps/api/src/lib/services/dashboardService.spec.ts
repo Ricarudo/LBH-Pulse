@@ -9,7 +9,7 @@ import {
   defaultDashboardPreferences,
   normalizeDashboardPreferences
 } from "@/lib/dashboardPreferences";
-import { dashboardPreferencesSchema } from "@/lib/validations/dashboard";
+import { dashboardPreferencesSchema } from "@pulse/contracts/dashboard";
 
 describe("dashboard date classification", () => {
   it("uses the workspace timezone for the business date", () => {

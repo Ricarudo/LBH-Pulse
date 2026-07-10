@@ -25,7 +25,7 @@ import {
   updateClientContactSchema,
   updateClientSchema,
   updateClientSiteSchema
-} from "@/lib/validations/client";
+} from "@pulse/contracts/clients";
 import { AuthError, AuthService } from "@/shared/auth.service";
 
 @Controller("clients")

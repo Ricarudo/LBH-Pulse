@@ -2,10 +2,10 @@ import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res } from "@nestjs
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { toAuthenticatedUser } from "@/lib/auth/permissions";
+import { toAuthenticatedUser } from "@pulse/contracts/auth";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
-import { changeLocalUserPasswordSchema } from "@/lib/validations/localUser";
+import { changeLocalUserPasswordSchema } from "@pulse/contracts/local-users";
 import { AuthError, AuthService } from "@/shared/auth.service";
 
 const loginSchema = z.object({

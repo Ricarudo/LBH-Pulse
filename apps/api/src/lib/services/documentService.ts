@@ -6,7 +6,7 @@ import path from "node:path";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { Express } from "express";
 import { prisma } from "@/lib/db";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { recordActivity } from "@/lib/services/activityService";
 import {
   projectDocumentCategories,
@@ -14,7 +14,7 @@ import {
   requestDocumentCategories,
   type DocumentSourceType,
   type LifecycleDocumentRecord
-} from "@/types/document";
+} from "@pulse/contracts/documents";
 
 const PDF_LIMIT = 100 * 1024 * 1024;
 const IMAGE_LIMIT = 10 * 1024 * 1024;

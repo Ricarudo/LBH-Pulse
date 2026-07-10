@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { rankSearchResults } from "@/lib/services/searchService";
-import { globalSearchQuerySchema } from "@/lib/validations/search";
-import type { GlobalSearchResult } from "@/types/search";
+import { globalSearchQuerySchema, type GlobalSearchResult } from "@pulse/contracts/search";
 
 function result(
   number: string,

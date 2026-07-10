@@ -1,18 +1,18 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { recordActivity } from "@/lib/services/activityService";
-import type { ClientContact, ClientRecord, ClientSite } from "@/types/client";
+import type { ClientContact, ClientRecord, ClientSite } from "@pulse/contracts/clients";
 import type {
-  ClientContactInput,
-  ClientSiteInput,
+  ParsedClientContactInput as ClientContactInput,
+  ParsedClientSiteInput as ClientSiteInput,
   CreateClientActivityInput,
   CreateClientInput,
   ImportClientInfoInput,
   UpdateClientContactInput,
   UpdateClientInput,
   UpdateClientSiteInput
-} from "@/lib/validations/client";
+} from "@pulse/contracts/clients";
 
 const CLIENT_OWNER_TYPE = "Client";
 
@@ -1044,4 +1044,3 @@ export async function importClientInfo(
     actor: user?.name ?? input.actor ?? "Pulse System"
   }, user);
 }
-

@@ -86,6 +86,13 @@ const errorMap: Record<string, ErrorPayload> = {
   LOCAL_USER_PASSWORD_INVALID: { status: 400, body: { error: "Current password is incorrect." } },
   CLIENT_NOT_FOUND: { status: 404, body: { error: "Client not found." } },
   CONTACT_NOT_FOUND: { status: 404, body: { error: "Contact not found." } },
+  CLIENT_VERSION_CONFLICT: {
+    status: 409,
+    body: {
+      error:
+        "This client was updated by someone else. Refresh the profile before saving again."
+    }
+  },
   CLIENT_BULK_FILE_REQUIRED: {
     status: 400,
     body: { error: "Select a CSV file to upload." }
@@ -130,6 +137,56 @@ const errorMap: Record<string, ErrorPayload> = {
     }
   },
   QUOTE_NOT_FOUND: { status: 404, body: { error: "Quote not found." } },
+  QUOTE_ITEM_NOT_FOUND: { status: 404, body: { error: "Quote item not found." } },
+  QUOTE_ITEM_REORDER_STALE: {
+    status: 409,
+    body: { error: "The quote changed while lines were being reordered. Refresh and try again." }
+  },
+  ITEM_NOT_FOUND: { status: 404, body: { error: "Item not found." } },
+  ITEM_RELATION_SELF: {
+    status: 400,
+    body: { error: "An item cannot be related to itself." }
+  },
+  ITEM_RELATION_CHILD_NOT_FOUND: {
+    status: 400,
+    body: { error: "One or more related items were not found." }
+  },
+  ITEM_DEFAULT_LABOR_SELF: {
+    status: 400,
+    body: { error: "An item cannot use itself as default labor." }
+  },
+  ITEM_DEFAULT_LABOR_NOT_FOUND: {
+    status: 400,
+    body: { error: "The selected default labor item was not found." }
+  },
+  ITEM_DEFAULT_LABOR_INVALID: {
+    status: 400,
+    body: { error: "Default labor must be an active labor item." }
+  },
+  ITEM_DEFAULT_LABOR_REQUIRED: {
+    status: 400,
+    body: { error: "Choose a default labor item when labor hours are greater than zero." }
+  },
+  ITEM_SUGGESTION_INVALID: {
+    status: 400,
+    body: { error: "One or more selected suggestions are not related to this item." }
+  },
+  ITEM_BOM_DEPENDENCY_INACTIVE: {
+    status: 409,
+    body: { error: "A required kit, relation, or labor item is inactive." }
+  },
+  ITEM_BOM_QUANTITY_INVALID: {
+    status: 400,
+    body: { error: "The expanded BOM quantity is outside the supported range." }
+  },
+  ITEM_KIT_EMPTY: {
+    status: 400,
+    body: { error: "This item does not have any kit components." }
+  },
+  ITEM_RELATION_CYCLE: {
+    status: 409,
+    body: { error: "Required item relations contain a cycle." }
+  },
   PROJECT_NOT_FOUND: { status: 404, body: { error: "Project not found." } },
   INVOICE_NOT_FOUND: { status: 404, body: { error: "Invoice not found." } },
   QUOTE_ALREADY_CONVERTED: { status: 409, body: { error: "This quote already has a project." } },

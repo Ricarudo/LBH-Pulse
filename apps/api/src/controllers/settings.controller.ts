@@ -24,15 +24,15 @@ import {
   createLocalUserSchema,
   resetLocalUserPasswordSchema,
   updateLocalUserSchema
-} from "@/lib/validations/localUser";
+} from "@pulse/contracts/local-users";
 import {
   createRequestChecklistTemplateSchema,
   updateRequestChecklistTemplateSchema
-} from "@/lib/validations/requestChecklistTemplate";
+} from "@pulse/contracts/request-checklists";
 import {
   userPreferencesSchema,
   workspaceSettingsSchema
-} from "@/lib/validations/settings";
+} from "@pulse/contracts/settings";
 import { AuthService } from "@/shared/auth.service";
 
 @Controller("settings")

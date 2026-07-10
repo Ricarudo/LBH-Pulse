@@ -27,7 +27,7 @@ import {
   createRequestTaskSchema,
   updateRequestChecklistItemSchema,
   updateRequestSchema
-} from "@/lib/validations/request";
+} from "@pulse/contracts/requests";
 import { AuthService } from "@/shared/auth.service";
 import { uploadDocument } from "@/lib/services/documentService";
 

@@ -4,7 +4,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { apiErrorPayload } from "@/shared/api-exception.filter";
 import { AuthError } from "@/shared/auth.service";
-import { changeRequestStatusSchema } from "@/lib/validations/request";
+import { changeRequestStatusSchema } from "@pulse/contracts/requests";
 
 describe("apiErrorPayload", () => {
   it("maps authentication failures to their status code", () => {
@@ -26,6 +26,12 @@ describe("apiErrorPayload", () => {
     assert.deepEqual(apiErrorPayload(new Error("REQUEST_CONVERTED_LOCKED")), {
       status: 409,
       body: { error: "Converted requests cannot be reopened or closed again." }
+    });
+    assert.deepEqual(apiErrorPayload(new Error("QUOTE_ITEM_REORDER_STALE")), {
+      status: 409,
+      body: {
+        error: "The quote changed while lines were being reordered. Refresh and try again."
+      }
     });
   });
 

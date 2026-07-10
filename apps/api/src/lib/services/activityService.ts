@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { canSeeActivity, type AuthenticatedUser } from "@/lib/auth/permissions";
-import type { ActivityRecord } from "@/types/activity";
+import { canSeeActivity, type AuthenticatedUser } from "@pulse/contracts/auth";
+import type { ActivityRecord } from "@pulse/contracts/activity";
 
 type RecordActivityInput = {
   user?: AuthenticatedUser | null;

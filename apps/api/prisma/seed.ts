@@ -1,17 +1,138 @@
-// @ts-nocheck
 import { PrismaPg } from "@prisma/adapter-pg";
 import { scryptSync } from "node:crypto";
-import { PrismaClient } from "../src/generated/prisma/client";
+import {
+  Prisma,
+  PrismaClient,
+  type Item,
+  type Project
+} from "../src/generated/prisma/client";
 
 const adapter = new PrismaPg(
-  {
-    connectionString: process.env.DATABASE_URL
-  },
+  { connectionString: process.env.DATABASE_URL },
   { schema: "pulse" }
 );
 const prisma = new PrismaClient({ adapter });
 
-function hashPassword(password, salt) {
+type ChecklistItemSeed = readonly [
+  label: string,
+  group: string,
+  required?: boolean,
+  appliesWhen?: string
+];
+
+type ChecklistTemplateSeed = {
+  key: string;
+  name: string;
+  requestType?: string;
+  serviceCategory?: string;
+  items: ChecklistItemSeed[];
+};
+
+type SampleClientContact = {
+  role: string;
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+  department?: string;
+  mobile?: string;
+  preferredContactMethod?: string;
+  isPrimary?: boolean;
+  isBilling?: boolean;
+  isTechnicalContact?: boolean;
+  isDecisionMaker?: boolean;
+  notes?: string;
+};
+
+type SampleClientSite = {
+  name: string;
+  address: string;
+  city: string;
+  state?: string;
+  status: string;
+  siteType?: string;
+  country?: string;
+  googleMapsUrl?: string;
+  operationalHours?: string;
+  accessInstructions?: string;
+  parkingInstructions?: string;
+  securityRequirements?: string;
+  siteNotes?: string;
+  isPrimarySite?: boolean;
+};
+
+type SampleClientActivity = {
+  type: string;
+  title: string;
+  detail: string;
+  actor: string;
+  createdAt: Date;
+};
+
+type SampleClient = {
+  clientNumber: string;
+  companyName: string;
+  legalName?: string;
+  displayName?: string;
+  industry: string;
+  website?: string;
+  status: string;
+  accountOwner: string;
+  taxId?: string;
+  paymentTerms?: string;
+  preferredCurrency?: string;
+  preferredLanguage?: string;
+  brandPreferences?: string;
+  technologyPreferences?: string;
+  importantNotes: string;
+  preferredVendors?: string;
+  preferredCameraBrand?: string;
+  preferredAccessControlBrand?: string;
+  preferredNetworkBrand?: string;
+  preferredCablingBrand?: string;
+  standardTechnologies?: string;
+  documentationRequirements?: string;
+  invoiceRequirements?: string;
+  insuranceRequirements?: string;
+  purchaseOrderRequired?: boolean;
+  source: string;
+  openOpportunities: number;
+  activeProjects: number;
+  lifetimeValue: number;
+  outstandingBalance: number;
+  lastActivityAt: Date;
+  contacts: SampleClientContact[];
+  sites: SampleClientSite[];
+  services: string[];
+  activities: SampleClientActivity[];
+};
+
+type SeededChecklistTemplate = {
+  id: string;
+  name: string;
+  items: Array<{
+    id: string;
+    label: string;
+    description: string | null;
+    required: boolean;
+    appliesWhen: string | null;
+    sortOrder: number;
+    group: string | null;
+  }>;
+};
+
+type ActivitySeed = {
+  relatedEntityType: string;
+  relatedEntityId: string;
+  actorName?: string;
+  type: string;
+  title: string;
+  detail?: string | null;
+  createdAt?: Date;
+  metadata?: Prisma.InputJsonValue;
+};
+
+function hashPassword(password: string, salt: string) {
   return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
 
@@ -42,7 +163,7 @@ const testUsers = [
   }
 ];
 
-const checklistTemplates = [
+const checklistTemplates: ChecklistTemplateSeed[] = [
   {
     key: "general",
     name: "General Request Intake",
@@ -171,7 +292,7 @@ const checklistTemplates = [
   }
 ];
 
-function checklistKeyFor(serviceCategory) {
+function checklistKeyFor(serviceCategory: string) {
   if (serviceCategory === "Fiber") return "fiber-install";
   if (serviceCategory === "Access Control") return "access-control";
   if (serviceCategory === "CCTV / Surveillance") return "cctv-surveillance";
@@ -568,7 +689,7 @@ const sampleRequests = [
   }
 ];
 
-const sampleClients = [
+const sampleClients: SampleClient[] = [
   {
     clientNumber: "CL-1001",
     companyName: "San Juan Medical Center",
@@ -862,12 +983,15 @@ async function main() {
   await prisma.requestNote.deleteMany();
   await prisma.requestTask.deleteMany();
   await prisma.requestActivity.deleteMany();
+  await prisma.quoteItem.deleteMany();
   await prisma.invoice.deleteMany();
   await prisma.project.deleteMany();
   await prisma.request.deleteMany();
   await prisma.requestChecklistTemplateItem.deleteMany();
   await prisma.requestChecklistTemplate.deleteMany();
   await prisma.quote.deleteMany();
+  await prisma.itemRelation.deleteMany();
+  await prisma.item.deleteMany();
   await prisma.opportunity.deleteMany();
   await prisma.localUser.deleteMany();
 
@@ -894,13 +1018,13 @@ async function main() {
   );
 
   const usersByName = new Map(seededUsers.map((user) => [user.name, user]));
-  const fallbackActor = usersByName.get("Admin User") || seededUsers[0];
+  const fallbackActor = usersByName.get("Admin User") ?? seededUsers[0]!;
 
-  function actorFor(name) {
-    return usersByName.get(name) || fallbackActor;
+  function actorFor(name?: string) {
+    return (name ? usersByName.get(name) : undefined) ?? fallbackActor;
   }
 
-  const seededTemplates = new Map();
+  const seededTemplates = new Map<string, SeededChecklistTemplate>();
   for (const template of checklistTemplates) {
     const createdTemplate = await prisma.requestChecklistTemplate.create({
       data: {
@@ -934,7 +1058,7 @@ async function main() {
     detail,
     createdAt,
     metadata
-  }) {
+  }: ActivitySeed) {
     const actor = actorFor(actorName);
 
     await prisma.activity.create({
@@ -1119,7 +1243,12 @@ async function main() {
       request.assignedOwner === "Unassigned"
         ? null
         : usersByName.get(request.assignedOwner) || null;
-    const template = seededTemplates.get(checklistKeyFor(request.serviceCategory)) || seededTemplates.get("general");
+    const template =
+      seededTemplates.get(checklistKeyFor(request.serviceCategory)) ??
+      seededTemplates.get("general");
+    if (!template) {
+      throw new Error("General request checklist seed template is missing.");
+    }
     const completedItems = new Set(request.checklistCompleted ?? []);
     const requestActor = actorFor(request.activities[0]?.actor);
     const linkedClient = clientsByName.get(request.companyName);
@@ -1236,6 +1365,129 @@ async function main() {
     metadata: { status: opportunity.status, value: Number(opportunity.value) }
   });
 
+  const laborItem = await prisma.item.create({
+    data: {
+      name: "Senior Technician Labor",
+      description: "Standard senior technician labor for quote estimates.",
+      itemType: "LABOR",
+      sku: "LAB-SR-TECH",
+      category: "Labor",
+      unitOfMeasure: "hour",
+      cost: 55,
+      sellPrice: 95,
+      markupPercent: 72.73,
+      taxable: false,
+      quoteDescription: "Senior technician labor"
+    }
+  });
+  const switchItem = await prisma.item.create({
+    data: {
+      name: "48-Port PoE Access Switch",
+      description: "Managed PoE access switch for network refresh projects.",
+      itemType: "PRODUCT",
+      sku: "NET-SW-48P",
+      partNumber: "USW-PRO-48-POE",
+      manufacturer: "Ubiquiti",
+      brand: "UniFi",
+      category: "Networking",
+      subcategory: "Switching",
+      unitOfMeasure: "each",
+      cost: 1425,
+      sellPrice: 2150,
+      markupPercent: 50.88,
+      taxable: true,
+      quoteDescription: "48-port managed PoE access switch",
+      defaultLaborHours: 2,
+      defaultLaborItemId: laborItem.id
+    }
+  });
+  const patchCableItem = await prisma.item.create({
+    data: {
+      name: "Cat6 Patch Cable 3 ft",
+      description: "Short Cat6 patch cable for rack terminations.",
+      itemType: "PRODUCT",
+      sku: "CAB-CAT6-3FT",
+      category: "Cabling",
+      subcategory: "Patch cables",
+      unitOfMeasure: "each",
+      cost: 5.25,
+      sellPrice: 12,
+      markupPercent: 128.57,
+      taxable: true
+    }
+  });
+  const configurationService = await prisma.item.create({
+    data: {
+      name: "Network Configuration Service",
+      description: "Switch configuration, VLAN setup, labeling, and handoff documentation.",
+      itemType: "SERVICE",
+      sku: "SVC-NET-CONFIG",
+      category: "Networking",
+      unitOfMeasure: "each",
+      cost: 0,
+      sellPrice: 450,
+      taxable: false,
+      quoteDescription: "Network configuration and handoff documentation"
+    }
+  });
+  const refreshKit = await prisma.item.create({
+    data: {
+      name: "Small Network Refresh Kit",
+      description: "Starter kit for a small switching refresh BOM.",
+      itemType: "PRODUCT",
+      sku: "KIT-NET-REFRESH-S",
+      category: "Networking",
+      unitOfMeasure: "kit",
+      cost: 0,
+      sellPrice: 0,
+      taxable: true,
+      quoteDescription: "Small network refresh kit"
+    }
+  });
+  await prisma.item.create({
+    data: {
+      name: "Legacy 2MP Dome Camera",
+      description: "Inactive legacy camera retained for quote history.",
+      itemType: "PRODUCT",
+      status: "INACTIVE",
+      sku: "OLD-CAM-2MP",
+      category: "CCTV / Surveillance",
+      unitOfMeasure: "each",
+      cost: 68,
+      sellPrice: 135
+    }
+  });
+  await prisma.itemRelation.createMany({
+    data: [
+      {
+        parentItemId: refreshKit.id,
+        childItemId: switchItem.id,
+        relationType: "KIT_COMPONENT",
+        defaultQuantity: 2,
+        sortOrder: 1
+      },
+      {
+        parentItemId: refreshKit.id,
+        childItemId: patchCableItem.id,
+        relationType: "KIT_COMPONENT",
+        defaultQuantity: 24,
+        sortOrder: 2
+      },
+      {
+        parentItemId: refreshKit.id,
+        childItemId: configurationService.id,
+        relationType: "REQUIRED",
+        defaultQuantity: 1,
+        sortOrder: 3
+      }
+    ]
+  });
+
+  const coastalRequest = await prisma.request.findFirst({
+    where: { requestNumber: "RQ-2026-1006" },
+    select: { id: true }
+  });
+
   const quote = await prisma.quote.create({
     data: {
       quoteNumber: "QT-2026-1001",
@@ -1244,9 +1496,65 @@ async function main() {
       clientName: "Coastal Hospitality Group",
       status: "Draft",
       owner: "Sales User",
-      total: 52400,
+      total: 0,
+      sourceRequestIdSnapshot: coastalRequest?.id ?? null,
+      requestNumberSnapshot: "RQ-2026-1006",
+      requestTitleSnapshot: "Network refresh",
+      requestTypeSnapshot: "Quote Request",
+      serviceCategorySnapshot: "Networking",
+      contactNameSnapshot: "Sofia Morales",
+      contactEmailSnapshot: "smorales@coastalhospitality.example",
+      contactPhoneSnapshot: "787-555-0166",
+      siteNameSnapshot: "Condado hotel",
+      siteAddressSnapshot: "Ashford Avenue 1102",
+      citySnapshot: "San Juan",
+      stateSnapshot: "PR",
+      scopeDescriptionSnapshot: "Replace access switches and clean up rack power. Customer requested proposal this week.",
+      internalNotesSnapshot: "Customer asked for a proposal by Friday.",
+      proposalNotes: "Draft proposal should emphasize phased implementation and minimal hotel downtime.",
       createdAt: new Date("2026-05-09T18:30:00.000Z")
     }
+  });
+
+  function quoteLine(item: Item, quantity: number, sortOrder: number) {
+    const unitPrice = Number(item.sellPrice);
+    const lineSubtotal = Number((quantity * unitPrice).toFixed(2));
+    return {
+      quoteId: quote.id,
+      sourceItemId: item.id,
+      section: item.itemType === "LABOR" ? "Labor" : item.itemType === "SERVICE" ? "Services" : "Materials",
+      name: item.name,
+      description: item.quoteDescription || item.description,
+      itemType: item.itemType,
+      sku: item.sku,
+      partNumber: item.partNumber,
+      manufacturer: item.manufacturer,
+      brand: item.brand,
+      quantity,
+      unitOfMeasure: item.unitOfMeasure,
+      unitCost: item.cost,
+      unitPrice,
+      markupPercent: item.markupPercent,
+      discountPercent: 0,
+      taxable: item.taxable,
+      imageUrl: item.primaryImageUrl,
+      productUrl: item.productUrl,
+      lineSubtotal,
+      lineTax: 0,
+      lineTotal: lineSubtotal,
+      sortOrder
+    };
+  }
+  const quoteLines = [
+    quoteLine(switchItem, 2, 1),
+    quoteLine(laborItem, 16, 2),
+    quoteLine(configurationService, 1, 3)
+  ];
+  await prisma.quoteItem.createMany({ data: quoteLines });
+  const quoteTotal = quoteLines.reduce((total, line) => total + line.lineTotal, 0);
+  await prisma.quote.update({
+    where: { id: quote.id },
+    data: { total: quoteTotal }
   });
 
   await prisma.request.updateMany({
@@ -1254,30 +1562,85 @@ async function main() {
     data: { relatedQuoteId: quote.id }
   });
 
-  const seededProjects = await Promise.all([
+  const projectSeeds: Array<[
+    projectNumber: string,
+    title: string,
+    clientName: string,
+    owner: string,
+    status: string,
+    budget: number,
+    dueDate: string
+  ]> = [
     ["PRJ-118", "Banco Popular Tower", "Banco Popular Tower", "David K.", "In Progress", 284000, "2026-06-02"],
     ["PRJ-119", "Northfield Upgrade", "Northfield Industries", "Alex M.", "Field Work", 96000, "2026-05-28"],
     ["PRJ-120", "Metro Retail Camera Refresh", "Metro Retail Group", "Maria S.", "Ready", 42000, "2026-06-05"]
-  ].map(([projectNumber, title, clientName, owner, status, budget, dueDate]) => {
+  ];
+  const seededProjects = await Promise.all(projectSeeds.map(([
+    projectNumber,
+    title,
+    clientName,
+    owner,
+    status,
+    budget,
+    dueDate
+  ]) => {
     const client = clientsByName.get(clientName);
     if (!client) return null;
     return prisma.project.create({
-      data: { projectNumber, title, clientId: client.id, owner, status, budget, dueDate: new Date(`${dueDate}T12:00:00.000Z`) }
+      data: {
+        projectNumber,
+        title,
+        clientId: client.id,
+        owner,
+        status,
+        budget,
+        dueDate: new Date(`${dueDate}T12:00:00.000Z`)
+      }
     });
   }));
   const projectsByNumber = new Map(
-    seededProjects.filter(Boolean).map((project) => [project.projectNumber, project])
+    seededProjects
+      .filter((project): project is Project => project !== null)
+      .map((project) => [project.projectNumber, project])
   );
 
-  await Promise.all([
+  const invoiceSeeds: Array<[
+    invoiceNumber: string,
+    title: string,
+    clientName: string,
+    projectNumber: string,
+    owner: string,
+    status: string,
+    amount: number,
+    dueDate: string
+  ]> = [
     ["INV-901", "Northfield progress invoice", "Northfield Industries", "PRJ-119", "Sarah M.", "Sent", 24800, "2026-05-20"],
     ["INV-902", "Banco Popular milestone billing", "Banco Popular Tower", "PRJ-118", "David K.", "Review", 76000, "2026-05-19"],
     ["INV-903", "Metro Retail deposit", "Metro Retail Group", "PRJ-120", "Sales User", "Overdue", 8500, "2026-05-13"]
-  ].map(([invoiceNumber, title, clientName, projectNumber, owner, status, amount, dueDate]) => {
+  ];
+  await Promise.all(invoiceSeeds.map(([
+    invoiceNumber,
+    title,
+    clientName,
+    projectNumber,
+    owner,
+    status,
+    amount,
+    dueDate
+  ]) => {
     const client = clientsByName.get(clientName);
     if (!client) return null;
     return prisma.invoice.create({
-      data: { invoiceNumber, title, clientId: client.id, projectId: projectsByNumber.get(projectNumber)?.id, owner, status, amount, dueDate: new Date(`${dueDate}T12:00:00.000Z`) }
+      data: {
+        invoiceNumber,
+        title,
+        clientId: client.id,
+        projectId: projectsByNumber.get(projectNumber)?.id,
+        owner,
+        status,
+        amount,
+        dueDate: new Date(`${dueDate}T12:00:00.000Z`)
+      }
     });
   }));
 
@@ -1289,7 +1652,7 @@ async function main() {
     title: `${quote.quoteNumber} drafted`,
     detail: quote.title,
     createdAt: new Date("2026-05-09T18:30:00.000Z"),
-    metadata: { status: quote.status, total: Number(quote.total) }
+    metadata: { status: quote.status, total: quoteTotal }
   });
 }
 
@@ -1297,7 +1660,7 @@ main()
   .then(async () => {
     await prisma.$disconnect();
     console.log(
-      `Seeded ${testUsers.length} local users, ${sampleClients.length + 1} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, and starter activity.`
+      `Seeded ${testUsers.length} local users, ${sampleClients.length + 1} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, starter items, quote BOM lines, and activity.`
     );
   })
   .catch(async (error) => {

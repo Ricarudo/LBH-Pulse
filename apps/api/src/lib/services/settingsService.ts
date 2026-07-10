@@ -1,17 +1,17 @@
 import { prisma } from "@/lib/db";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { recordActivity } from "@/lib/services/activityService";
 import type {
   UserPreferencesInput,
   WorkspaceSettingsInput
-} from "@/lib/validations/settings";
+} from "@pulse/contracts/settings";
 import type {
   AccentTheme,
   MotionMode,
   ThemeMode,
   UserPreferencesRecord,
   WorkspaceSettingsRecord
-} from "@/types/settings";
+} from "@pulse/contracts/settings";
 
 const defaultWorkspaceSettings = {
   id: "default",
