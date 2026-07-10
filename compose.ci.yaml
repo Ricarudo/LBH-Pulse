@@ -13,6 +13,45 @@ services:
       timeout: 5s
       retries: 12
 
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: production
+    environment:
+      DATABASE_URL: postgresql://pulse:pulse_ci_password@postgres:5432/pulse?schema=pulse
+      PULSE_SESSION_SECRET: pulse-ci-session-secret
+      PULSE_COOKIE_SECURE: "true"
+      FRONTEND_ORIGINS: https://pulse.lbh.app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: production
+      args:
+        PULSE_API_URL: http://api:3000
+    environment:
+      PULSE_API_URL: http://api:3000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4300/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+    depends_on:
+      api:
+        condition: service_healthy
+
   checks:
     build:
       context: .
@@ -22,8 +61,11 @@ services:
       DATABASE_URL: postgresql://pulse:pulse_ci_password@postgres:5432/pulse?schema=pulse
       PULSE_SESSION_SECRET: pulse-ci-session-secret
       PULSE_COOKIE_SECURE: "true"
+      PULSE_RUN_DB_TESTS: "1"
       FRONTEND_ORIGINS: https://pulse.lbh.app
       PULSE_API_URL: http://localhost:3000
     depends_on:
       postgres:
+        condition: service_healthy
+      web:
         condition: service_healthy

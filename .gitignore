@@ -2,17 +2,23 @@ node_modules/
 dist/
 build/
 .next/
-.angular/
 coverage/
 *.tsbuildinfo
 
+.pnpm-store/
+
 apps/api/src/generated/prisma/
-apps/web/src/generated/prisma/
 
 .env
 *.log
 
 database/local-backups/
+*.backup
+*.bak
+*.dump
 
-backend/backend-dev.*.log
-gui/dist/
+pulse-local-ca.crt
+*.local.crt
+
+.DS_Store
+._*

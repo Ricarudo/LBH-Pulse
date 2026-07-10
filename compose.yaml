@@ -81,16 +81,18 @@ services:
 
   api:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
       target: dev
-    command: npm run dev
+    command: npm run dev:api
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
     environment: *api-environment
     volumes:
-      - ./apps/api:/usr/src/app
-      - api-node-modules:/usr/src/app/node_modules
+      - ./apps/api:/workspace/apps/api
+      - ./packages/contracts:/workspace/packages/contracts
+      - api-workspace-node-modules:/workspace/apps/api/node_modules
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 10s
@@ -108,38 +110,39 @@ services:
   initialize:
     profiles: ["setup"]
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
       target: dev
-    command: npm run db:initialize
+    command: npm run db:initialize -w @pulse/api
     environment:
       DATABASE_URL: postgresql://pulse:pulse_dev_password@postgres:5432/pulse?schema=pulse
       PULSE_SESSION_SECRET: pulse-local-dev-session-secret
     volumes:
-      - ./apps/api:/usr/src/app
-      - api-node-modules:/usr/src/app/node_modules
+      - ./apps/api:/workspace/apps/api
+      - ./packages/contracts:/workspace/packages/contracts
+      - api-workspace-node-modules:/workspace/apps/api/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
   web:
     build:
-      context: ./apps/web
+      context: .
+      dockerfile: apps/web/Dockerfile
       target: dev
-    command: npm run dev
+    command: npm run dev:web
     restart: unless-stopped
     ports:
       - "127.0.0.1:4300:4300"
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://pulse:pulse_dev_password@postgres:5432/pulse?schema=pulse
       PULSE_API_URL: http://api:3000
-      PULSE_SESSION_SECRET: pulse-local-dev-session-secret
-      PULSE_COOKIE_SECURE: "true"
-      PULSE_ALLOWED_DEV_ORIGINS: pulse.lbh.app,192.168.1.253
+      PULSE_ALLOWED_DEV_ORIGINS: localhost,127.0.0.1,pulse.lbh.app,192.168.1.253
     volumes:
-      - ./apps/web:/usr/src/app
-      - web-node-modules:/usr/src/app/node_modules
-      - web-next:/usr/src/app/.next
+      - ./apps/web:/workspace/apps/web
+      - ./packages/contracts:/workspace/packages/contracts
+      - web-workspace-node-modules:/workspace/apps/web/node_modules
+      - web-next:/workspace/apps/web/.next
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4300/api/health"]
       interval: 10s
@@ -177,8 +180,8 @@ volumes:
   postgres-data:
   minio-data:
   clamav-data:
-  api-node-modules:
-  web-node-modules:
+  api-workspace-node-modules:
+  web-workspace-node-modules:
   web-next:
   caddy-data:
   caddy-config:

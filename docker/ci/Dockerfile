@@ -2,13 +2,15 @@ FROM node:24-alpine
 
 WORKDIR /workspace
 
-COPY apps/api/package.json apps/api/package-lock.json ./apps/api/
-RUN cd apps/api && npm ci
+COPY package.json package-lock.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY packages/contracts/package.json ./packages/contracts/package.json
+RUN npm ci
 
-COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
-RUN cd apps/web && npm ci
-
+COPY packages ./packages
 COPY apps ./apps
+COPY docker/ci/smoke.mjs ./docker/ci/smoke.mjs
 COPY docker/ci/run.sh /usr/local/bin/pulse-ci
 RUN chmod +x /usr/local/bin/pulse-ci
 

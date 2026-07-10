@@ -27,5 +27,5 @@ change consistently across modules.
 - Account for `env(safe-area-inset-*)`, use dynamic viewport units for
   full-screen surfaces, and keep interactive targets at least 44px high.
 
-Run `npm run responsive:check` in `apps/web` to catch noncanonical media-query
-widths.
+From the repository root, run `npm run responsive:check` to catch noncanonical
+media-query widths. Run the web tests as well when responsive behavior changes.
