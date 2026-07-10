@@ -1,7 +1,7 @@
 "use client";
 
 import { Activity, Clock3, UserRound } from "lucide-react";
-import type { ActivityRecord } from "@/types/activity";
+import type { ActivityRecord } from "@pulse/contracts/activity";
 import { formatWorkspaceDate } from "@/lib/formatting";
 
 type ActivityTimelineProps = {

@@ -14,9 +14,9 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import type { ClientRecord } from "@/types/client";
+import type { ClientRecord } from "@pulse/contracts/clients";
 import {
   requestPriorities,
   requestSources,
@@ -28,7 +28,7 @@ import {
   type RequestSource,
   type RequestType,
   type ServiceCategory
-} from "./requestData";
+} from "@pulse/contracts/requests";
 
 type EditFormState = {
   title: string;

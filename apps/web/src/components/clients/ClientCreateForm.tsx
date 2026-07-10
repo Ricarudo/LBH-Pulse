@@ -3,7 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, Plus } from "lucide-react";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
   clientIndustries,
@@ -14,7 +14,7 @@ import {
   type ClientRecord,
   type ClientSiteInput,
   type ClientStatus
-} from "@/types/client";
+} from "@pulse/contracts/clients";
 import { ClientContactForm } from "./ClientContactForm";
 import { ClientSiteForm } from "./ClientSiteForm";
 import { WizardNavigation } from "./WizardNavigation";

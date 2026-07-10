@@ -1,4 +1,4 @@
-import type { WorkspaceSettingsRecord } from "@/types/settings";
+import type { WorkspaceSettingsRecord } from "@pulse/contracts/settings";
 
 let settings: WorkspaceSettingsRecord = {
   name: "R2 Communications",
@@ -11,6 +11,14 @@ let settings: WorkspaceSettingsRecord = {
 
 export function setWorkspaceFormatting(next: WorkspaceSettingsRecord) {
   settings = next;
+}
+
+export function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0
+  }).format(value);
 }
 
 export function formatWorkspaceDate(value?: string | Date | null, includeTime = false) {

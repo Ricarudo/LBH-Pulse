@@ -27,7 +27,7 @@ import { createPortal } from "react-dom";
 import {
   canRole,
   type AuthenticatedUser
-} from "@/lib/auth/permissions";
+} from "@pulse/contracts/auth";
 import { useResponsiveMode } from "@/lib/responsive";
 import {
   buildClientContactPayload,
@@ -65,7 +65,7 @@ import {
   type ClientRecord,
   type ClientSite,
   type ClientSiteInput
-} from "@/types/client";
+} from "@pulse/contracts/clients";
 import {
   requestPriorities,
   requestSources,
@@ -77,7 +77,7 @@ import {
   type RequestSource,
   type RequestType,
   type ServiceCategory
-} from "./requestData";
+} from "@pulse/contracts/requests";
 
 type ClientResponse = {
   client: ClientRecord;

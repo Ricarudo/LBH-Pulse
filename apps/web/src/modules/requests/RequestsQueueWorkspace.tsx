@@ -31,7 +31,7 @@ import {
   type RequestSource,
   type RequestStatus,
   type ServiceCategory
-} from "./requestData";
+} from "@pulse/contracts/requests";
 
 type QueueView = "my" | "open" | "unassigned" | "attention" | "closed";
 type QueueSort = "activity" | "due" | "priority" | "request";

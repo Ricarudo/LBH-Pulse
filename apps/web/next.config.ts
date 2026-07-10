@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
+import { resolve } from "node:path";
 
 const pulseApiUrl = process.env.PULSE_API_URL || "http://localhost:3000";
+const workspaceRoot = resolve(process.cwd(), "../..");
 const allowedDevOrigins = (
-  process.env.PULSE_ALLOWED_DEV_ORIGINS || "192.168.1.*"
+  process.env.PULSE_ALLOWED_DEV_ORIGINS || "localhost,127.0.0.1,192.168.1.*"
 )
   .split(",")
   .map((origin) => origin.trim())
@@ -11,13 +13,11 @@ const allowedDevOrigins = (
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   turbopack: {
-    root: process.cwd()
+    root: workspaceRoot
   },
   allowedDevOrigins,
   async rewrites() {
     return {
-      // Web-owned quote/BOM/item handlers use /workspace-api so this legacy
-      // proxy can continue serving the rest of the Nest API without shadowing them.
       beforeFiles: [
         {
           source: "/api/:path*",

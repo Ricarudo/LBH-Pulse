@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import {
   buildQuickCreatePayload,
   createBlankQuickCreateForm,
@@ -16,7 +16,7 @@ import {
 // a new client behaves consistently no matter where it is created.
 import { FormRequestError, formJson } from "@/lib/forms/sanitization";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import { formatWorkspaceDate } from "@/lib/formatting";
+import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import {
   ArrowLeft,
   Building2,
@@ -31,11 +31,10 @@ import {
   clientIndustries,
   clientOwners,
   clientStatuses,
-  formatMoney,
   type ClientIndustry,
   type ClientRecord,
   type ClientStatus
-} from "./clientData";
+} from "@pulse/contracts/clients";
 
 type ClientListResponse = {
   clients: ClientRecord[];

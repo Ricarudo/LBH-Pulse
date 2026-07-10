@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, Building2, Filter, Plus, Search, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
   clientOwners,
@@ -11,7 +11,7 @@ import {
   type ClientContact,
   type ClientRecord,
   type ClientStatus
-} from "./clientData";
+} from "@pulse/contracts/clients";
 import { ContactCreateDialog } from "./ContactCreateDialog";
 
 type ClientListResponse = {

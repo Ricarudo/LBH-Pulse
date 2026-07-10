@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 
 export function useCurrentUser() {
   const [user, setUser] = useState<AuthenticatedUser | null>(null);

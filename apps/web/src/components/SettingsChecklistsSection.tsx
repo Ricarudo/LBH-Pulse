@@ -11,11 +11,11 @@ import {
   RotateCcw,
   Search
 } from "lucide-react";
-import { requestTypes, serviceCategories } from "@/types/request";
+import { requestTypes, serviceCategories } from "@pulse/contracts/requests";
 import type {
   RequestChecklistTemplateItemRecord,
   RequestChecklistTemplateRecord
-} from "@/types/requestChecklistTemplate";
+} from "@pulse/contracts/request-checklists";
 
 type TemplatesResponse = { templates: RequestChecklistTemplateRecord[] };
 type TemplateResponse = { template: RequestChecklistTemplateRecord };

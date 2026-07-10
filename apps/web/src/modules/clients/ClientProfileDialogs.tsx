@@ -22,7 +22,7 @@ import {
   preferredContactMethods,
   type ClientRecord,
   type ClientSite
-} from "@/types/client";
+} from "@pulse/contracts/clients";
 
 type ClientResponse = { client: ClientRecord };
 

@@ -12,9 +12,15 @@ import {
   Search,
   X
 } from "lucide-react";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
+import {
+  createItem,
+  deactivateItem,
+  fetchItems,
+  updateItem
+} from "@/lib/api/items";
+import { formatMoney } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import { formatMoney } from "@/types/client";
 import {
   itemRelationTypes,
   itemStatuses,
@@ -23,7 +29,7 @@ import {
   type ItemRelationType,
   type ItemStatus,
   type ItemType
-} from "@/types/item";
+} from "@pulse/contracts/items";
 
 type ItemRelationDraft = {
   childItemId: string;
@@ -83,18 +89,6 @@ const blankDraft: ItemDraft = {
   defaultLaborItemId: "",
   relations: []
 };
-
-async function requestJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers }
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(typeof data.error === "string" ? data.error : "Request failed.");
-  }
-  return data as T;
-}
 
 function draftFromItem(item: ItemRecord): ItemDraft {
   return {
@@ -172,9 +166,10 @@ export function ItemsModule() {
       try {
         setLoading(true);
         setError("");
-        const data = await requestJson<{ items: ItemRecord[] }>("/workspace-api/items?includeInactive=true", {
-          cache: "no-store"
-        });
+        const data = await fetchItems(
+          { includeInactive: true },
+          { cache: "no-store" }
+        );
         setItems(data.items);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load items.");
@@ -254,13 +249,10 @@ export function ItemsModule() {
     }
     try {
       setSaving(true);
-      const data = await requestJson<{ item: ItemRecord }>(
-        editingItem ? `/workspace-api/items/${editingItem.id}` : "/workspace-api/items",
-        {
-          method: editingItem ? "PATCH" : "POST",
-          body: JSON.stringify(payloadFromDraft(draft))
-        }
-      );
+      const payload = payloadFromDraft(draft);
+      const data = editingItem
+        ? await updateItem(editingItem.id, payload)
+        : await createItem(payload);
       setItems((current) =>
         editingItem
           ? current.map((item) => (item.id === data.item.id ? data.item : item))
@@ -277,9 +269,7 @@ export function ItemsModule() {
 
   async function markInactive(item: ItemRecord) {
     try {
-      const data = await requestJson<{ item: ItemRecord }>(`/workspace-api/items/${item.id}`, {
-        method: "DELETE"
-      });
+      const data = await deactivateItem(item.id);
       setItems((current) =>
         current.map((currentItem) => currentItem.id === data.item.id ? data.item : currentItem)
       );

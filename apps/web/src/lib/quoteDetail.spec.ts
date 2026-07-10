@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeQuoteDetailRecord } from "@/lib/quoteDetail";
-import type { QuoteRecord } from "@/types/work";
+import type { QuoteRecord } from "@pulse/contracts/work";
 
 const legacyQuote: QuoteRecord = {
   id: "quote-1",

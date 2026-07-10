@@ -1,4 +1,4 @@
-import type { RequestChecklistItem } from "./requestData";
+import type { RequestChecklistItem } from "@pulse/contracts/requests";
 
 function initialsFor(name: string) {
   const initials = name

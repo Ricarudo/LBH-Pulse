@@ -16,7 +16,7 @@ import {
   UsersRound
 } from "lucide-react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import { usePulsePreferences } from "@/components/PulseShell";
 import { SettingsAccountsSection } from "@/components/SettingsAccountsSection";
 import { SettingsChecklistsSection } from "@/components/SettingsChecklistsSection";
@@ -25,7 +25,7 @@ import type {
   AccentTheme,
   UserPreferencesRecord,
   WorkspaceSettingsRecord
-} from "@/types/settings";
+} from "@pulse/contracts/settings";
 
 export type SettingsSection =
   | "account"

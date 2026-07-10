@@ -8,7 +8,7 @@ import {
   quoteDocumentCategories,
   requestDocumentCategories,
   type LifecycleDocumentRecord
-} from "@/types/document";
+} from "@pulse/contracts/documents";
 import { formatWorkspaceDate } from "@/lib/formatting";
 
 type Stage = "request" | "quote" | "project";

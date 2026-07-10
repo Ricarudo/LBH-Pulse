@@ -1,7 +1,7 @@
 "use client";
 
 import { Trash2 } from "lucide-react";
-import { clientSiteTypes, type ClientSiteInput } from "@/types/client";
+import { clientSiteTypes, type ClientSiteInput } from "@pulse/contracts/clients";
 
 type ClientSiteFormProps = {
   site: ClientSiteInput;
@@ -156,4 +156,3 @@ export function ClientSiteForm({
     </article>
   );
 }
-

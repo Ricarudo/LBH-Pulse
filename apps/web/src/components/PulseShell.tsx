@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   createContext,
   FormEvent,
+  type MouseEvent,
   useContext,
   useEffect,
   useRef,
@@ -17,14 +18,14 @@ import {
   domAnimation,
   m
 } from "motion/react";
-import type { AuthenticatedUser } from "@/lib/auth/permissions";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import type {
   AccentTheme,
   MotionMode,
   ThemeMode,
   UserPreferencesRecord,
   WorkspaceSettingsRecord
-} from "@/types/settings";
+} from "@pulse/contracts/settings";
 import { setWorkspaceFormatting } from "@/lib/formatting";
 import { responsiveBreakpoints } from "@/lib/responsive";
 import {
@@ -958,7 +959,7 @@ function PulseShellFrame({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    onMouseDown={(event) => {
+                    onMouseDown={(event: MouseEvent<HTMLDivElement>) => {
                       if (event.target === event.currentTarget) setMoreOpen(false);
                     }}
                   >

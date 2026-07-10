@@ -14,11 +14,12 @@ import {
   Search,
   X
 } from "lucide-react";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
-import { formatWorkspaceDate } from "@/lib/formatting";
+import { convertQuoteToProject } from "@/lib/api/quotes";
+import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import { formatMoney, type ClientRecord } from "@/types/client";
+import type { ClientRecord } from "@pulse/contracts/clients";
 import {
   invoiceStatuses,
   projectStatuses,
@@ -26,7 +27,7 @@ import {
   type InvoiceRecord,
   type ProjectRecord,
   type QuoteRecord
-} from "@/types/work";
+} from "@pulse/contracts/work";
 
 type WorkKind = "quotes" | "projects" | "invoices";
 type WorkRecord = QuoteRecord | ProjectRecord | InvoiceRecord;
@@ -466,13 +467,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
 
   async function convertQuote(quote: QuoteRecord) {
     try {
-      const data = await requestJson<{ project: ProjectRecord }>(
-        `/workspace-api/quotes/${quote.id}/convert`,
-        {
-          method: "POST",
-          body: JSON.stringify({})
-        }
-      );
+      const data = await convertQuoteToProject(quote.id);
       setRecords((current) =>
         current.map((record) =>
           record.id === quote.id ? { ...quote, projectId: data.project.id } : record

@@ -23,10 +23,11 @@ import { useRouter } from "next/navigation";
 import { FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
+import { convertRequestToQuote } from "@/lib/api/requests";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import type { ActivityRecord } from "@/types/activity";
-import type { ClientRecord } from "@/types/client";
+import type { ActivityRecord } from "@pulse/contracts/activity";
+import type { ClientRecord } from "@pulse/contracts/clients";
 import { RequestsMobileView } from "./RequestsMobileView";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import { RequestIntakeWizard } from "./RequestIntakeWizard";
@@ -44,7 +45,7 @@ import {
   type RequestStatus,
   type RequestType,
   type ServiceCategory
-} from "./requestData";
+} from "@pulse/contracts/requests";
 
 type RequestView =
   | "All Open"
@@ -881,15 +882,9 @@ export function RequestsModule({ openNewOnLoad = false }: { openNewOnLoad?: bool
     }
 
     try {
-      const data = await requestJson<RequestResponse>(
-        `/workspace-api/requests/${request.id}/convert`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            createQuote: createQuoteOnConvert
-          })
-        }
-      );
+      const data = await convertRequestToQuote(request.id, {
+        createQuote: createQuoteOnConvert
+      });
       replaceRequest(data.request);
       if (selectedRequest?.id === data.request.id || request.id === selectedRequestId) {
         await loadRecordActivity(data.request.id);

@@ -5,7 +5,7 @@ import {
   clientIndustries,
   type ClientCreatePayload,
   type ClientIndustry
-} from "@/types/client";
+} from "@pulse/contracts/clients";
 import {
   type FieldErrors,
   type FormRequestError,

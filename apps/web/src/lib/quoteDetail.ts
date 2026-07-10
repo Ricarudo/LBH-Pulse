@@ -2,7 +2,7 @@ import type {
   QuoteContextSnapshot,
   QuoteDetailRecord,
   QuoteRecord
-} from "@/types/work";
+} from "@pulse/contracts/work";
 
 type QuoteDetailPayload = QuoteRecord &
   Partial<Pick<QuoteDetailRecord, "context" | "proposalNotes" | "proposalPreparedAt" | "items">>;

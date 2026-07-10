@@ -27,7 +27,7 @@ import type {
   ClientBulkPreview,
   ClientBulkPreviewRow,
   ClientBulkRowStatus
-} from "@/types/clientBulk";
+} from "@pulse/contracts/client-bulk";
 
 const statusOrder: ClientBulkRowStatus[] = [
   "new",

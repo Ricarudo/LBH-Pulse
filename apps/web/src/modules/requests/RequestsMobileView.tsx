@@ -27,7 +27,7 @@ import {
   type RequestRecord,
   type RequestSource,
   type RequestStatus
-} from "./requestData";
+} from "@pulse/contracts/requests";
 
 type RequestsMobileCapabilities = {
   canCreate: boolean;

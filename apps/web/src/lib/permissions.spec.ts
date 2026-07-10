@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canRole } from "./auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 
 test("Admin and Sales users can create CRM records", () => {
   assert.equal(canRole("Admin", "crm:write"), true);

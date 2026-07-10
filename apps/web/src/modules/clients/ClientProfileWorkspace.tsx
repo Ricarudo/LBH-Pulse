@@ -21,24 +21,23 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import { formatWorkspaceDate } from "@/lib/formatting";
-import type { RequestRecord, RequestStatus } from "@/types/request";
+import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
+import type { RequestRecord, RequestStatus } from "@pulse/contracts/requests";
 import type {
   ClientWorkSummary,
   InvoiceRecord,
   ProjectRecord,
   QuoteRecord
-} from "@/types/work";
+} from "@pulse/contracts/work";
 import {
-  formatMoney,
   type ClientActivity,
   type ClientContact,
   type ClientRecord,
   type ClientSite,
   type ClientStatus
-} from "./clientData";
+} from "@pulse/contracts/clients";
 import {
   ClientProfileContactDialog,
   ClientProfileSiteDialog

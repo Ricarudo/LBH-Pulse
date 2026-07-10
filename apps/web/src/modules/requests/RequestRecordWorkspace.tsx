@@ -35,10 +35,11 @@ import {
 } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
+import { convertRequestToQuote } from "@/lib/api/requests";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { formatWorkspaceDate } from "@/lib/formatting";
-import type { ActivityRecord } from "@/types/activity";
+import type { ActivityRecord } from "@pulse/contracts/activity";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import {
   requestPriorities,
@@ -47,7 +48,7 @@ import {
   type RequestPriority,
   type RequestRecord,
   type RequestStatus
-} from "./requestData";
+} from "@pulse/contracts/requests";
 
 type RequestResponse = { request: RequestRecord };
 type RequestListResponse = {
@@ -523,13 +524,9 @@ export function RequestRecordWorkspace({
     if (!request || !request.checklistSummary.readyForQuote) return;
     try {
       setIsConverting(true);
-      const data = await requestJson<RequestResponse>(
-        `/workspace-api/requests/${request.id}/convert`,
-        {
-          method: "POST",
-          body: JSON.stringify({ createQuote: true })
-        }
-      );
+      const data = await convertRequestToQuote(request.id, {
+        createQuote: true
+      });
       replaceRequest(data.request);
       setConversionOpen(false);
       await loadActivities();

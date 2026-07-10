@@ -3,6 +3,7 @@
 import {
   Fragment,
   type ComponentType,
+  type MouseEvent,
   useEffect,
   useMemo,
   useRef,
@@ -29,7 +30,7 @@ import type {
   GlobalSearchKind,
   GlobalSearchResponse,
   GlobalSearchResult
-} from "@/types/search";
+} from "@pulse/contracts/search";
 
 type SearchEntry = {
   id: string;
@@ -391,7 +392,7 @@ export function GlobalSearch({
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  onMouseDown={(event) => {
+                  onMouseDown={(event: MouseEvent<HTMLDivElement>) => {
                     if (event.target === event.currentTarget) setMobileOpen(false);
                   }}
                 >

@@ -26,7 +26,7 @@ import {
 import {
   preferredContactMethods,
   type ClientRecord
-} from "@/types/client";
+} from "@pulse/contracts/clients";
 
 type ContactCreateField = ClientContactField | "clientId" | "siteId";
 type ContactCreateErrors = FieldErrors<ContactCreateField>;

@@ -2,14 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import type { ClientRecord } from "@/types/client";
+import type { ClientRecord } from "@pulse/contracts/clients";
 import type {
   RequestAssignee,
   RequestRecord,
   RequestStatus
-} from "./requestData";
+} from "@pulse/contracts/requests";
 import { RequestIntakeWizard } from "./RequestIntakeWizard";
 import { RequestsQueueWorkspace } from "./RequestsQueueWorkspace";
 

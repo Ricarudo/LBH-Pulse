@@ -45,7 +45,7 @@ import {
   useState,
   type ReactNode
 } from "react";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
 import {
   dashboardGreeting,
   dashboardWidgetCatalog,
@@ -64,7 +64,7 @@ import type {
   DashboardWidgetId,
   DashboardWidgetPlacement,
   DashboardWorkItem
-} from "@/types/dashboard";
+} from "@pulse/contracts/dashboard";
 
 type AttentionFilter =
   | "all"

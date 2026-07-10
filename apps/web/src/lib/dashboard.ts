@@ -1,10 +1,10 @@
-import type { LocalRole } from "@/lib/auth/permissions";
+import type { LocalRole } from "@pulse/contracts/auth";
 import {
   dashboardWidgetIds,
   type DashboardPreferencesRecord,
   type DashboardWidgetId,
   type DashboardWidgetPlacement
-} from "@/types/dashboard";
+} from "@pulse/contracts/dashboard";
 
 export const dashboardWidgetCatalog: Array<{
   id: DashboardWidgetId;

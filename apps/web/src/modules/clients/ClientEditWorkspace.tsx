@@ -29,7 +29,7 @@ import {
   type ClientContact,
   type ClientRecord,
   type ClientStatus
-} from "./clientData";
+} from "@pulse/contracts/clients";
 
 type ClientEditWorkspaceProps = {
   clientId: string;

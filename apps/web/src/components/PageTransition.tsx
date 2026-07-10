@@ -2,9 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { AnimatePresence, m, useReducedMotion } from "motion/react";
+import {
+  AnimatePresence,
+  m,
+  type AnimationDefinition,
+  useReducedMotion
+} from "motion/react";
 import { routeMotionProfile, type RouteMotionProfile } from "@/lib/navigation";
-import type { MotionMode } from "@/types/settings";
+import type { MotionMode } from "@pulse/contracts/settings";
 
 type PageTransitionProps = {
   children: React.ReactNode;
@@ -198,7 +203,7 @@ export function PageTransition({
             duration: enterDuration,
             ease: enterEase
           }}
-          onAnimationComplete={(definition) => {
+          onAnimationComplete={(definition: AnimationDefinition) => {
             if (definition === "center" && !isNavigating) {
               setFrameVisible(false);
             }

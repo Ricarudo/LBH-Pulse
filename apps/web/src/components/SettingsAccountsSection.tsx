@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, KeyRound, Plus, RotateCcw, Search, X } from "lucide-react";
-import { roleLabels, type LocalRole } from "@/lib/auth/permissions";
-import type { LocalAccountRecord } from "@/types/localUser";
+import { roleLabels, type LocalRole } from "@pulse/contracts/auth";
+import type { LocalAccountRecord } from "@pulse/contracts/local-users";
 import { formatWorkspaceDate } from "@/lib/formatting";
 
 type AccountsResponse = {

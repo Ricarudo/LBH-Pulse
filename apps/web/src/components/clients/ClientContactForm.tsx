@@ -5,7 +5,7 @@ import {
   preferredContactMethods,
   type ClientContactInput,
   type ClientSiteInput
-} from "@/types/client";
+} from "@pulse/contracts/clients";
 
 type ClientContactFormProps = {
   contact: ClientContactInput;

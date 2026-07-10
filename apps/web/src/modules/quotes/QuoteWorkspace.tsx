@@ -13,11 +13,21 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { canRole } from "@/lib/auth/permissions";
-import { formatWorkspaceDate } from "@/lib/formatting";
+import { canRole } from "@pulse/contracts/auth";
+import { searchItems } from "@/lib/api/items";
+import {
+  addAdHocQuoteItem,
+  addCatalogQuoteItem,
+  addQuoteKit,
+  fetchQuote,
+  removeQuoteItem,
+  updateQuote,
+  updateQuoteItem,
+  updateQuoteProposal
+} from "@/lib/api/quotes";
+import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import { normalizeQuoteDetailRecord } from "@/lib/quoteDetail";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import { formatMoney } from "@/types/client";
 import {
   itemTypes,
   quoteBomSections,
@@ -25,8 +35,8 @@ import {
   type ItemType,
   type QuoteBomSection,
   type QuoteItemRecord
-} from "@/types/item";
-import type { QuoteDetailRecord, QuoteRecord } from "@/types/work";
+} from "@pulse/contracts/items";
+import type { QuoteDetailRecord, QuoteRecord } from "@pulse/contracts/work";
 
 type QuoteWorkspaceProps = {
   quoteId: string;
@@ -57,18 +67,6 @@ const blankAdHoc: AdHocDraft = {
   discountPercent: "0",
   taxable: true
 };
-
-async function requestJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers }
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(typeof data.error === "string" ? data.error : "Request failed.");
-  }
-  return data as T;
-}
 
 function lineMargin(item: QuoteItemRecord) {
   if (item.unitPrice <= 0) return 0;
@@ -104,9 +102,7 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
       try {
         setLoading(true);
         setLoadError("");
-        const data = await requestJson<{ quote: QuoteDetailRecord | QuoteRecord }>(`/workspace-api/quotes/${quoteId}`, {
-          cache: "no-store"
-        });
+        const data = await fetchQuote(quoteId, { cache: "no-store" });
         const nextQuote = normalizeQuoteDetailRecord(data.quote);
         setQuote(nextQuote);
         setProposalNotes(nextQuote.proposalNotes);
@@ -130,8 +126,8 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
-        const data = await requestJson<{ items: ItemRecord[] }>(
-          `/workspace-api/items/search?q=${encodeURIComponent(itemQuery)}`,
+        const data = await searchItems(
+          { q: itemQuery },
           { cache: "no-store", signal: controller.signal }
         );
         setItemResults(data.items);
@@ -187,15 +183,12 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     });
   }
 
-  async function patchQuote(payload: Record<string, unknown>) {
+  async function patchQuote(payload: Parameters<typeof updateQuote>[1]) {
     if (!quote) return;
     const currentQuoteId = quote.id;
     try {
       const data = await enqueueQuoteMutation(() =>
-        requestJson<{ quote: QuoteDetailRecord }>(`/workspace-api/quotes/${currentQuoteId}`, {
-          method: "PATCH",
-          body: JSON.stringify(payload)
-        })
+        updateQuote(currentQuoteId, payload)
       );
       updateQuoteState(data.quote);
     } catch (error) {
@@ -203,16 +196,16 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     }
   }
 
-  async function patchLine(item: QuoteItemRecord, payload: Record<string, unknown>) {
+  async function patchLine(
+    item: QuoteItemRecord,
+    payload: Parameters<typeof updateQuoteItem>[2]
+  ) {
     if (!quote || !canWrite) return;
     const currentQuoteId = quote.id;
     changePendingLineSaves(item.id, 1);
     try {
       const data = await enqueueQuoteMutation(() =>
-        requestJson<{ quote: QuoteDetailRecord }>(
-          `/workspace-api/quotes/${currentQuoteId}/items/${item.id}`,
-          { method: "PATCH", body: JSON.stringify(payload) }
-        )
+        updateQuoteItem(currentQuoteId, item.id, payload)
       );
       updateQuoteState(data.quote);
     } catch (error) {
@@ -228,10 +221,7 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     changePendingLineSaves(item.id, 1);
     try {
       const data = await enqueueQuoteMutation(() =>
-        requestJson<{ quote: QuoteDetailRecord }>(
-          `/workspace-api/quotes/${currentQuoteId}/items/${item.id}`,
-          { method: "DELETE" }
-        )
+        removeQuoteItem(currentQuoteId, item.id)
       );
       updateQuoteState(data.quote);
       setToast("BOM line removed.");
@@ -247,18 +237,15 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     const currentQuoteId = quote.id;
     try {
       setBusy(true);
+      const input = {
+        itemId: selectedItem.id,
+        quantity: selectedQuantity,
+        suggestionItemIds: selectedSuggestionIds
+      };
       const data = await enqueueQuoteMutation(() =>
-        requestJson<{ quote: QuoteDetailRecord }>(
-          `/workspace-api/quotes/${currentQuoteId}/items${fullKit ? "/kit" : ""}`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              itemId: selectedItem.id,
-              quantity: selectedQuantity,
-              suggestionItemIds: selectedSuggestionIds
-            })
-          }
-        )
+        fullKit
+          ? addQuoteKit(currentQuoteId, input)
+          : addCatalogQuoteItem(currentQuoteId, input)
       );
       updateQuoteState(data.quote);
       setAddOpen(false);
@@ -280,16 +267,12 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     try {
       setBusy(true);
       const data = await enqueueQuoteMutation(() =>
-        requestJson<{ quote: QuoteDetailRecord }>(`/workspace-api/quotes/${currentQuoteId}/items`, {
-          method: "POST",
-          body: JSON.stringify({
-            mode: "adHoc",
-            ...adHocDraft,
-            quantity: Number(adHocDraft.quantity || 1),
-            unitCost: Number(adHocDraft.unitCost || 0),
-            unitPrice: Number(adHocDraft.unitPrice || 0),
-            discountPercent: Number(adHocDraft.discountPercent || 0)
-          })
+        addAdHocQuoteItem(currentQuoteId, {
+          ...adHocDraft,
+          quantity: Number(adHocDraft.quantity || 1),
+          unitCost: Number(adHocDraft.unitCost || 0),
+          unitPrice: Number(adHocDraft.unitPrice || 0),
+          discountPercent: Number(adHocDraft.discountPercent || 0)
         })
       );
       updateQuoteState(data.quote);
@@ -309,10 +292,7 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     try {
       setBusy(true);
       const data = await enqueueQuoteMutation(() =>
-        requestJson<{ quote: QuoteDetailRecord }>(`/workspace-api/quotes/${currentQuoteId}/proposal`, {
-          method: "PATCH",
-          body: JSON.stringify({ proposalNotes })
-        })
+        updateQuoteProposal(currentQuoteId, { proposalNotes })
       );
       updateQuoteState(data.quote);
       setToast("Proposal preparation saved.");
@@ -346,7 +326,11 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
           <select
             value={quote.status}
             disabled={!canWrite}
-            onChange={(event) => void patchQuote({ status: event.target.value })}
+            onChange={(event) =>
+              void patchQuote({
+                status: event.target.value as QuoteRecord["status"]
+              })
+            }
           >
             <option>Draft</option><option>Review</option><option>Sent</option><option>Approved</option><option>Rejected</option><option>Expired</option><option>Cancelled</option>
           </select>

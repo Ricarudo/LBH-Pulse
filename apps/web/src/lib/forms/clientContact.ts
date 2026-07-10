@@ -1,7 +1,7 @@
 import {
   preferredContactMethods,
   type ClientContactInput
-} from "@/types/client";
+} from "@pulse/contracts/clients";
 import {
   type FieldErrors,
   isAllowedValue,

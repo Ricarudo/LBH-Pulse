@@ -12,7 +12,7 @@ import {
   Settings,
   UserRound
 } from "lucide-react";
-import type { GlobalSearchKind } from "@/types/search";
+import type { GlobalSearchKind } from "@pulse/contracts/search";
 
 export type PulsePage =
   | "hub"

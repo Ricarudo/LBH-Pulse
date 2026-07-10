@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
-import type { ActivityRecord } from "@/types/activity";
+import type { ActivityRecord } from "@pulse/contracts/activity";
 
 export function GlobalActivityWorkspace() {
   const [activities, setActivities] = useState<ActivityRecord[]>([]);

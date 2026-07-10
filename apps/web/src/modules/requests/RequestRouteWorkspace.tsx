@@ -18,10 +18,11 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
-import { canRole } from "@/lib/auth/permissions";
+import { canRole } from "@pulse/contracts/auth";
+import { convertRequestToQuote } from "@/lib/api/requests";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import type { ActivityRecord } from "@/types/activity";
-import type { ClientRecord } from "@/types/client";
+import type { ActivityRecord } from "@pulse/contracts/activity";
+import type { ClientRecord } from "@pulse/contracts/clients";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import {
   requestPriorities,
@@ -37,7 +38,7 @@ import {
   type RequestStatus,
   type RequestType,
   type ServiceCategory
-} from "./requestData";
+} from "@pulse/contracts/requests";
 
 type RequestRouteMode = "new" | "view" | "edit";
 
@@ -478,9 +479,8 @@ export function RequestRouteWorkspace({
     }
 
     try {
-      const data = await requestJson<RequestResponse>(`/workspace-api/requests/${request.id}/convert`, {
-        method: "POST",
-        body: JSON.stringify({ createQuote: true })
+      const data = await convertRequestToQuote(request.id, {
+        createQuote: true
       });
       setRequest(data.request);
       await loadRecordActivity(data.request.id);
