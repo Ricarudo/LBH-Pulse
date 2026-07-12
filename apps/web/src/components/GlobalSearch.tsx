@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   Building2,
+  Boxes,
   FileText,
   FolderKanban,
   Inbox,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
 import {
+  canAccessPath,
   navigationCommands,
   searchResultHref
 } from "@/lib/navigation";
@@ -31,6 +33,7 @@ import type {
   GlobalSearchResponse,
   GlobalSearchResult
 } from "@pulse/contracts/search";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 
 type SearchEntry = {
   id: string;
@@ -50,14 +53,15 @@ const kindMeta: Record<
   client: { label: "Clients", icon: Building2 },
   quote: { label: "Quotes", icon: FileText },
   project: { label: "Projects", icon: FolderKanban },
-  invoice: { label: "Billing", icon: ReceiptText }
+  invoice: { label: "Billing", icon: ReceiptText },
+  item: { label: "Items", icon: Boxes }
 };
 
 function resultEntry(result: GlobalSearchResult): SearchEntry {
   const meta = kindMeta[result.kind];
   return {
     id: `result-${result.kind}-${result.id}`,
-    label: `${result.number} · ${result.title}`,
+    label: result.number ? `${result.number} · ${result.title}` : result.title,
     detail: result.context,
     meta: result.status,
     href: searchResultHref(result.kind, result.id),
@@ -110,7 +114,7 @@ function SearchResults({
       {!loading && !error && query.trim().length >= 2 && !entries.length ? (
         <div className="global-search-state">
           <strong>No matching records</strong>
-          <span>Try a number, title, client, or company name.</span>
+          <span>Try a number, title, item, client, or company name.</span>
         </div>
       ) : null}
       {!loading && !error ? groups.map((group) => (
@@ -146,8 +150,10 @@ function SearchResults({
 }
 
 export function GlobalSearch({
+  user,
   onNavigationStart
 }: {
+  user: AuthenticatedUser;
   onNavigationStart: (href: string) => void;
 }) {
   const router = useRouter();
@@ -165,7 +171,7 @@ export function GlobalSearch({
 
   const entries = useMemo<SearchEntry[]>(() => {
     if (query.trim().length < 2) {
-      return navigationCommands.map((command) => ({
+      return navigationCommands.filter((command) => canAccessPath(user, command.href)).map((command) => ({
         id: command.id,
         label: command.label,
         detail: command.detail,
@@ -175,7 +181,7 @@ export function GlobalSearch({
       }));
     }
     return results.map(resultEntry);
-  }, [query, results]);
+  }, [query, results, user]);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -427,7 +433,7 @@ export function GlobalSearch({
                         aria-controls="pulse-global-search-results"
                         aria-expanded="true"
                         aria-activedescendant={activeDescendant}
-                        placeholder="Number, title, or client…"
+                        placeholder="Number, title, item, or client…"
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                         onKeyDown={handleInputKeyDown}

@@ -13,6 +13,9 @@ const user: AuthenticatedUser = {
   email: "sales@example.test",
   role: "Sales",
   roleLabel: "Sales",
+  accessRole: { id: "Sales", name: "Sales", color: "#2563EB" },
+  permissions: ["items:read", "items:write"],
+  isSystemAdmin: false,
   mustChangePassword: false,
   authProvider: "LOCAL"
 };

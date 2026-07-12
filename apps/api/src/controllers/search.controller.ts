@@ -10,8 +10,13 @@ export class SearchController {
 
   @Get()
   async search(@Req() request: Request, @Query() query: unknown) {
-    await this.auth.requireUser(request, "crm:read");
+    const user = await this.auth.requireUser(request, {
+      anyOf: [
+        "requests:read", "clients:read", "items:read", "quotes:read",
+        "projects:read", "billing:read"
+      ]
+    });
     const input = globalSearchQuerySchema.parse(query);
-    return searchPulse(input.q);
+    return searchPulse(input.q, user);
   }
 }

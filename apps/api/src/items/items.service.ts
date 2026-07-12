@@ -1,6 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type {
   CreateItemInput,
+  ItemDetailResponse,
+  ItemPriceHistoryRecord,
+  ItemQuoteUsageRecord,
   ItemRecord,
   ItemRelationRecord,
   ItemRelationType,
@@ -59,6 +62,30 @@ function toRelationRecord(
     relationType: relation.relationType as ItemRelationType,
     defaultQuantity: Number(relation.defaultQuantity),
     sortOrder: relation.sortOrder
+  };
+}
+
+function toPriceHistoryRecord(
+  history: {
+    id: string;
+    previousCost: Prisma.Decimal | null;
+    newCost: Prisma.Decimal;
+    previousSellPrice: Prisma.Decimal | null;
+    newSellPrice: Prisma.Decimal;
+    changedAt: Date;
+  }
+): ItemPriceHistoryRecord {
+  return {
+    id: history.id,
+    previousCost:
+      history.previousCost === null ? null : Number(history.previousCost),
+    newCost: Number(history.newCost),
+    previousSellPrice:
+      history.previousSellPrice === null
+        ? null
+        : Number(history.previousSellPrice),
+    newSellPrice: Number(history.newSellPrice),
+    changedAt: dateOutput(history.changedAt)
   };
 }
 
@@ -246,6 +273,96 @@ export class ItemsService {
     return toItemRecord(await this.itemOrThrow(id));
   }
 
+  async getItemDetail(id: string): Promise<ItemDetailResponse> {
+    const item = await this.itemOrThrow(id);
+    const [quoteGroups, recentQuoteLines, priceHistory, priceChangeCount] =
+      await Promise.all([
+        this.prisma.quoteItem.groupBy({
+          by: ["quoteId"],
+          where: { sourceItemId: id },
+          _count: { _all: true },
+          _sum: { quantity: true, lineTotal: true }
+        }),
+        this.prisma.quoteItem.findMany({
+          where: { sourceItemId: id },
+          orderBy: [{ createdAt: "desc" }],
+          take: 100,
+          select: {
+            quoteId: true,
+            quantity: true,
+            unitPrice: true,
+            lineTotal: true,
+            createdAt: true,
+            quote: {
+              select: {
+                id: true,
+                quoteNumber: true,
+                title: true,
+                status: true
+              }
+            }
+          }
+        }),
+        this.prisma.itemPriceHistory.findMany({
+          where: { itemId: id },
+          orderBy: [{ changedAt: "desc" }],
+          take: 50
+        }),
+        this.prisma.itemPriceHistory.count({
+          where: { itemId: id, previousCost: { not: null } }
+        })
+      ]);
+
+    const recentQuoteMap = new Map<string, ItemQuoteUsageRecord>();
+    for (const line of recentQuoteLines) {
+      const existing = recentQuoteMap.get(line.quoteId);
+      if (existing) {
+        existing.quoteLineCount += 1;
+        existing.quantity += Number(line.quantity);
+        existing.quotedValue += Number(line.lineTotal);
+        continue;
+      }
+
+      recentQuoteMap.set(line.quoteId, {
+        quoteId: line.quote.id,
+        quoteNumber: line.quote.quoteNumber,
+        quoteTitle: line.quote.title,
+        quoteStatus: line.quote.status,
+        quoteLineCount: 1,
+        quantity: Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+        quotedValue: Number(line.lineTotal),
+        quotedAt: dateOutput(line.createdAt)
+      });
+    }
+
+    const summary = quoteGroups.reduce(
+      (totals, group) => ({
+        quoteLineCount: totals.quoteLineCount + group._count._all,
+        totalQuantity: totals.totalQuantity + Number(group._sum.quantity ?? 0),
+        totalQuotedValue:
+          totals.totalQuotedValue + Number(group._sum.lineTotal ?? 0)
+      }),
+      { quoteLineCount: 0, totalQuantity: 0, totalQuotedValue: 0 }
+    );
+
+    return {
+      item: toItemRecord(item),
+      statistics: {
+        quoteCount: quoteGroups.length,
+        quoteLineCount: summary.quoteLineCount,
+        totalQuantity: summary.totalQuantity,
+        totalQuotedValue: summary.totalQuotedValue,
+        latestQuotedAt: recentQuoteLines[0]
+          ? dateOutput(recentQuoteLines[0].createdAt)
+          : "",
+        priceChangeCount
+      },
+      priceHistory: priceHistory.map(toPriceHistoryRecord),
+      recentQuotes: [...recentQuoteMap.values()].slice(0, 8)
+    };
+  }
+
   async createItem(input: CreateItemInput): Promise<ItemRecord> {
     const created = await this.prisma.$transaction(async (tx) => {
       await this.itemRelations.validateDefaultLaborItem(
@@ -255,6 +372,16 @@ export class ItemsService {
       );
       const item = await tx.item.create({
         data: createItemData(input)
+      });
+      await tx.itemPriceHistory.create({
+        data: {
+          itemId: item.id,
+          previousCost: null,
+          newCost: item.cost,
+          previousSellPrice: null,
+          newSellPrice: item.sellPrice,
+          changedAt: item.createdAt
+        }
       });
       await this.itemRelations.replaceRelations(tx, item.id, input.relations);
 
@@ -271,7 +398,12 @@ export class ItemsService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.item.findUnique({
         where: { id },
-        select: { defaultLaborItemId: true, defaultLaborHours: true }
+        select: {
+          defaultLaborItemId: true,
+          defaultLaborHours: true,
+          cost: true,
+          sellPrice: true
+        }
       });
 
       if (!existing) {
@@ -293,10 +425,26 @@ export class ItemsService {
         defaultLaborHours,
         id
       );
-      await tx.item.update({
+      const savedItem = await tx.item.update({
         where: { id },
-        data: updateItemData(input)
+        data: updateItemData(input),
+        select: { cost: true, sellPrice: true }
       });
+
+      if (
+        Number(existing.cost) !== Number(savedItem.cost) ||
+        Number(existing.sellPrice) !== Number(savedItem.sellPrice)
+      ) {
+        await tx.itemPriceHistory.create({
+          data: {
+            itemId: id,
+            previousCost: existing.cost,
+            newCost: savedItem.cost,
+            previousSellPrice: existing.sellPrice,
+            newSellPrice: savedItem.sellPrice
+          }
+        });
+      }
 
       if (input.relations) {
         await this.itemRelations.replaceRelations(tx, id, input.relations);

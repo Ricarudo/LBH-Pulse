@@ -57,6 +57,43 @@ export type ItemRecord = {
   relations: ItemRelationRecord[];
 };
 
+export type ItemPriceHistoryRecord = {
+  id: string;
+  previousCost: number | null;
+  newCost: number;
+  previousSellPrice: number | null;
+  newSellPrice: number;
+  changedAt: string;
+};
+
+export type ItemQuoteUsageRecord = {
+  quoteId: string;
+  quoteNumber: string;
+  quoteTitle: string;
+  quoteStatus: string;
+  quoteLineCount: number;
+  quantity: number;
+  unitPrice: number;
+  quotedValue: number;
+  quotedAt: string;
+};
+
+export type ItemStatisticsRecord = {
+  quoteCount: number;
+  quoteLineCount: number;
+  totalQuantity: number;
+  totalQuotedValue: number;
+  latestQuotedAt: string;
+  priceChangeCount: number;
+};
+
+export type ItemDetailResponse = {
+  item: ItemRecord;
+  statistics: ItemStatisticsRecord;
+  priceHistory: ItemPriceHistoryRecord[];
+  recentQuotes: ItemQuoteUsageRecord[];
+};
+
 export type QuoteItemRecord = {
   id: string;
   quoteId: string;

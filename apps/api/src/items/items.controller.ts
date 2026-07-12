@@ -14,6 +14,7 @@ import {
   createItemSchema,
   itemSearchSchema,
   updateItemSchema,
+  type ItemDetailResponse,
   type ItemResponse,
   type ItemsResponse
 } from "@pulse/contracts/items";
@@ -35,7 +36,7 @@ export class ItemsController {
     @Req() request: Request,
     @Query() query: QueryInput
   ): Promise<ItemsResponse> {
-    await this.auth.requireUser(request, "crm:read");
+    await this.auth.requireUser(request, "items:read");
     const input = itemSearchSchema.parse(query);
     return { items: await this.items.listItems(input) };
   }
@@ -45,7 +46,7 @@ export class ItemsController {
     @Req() request: Request,
     @Query() query: QueryInput
   ): Promise<ItemsResponse> {
-    await this.auth.requireUser(request, "crm:read");
+    await this.auth.requireUser(request, "items:read");
     const input = itemSearchSchema.parse(query);
     return { items: await this.items.searchActiveItems(input) };
   }
@@ -55,7 +56,7 @@ export class ItemsController {
     @Req() request: Request,
     @Body() body: unknown
   ): Promise<ItemResponse> {
-    await this.auth.requireUser(request, "crm:write");
+    await this.auth.requireUser(request, "items:write");
     const input = createItemSchema.parse(body);
     return { item: await this.items.createItem(input) };
   }
@@ -65,8 +66,17 @@ export class ItemsController {
     @Req() request: Request,
     @Param("id") id: string
   ): Promise<ItemResponse> {
-    await this.auth.requireUser(request, "crm:read");
+    await this.auth.requireUser(request, "items:read");
     return { item: await this.items.getItemById(id) };
+  }
+
+  @Get(":id/detail")
+  async detail(
+    @Req() request: Request,
+    @Param("id") id: string
+  ): Promise<ItemDetailResponse> {
+    await this.auth.requireUser(request, "items:read");
+    return this.items.getItemDetail(id);
   }
 
   @Patch(":id")
@@ -75,7 +85,7 @@ export class ItemsController {
     @Param("id") id: string,
     @Body() body: unknown
   ): Promise<ItemResponse> {
-    await this.auth.requireUser(request, "crm:write");
+    await this.auth.requireUser(request, "items:write");
     const input = updateItemSchema.parse(body);
     return { item: await this.items.updateItem(id, input) };
   }
@@ -85,7 +95,7 @@ export class ItemsController {
     @Req() request: Request,
     @Param("id") id: string
   ): Promise<ItemResponse> {
-    await this.auth.requireUser(request, "crm:write");
+    await this.auth.requireUser(request, "items:write");
     return { item: await this.items.markItemInactive(id) };
   }
 }

@@ -4,6 +4,7 @@ import type {
   GlobalSearchResponse,
   GlobalSearchResult
 } from "@pulse/contracts/search";
+import { canUser, type AuthenticatedUser } from "@pulse/contracts/auth";
 
 const candidateLimit = 12;
 const resultLimitPerKind = 5;
@@ -65,13 +66,16 @@ function toCandidate(
   };
 }
 
-export async function searchPulse(rawQuery: string): Promise<GlobalSearchResponse> {
+export async function searchPulse(
+  rawQuery: string,
+  user: AuthenticatedUser
+): Promise<GlobalSearchResponse> {
   const query = rawQuery.trim();
   const normalizedQuery = normalize(query);
   const contains = { contains: query, mode: "insensitive" as const };
 
-  const [requests, clients, quotes, projects, invoices] = await Promise.all([
-    prisma.request.findMany({
+  const [requests, clients, quotes, projects, invoices, items] = await Promise.all([
+    canUser(user, "requests:read") ? prisma.request.findMany({
       where: {
         archivedAt: null,
         OR: [
@@ -93,8 +97,8 @@ export async function searchPulse(rawQuery: string): Promise<GlobalSearchRespons
         status: true,
         updatedAt: true
       }
-    }),
-    prisma.client.findMany({
+    }) : Promise.resolve([]),
+    canUser(user, "clients:read") ? prisma.client.findMany({
       where: {
         archivedAt: null,
         OR: [
@@ -115,8 +119,8 @@ export async function searchPulse(rawQuery: string): Promise<GlobalSearchRespons
         status: true,
         updatedAt: true
       }
-    }),
-    prisma.quote.findMany({
+    }) : Promise.resolve([]),
+    canUser(user, "quotes:read") ? prisma.quote.findMany({
       where: {
         archivedAt: null,
         OR: [
@@ -137,8 +141,8 @@ export async function searchPulse(rawQuery: string): Promise<GlobalSearchRespons
         status: true,
         updatedAt: true
       }
-    }),
-    prisma.project.findMany({
+    }) : Promise.resolve([]),
+    canUser(user, "projects:read") ? prisma.project.findMany({
       where: {
         archivedAt: null,
         OR: [
@@ -157,8 +161,8 @@ export async function searchPulse(rawQuery: string): Promise<GlobalSearchRespons
         status: true,
         updatedAt: true
       }
-    }),
-    prisma.invoice.findMany({
+    }) : Promise.resolve([]),
+    canUser(user, "billing:read") ? prisma.invoice.findMany({
       where: {
         archivedAt: null,
         OR: [
@@ -177,7 +181,35 @@ export async function searchPulse(rawQuery: string): Promise<GlobalSearchRespons
         status: true,
         updatedAt: true
       }
-    })
+    }) : Promise.resolve([]),
+    canUser(user, "items:read") ? prisma.item.findMany({
+      where: {
+        OR: [
+          { name: contains },
+          { sku: contains },
+          { partNumber: contains },
+          { manufacturer: contains },
+          { brand: contains },
+          { category: contains },
+          { subcategory: contains },
+          { description: contains }
+        ]
+      },
+      orderBy: { updatedAt: "desc" },
+      take: candidateLimit,
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        partNumber: true,
+        manufacturer: true,
+        brand: true,
+        category: true,
+        subcategory: true,
+        status: true,
+        updatedAt: true
+      }
+    }) : Promise.resolve([])
   ]);
 
   const results = [
@@ -253,6 +285,28 @@ export async function searchPulse(rawQuery: string): Promise<GlobalSearchRespons
           updatedAt: record.updatedAt
         })
       ),
+      normalizedQuery
+    ),
+    ...rankSearchResults(
+      items.map((record) => {
+        const number = record.sku || record.partNumber || "";
+        const context = [
+          record.partNumber,
+          record.manufacturer,
+          record.brand,
+          record.category,
+          record.subcategory
+        ].filter(Boolean).join(" · ") || "Catalog item";
+
+        return toCandidate("item", {
+          id: record.id,
+          number,
+          title: record.name,
+          context,
+          status: record.status,
+          updatedAt: record.updatedAt
+        });
+      }),
       normalizedQuery
     )
   ];

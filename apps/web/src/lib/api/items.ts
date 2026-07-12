@@ -1,5 +1,6 @@
 import type {
   CreateItemInput,
+  ItemDetailResponse,
   ItemResponse,
   ItemSearchInput,
   ItemsResponse,
@@ -50,6 +51,16 @@ export function fetchItem(itemId: string, options: ReadOptions = {}) {
     ...options,
     method: "GET"
   });
+}
+
+export function fetchItemDetail(itemId: string, options: ReadOptions = {}) {
+  return apiRequest<ItemDetailResponse>(
+    `/api/items/${encodeURIComponent(itemId)}/detail`,
+    {
+      ...options,
+      method: "GET"
+    }
+  );
 }
 
 export function createItem(input: CreateItemInput) {
