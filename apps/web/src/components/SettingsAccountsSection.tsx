@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, KeyRound, Plus, RotateCcw, Search, X } from "lucide-react";
-import { roleLabels, type LocalRole } from "@pulse/contracts/auth";
+import { roleColorForeground, type RoleSummary } from "@pulse/contracts/access-control";
 import type { LocalAccountRecord } from "@pulse/contracts/local-users";
 import { formatWorkspaceDate } from "@/lib/formatting";
 
@@ -14,12 +14,12 @@ type AccountResponse = {
   user: LocalAccountRecord;
 };
 
-const roleOptions: LocalRole[] = ["Admin", "Sales", "ProjectManager", "Technician"];
+type RoleOptionsResponse = { roles: RoleSummary[] };
 
 const blankCreateDraft = {
   name: "",
   email: "",
-  role: "Sales" as LocalRole,
+  roleId: "",
   password: "",
   active: true
 };
@@ -65,7 +65,7 @@ type CreateDraft = typeof blankCreateDraft;
 type EditDraft = {
   name: string;
   email: string;
-  role: LocalRole;
+  roleId: string;
   active: boolean;
 };
 
@@ -91,7 +91,7 @@ function toEditDraft(user: LocalAccountRecord): EditDraft {
   return {
     name: user.name,
     email: user.email,
-    role: user.role,
+    roleId: user.roleId,
     active: user.active
   };
 }
@@ -111,11 +111,14 @@ function replaceAccount(users: LocalAccountRecord[], account: LocalAccountRecord
 }
 
 export function SettingsAccountsSection({
-  currentUserId
+  currentUserId,
+  currentUserIsSystemAdmin
 }: {
   currentUserId: string;
+  currentUserIsSystemAdmin: boolean;
 }) {
   const [users, setUsers] = useState<LocalAccountRecord[]>([]);
+  const [roleOptions, setRoleOptions] = useState<RoleSummary[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [createDraft, setCreateDraft] = useState<CreateDraft>(blankCreateDraft);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
@@ -127,7 +130,7 @@ export function SettingsAccountsSection({
   const [createError, setCreateError] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
-  const [message, setMessage] = useState("Admin account controls are ready.");
+  const [message, setMessage] = useState("User account controls are ready.");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -139,9 +142,10 @@ export function SettingsAccountsSection({
   async function loadAccounts(preferredUserId?: string) {
     try {
       setLoading(true);
-      const data = await accountJson<AccountsResponse>("/api/settings/accounts", {
-        cache: "no-store"
-      });
+      const [data, roleData] = await Promise.all([
+        accountJson<AccountsResponse>("/api/settings/accounts", { cache: "no-store" }),
+        accountJson<RoleOptionsResponse>("/api/settings/role-options", { cache: "no-store" })
+      ]);
       const sortedUsers = sortAccounts(data.users);
       const nextSelected =
         sortedUsers.find((user) => user.id === preferredUserId) ??
@@ -150,8 +154,15 @@ export function SettingsAccountsSection({
         null;
 
       setUsers(sortedUsers);
+      setRoleOptions(roleData.roles);
       setSelectedUserId(nextSelected?.id ?? "");
       setEditDraft(nextSelected ? toEditDraft(nextSelected) : null);
+      setCreateDraft((current) => ({
+        ...current,
+        roleId: roleData.roles.some((role) => role.id === current.roleId)
+          ? current.roleId
+          : roleData.roles[0]?.id ?? ""
+      }));
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load Pulse accounts.");
@@ -221,7 +232,7 @@ export function SettingsAccountsSection({
       setUsers((current) => sortAccounts([...current, data.user]));
       setSelectedUserId(data.user.id);
       setEditDraft(toEditDraft(data.user));
-      setCreateDraft(blankCreateDraft);
+      setCreateDraft({ ...blankCreateDraft, roleId: roleOptions[0]?.id ?? "" });
       setRevealedPassword(createDraft.password);
       setSecretBannerTitle(`${data.user.name} was created successfully`);
       setCopyStatus("");
@@ -303,8 +314,14 @@ export function SettingsAccountsSection({
   const canCreateAccount =
     Boolean(createDraft.name.trim()) &&
     isValidEmail(createDraft.email) &&
-    Boolean(createDraft.role) &&
+    Boolean(createDraft.roleId) &&
     createDraft.password.length >= 10;
+  const canManageSelected = Boolean(
+    selectedUser && (
+      currentUserIsSystemAdmin ||
+      roleOptions.some((role) => role.id === selectedUser.roleId)
+    )
+  );
 
   return (
     <section className="settings-accounts-workspace" aria-labelledby="accounts-title">
@@ -317,7 +334,7 @@ export function SettingsAccountsSection({
           <button className="toolbar-button compact" type="button" onClick={() => void loadAccounts(selectedUserId)} disabled={loading}><RotateCcw size={16} />Refresh</button>
           <button className="primary-button" type="button" onClick={() => {
             const password = generateTemporaryPassword();
-            setCreateDraft({ ...blankCreateDraft, password });
+            setCreateDraft({ ...blankCreateDraft, roleId: roleOptions[0]?.id ?? "", password });
             setCreateError("");
             setCreateOpen(true);
           }}><Plus size={17} />New user</button>
@@ -337,7 +354,7 @@ export function SettingsAccountsSection({
           <table className="settings-user-table"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Provider</th><th>Last sign-in</th></tr></thead><tbody>
             {filteredUsers.map((account) => <tr key={account.id} className={selectedUser?.id === account.id ? "selected" : ""} onClick={() => selectUser(account)} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") selectUser(account); }}>
               <td><span className="settings-user-avatar">{account.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</span><span><strong>{account.name}</strong><small>{account.email}</small></span></td>
-              <td>{account.roleLabel}</td><td><span className={account.active ? "status-pill success" : "status-pill danger"}>{account.active ? "Active" : "Inactive"}</span></td><td>{account.authProvider}</td><td>{formatWorkspaceDate(account.lastLoginAt, true) || "Never"}</td>
+              <td><span className="role-badge" style={{ backgroundColor: account.accessRole.color, color: roleColorForeground(account.accessRole.color) }}>{account.roleLabel}</span></td><td><span className={account.active ? "status-pill success" : "status-pill danger"}>{account.active ? "Active" : "Inactive"}</span></td><td>{account.authProvider}</td><td>{formatWorkspaceDate(account.lastLoginAt, true) || "Never"}</td>
             </tr>)}
           </tbody></table>
           {!filteredUsers.length ? <p className="settings-empty">No users match these filters.</p> : null}
@@ -361,6 +378,7 @@ export function SettingsAccountsSection({
                   <span>Name</span>
                   <input
                     value={editDraft.name}
+                    disabled={!canManageSelected}
                     onChange={(event) => updateEditDraft({ name: event.target.value })}
                   />
                 </label>
@@ -369,19 +387,20 @@ export function SettingsAccountsSection({
                   <input
                     type="email"
                     value={editDraft.email}
+                    disabled={!canManageSelected}
                     onChange={(event) => updateEditDraft({ email: event.target.value })}
                   />
                 </label>
                 <label>
                   <span>Role</span>
                   <select
-                    value={editDraft.role}
-                    disabled={selectedUser.id === currentUserId}
-                    onChange={(event) => updateEditDraft({ role: event.target.value as LocalRole })}
+                    value={editDraft.roleId}
+                    disabled={!canManageSelected || selectedUser.id === currentUserId}
+                    onChange={(event) => updateEditDraft({ roleId: event.target.value })}
                   >
                     {roleOptions.map((role) => (
-                      <option key={role} value={role}>
-                        {roleLabels[role]}
+                      <option key={role.id} value={role.id}>
+                        {role.name}
                       </option>
                     ))}
                   </select>
@@ -390,7 +409,7 @@ export function SettingsAccountsSection({
                   <input
                     type="checkbox"
                     checked={editDraft.active}
-                    disabled={selectedUser.id === currentUserId}
+                    disabled={!canManageSelected || selectedUser.id === currentUserId}
                     onChange={(event) => updateEditDraft({ active: event.target.checked })}
                   />
                   <span>Active account</span>
@@ -403,7 +422,7 @@ export function SettingsAccountsSection({
                   className="primary-button"
                   type="button"
                   onClick={() => void saveSelectedAccount()}
-                  disabled={saving}
+                  disabled={saving || !canManageSelected}
                 >
                   <CheckCircle2 size={17} />
                   Save Account
@@ -428,7 +447,7 @@ export function SettingsAccountsSection({
                   className="toolbar-button compact"
                   type="button"
                   onClick={() => void resetSelectedPassword()}
-                  disabled={saving || selectedUser.authProvider !== "LOCAL"}
+                  disabled={saving || !canManageSelected || selectedUser.authProvider !== "LOCAL"}
                 >
                   <KeyRound size={16} />
                   Reset Password
@@ -444,7 +463,7 @@ export function SettingsAccountsSection({
         <div className="settings-form settings-create-user-form">
           <label><span>Name</span><input autoFocus required value={createDraft.name} onChange={(event) => updateCreateDraft({ name: event.target.value })} /></label>
           <label><span>Email</span><input type="email" required value={createDraft.email} onChange={(event) => updateCreateDraft({ email: event.target.value })} /></label>
-          <label><span>Role</span><select value={createDraft.role} onChange={(event) => updateCreateDraft({ role: event.target.value as LocalRole })}>{roleOptions.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label>
+          <label><span>Role</span><select value={createDraft.roleId} onChange={(event) => updateCreateDraft({ roleId: event.target.value })}>{roleOptions.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
           <label><span>Temporary password</span><div className="settings-input-action"><input required aria-describedby="create-password-requirements" aria-invalid={createDraft.password.length > 0 && createDraft.password.length < 10} value={createDraft.password} minLength={10} onChange={(event) => updateCreateDraft({ password: event.target.value })} /><button type="button" onClick={() => updateCreateDraft({ password: generateTemporaryPassword() })}>Regenerate</button></div></label>
           <div id="create-password-requirements" className={`settings-password-requirement ${createDraft.password.length >= 10 ? "met" : ""}`}><CheckCircle2 size={15} aria-hidden="true" /><span>At least 10 characters {createDraft.password ? `(${createDraft.password.length}/10)` : ""}</span></div>
         </div>

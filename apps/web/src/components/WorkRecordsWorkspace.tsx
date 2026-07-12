@@ -14,7 +14,7 @@ import {
   Search,
   X
 } from "lucide-react";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { convertQuoteToProject } from "@/lib/api/quotes";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
@@ -216,7 +216,12 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const [saving, setSaving] = useState(false);
   const [documentRecordId, setDocumentRecordId] = useState("");
   const [focusedRecordId, setFocusedRecordId] = useState("");
-  const canWrite = canRole(user?.role, "crm:write");
+  const writePermission = kind === "quotes"
+    ? "quotes:write"
+    : kind === "projects"
+      ? "projects:write"
+      : "billing:write";
+  const canWrite = canUser(user, writePermission);
   const requestedRecordId = searchParams.get("record") ?? "";
   const copy = workspaceCopy[kind];
   const views = workViews[kind];
@@ -236,10 +241,12 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
           requestJson<Record<WorkKind, WorkRecord[]>>(`/api/${kind}`, {
             cache: "no-store"
           }),
-          requestJson<{ clients: ClientRecord[] }>("/api/clients", {
-            cache: "no-store"
-          }),
-          kind === "invoices"
+          canWrite
+            ? requestJson<{ clients: ClientRecord[] }>("/api/clients", {
+                cache: "no-store"
+              })
+            : Promise.resolve({ clients: [] }),
+          kind === "invoices" && canWrite
             ? requestJson<{ projects: ProjectRecord[] }>("/api/projects", {
                 cache: "no-store"
               })
@@ -259,7 +266,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       }
     }
     void load();
-  }, [kind, title]);
+  }, [canWrite, kind, title]);
 
   useEffect(() => {
     if (!toast) return;
@@ -505,10 +512,11 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     const canShowFiles = kind !== "invoices" && "documents" in record;
     const canCreateProject =
       kind === "quotes" &&
+      canUser(user, "projects:write") &&
       "projectId" in record &&
       record.status === "Approved" &&
       !record.projectId;
-    const canCreateInvoice = kind === "projects" && "budget" in record;
+    const canCreateInvoice = kind === "projects" && canUser(user, "billing:write") && "budget" in record;
 
     return (
       <div className={mobile ? "work-queue-card-actions" : "work-queue-actions"}>
@@ -576,14 +584,14 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             <span>/</span>
             <span>{title}</span>
           </nav>
-          <h2>{title}</h2>
+          <h1>{title}</h1>
           <p>
             <strong>{copy.eyebrow}</strong>
             <span aria-hidden="true"> · </span>
             {copy.summary}
           </p>
         </div>
-        {kind === "quotes" ? (
+        {kind === "quotes" && canUser(user, "requests:write") ? (
           <Link className="primary-button compact" href="/requests">
             <Plus size={17} />
             Create from request

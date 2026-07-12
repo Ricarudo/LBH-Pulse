@@ -1,11 +1,14 @@
-import type { AuthProvider, LocalRole } from "./auth";
+import type { AuthProvider } from "./auth";
+import type { RoleSummary } from "./access-control";
 
 export type LocalAccountRecord = {
   id: string;
   name: string;
   email: string;
-  role: LocalRole;
+  role: string;
+  roleId: string;
   roleLabel: string;
+  accessRole: RoleSummary;
   active: boolean;
   mustChangePassword: boolean;
   authProvider: AuthProvider;
@@ -33,7 +36,7 @@ export const localPasswordSchema = z
 export const createLocalUserSchema = z.object({
   name: z.string().trim().min(1, "Name is required."),
   email: emailSchema,
-  role: localRoleSchema,
+  roleId: z.string().trim().min(1, "Role is required."),
   password: localPasswordSchema,
   active: z.boolean().default(true)
 });
@@ -41,7 +44,7 @@ export const createLocalUserSchema = z.object({
 export const updateLocalUserSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").optional(),
   email: emailSchema.optional(),
-  role: localRoleSchema.optional(),
+  roleId: z.string().trim().min(1, "Role is required.").optional(),
   active: z.boolean().optional()
 });
 

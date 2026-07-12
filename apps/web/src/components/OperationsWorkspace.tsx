@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, Plus, SlidersHorizontal } from "lucide-react";
+import { canUser } from "@pulse/contracts/auth";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { WorkspaceRow } from "@/lib/starterData";
 
 type OperationsWorkspaceProps = {
@@ -41,6 +43,8 @@ export function OperationsWorkspace({
   nextStatus,
   valueLabel
 }: OperationsWorkspaceProps) {
+  const { user } = useCurrentUser();
+  const canManage = canUser(user, "projects:write");
   const [items, setItems] = useState(rows);
   const [activeFilter, setActiveFilter] = useState("All");
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -107,11 +111,21 @@ export function OperationsWorkspace({
             {lastAction ? <p className="panel-note">{lastAction}</p> : null}
           </div>
           <div className="workspace-actions">
-            <button className="toolbar-button compact" type="button" onClick={advanceFirstItem}>
+            <button
+              className="toolbar-button compact"
+              type="button"
+              disabled={!canManage}
+              onClick={advanceFirstItem}
+            >
               <CheckCircle2 size={17} />
               {secondaryAction}
             </button>
-            <button className="primary-button" type="button" onClick={addItem}>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={!canManage}
+              onClick={addItem}
+            >
               <Plus size={17} />
               {primaryAction}
             </button>
@@ -175,4 +189,3 @@ export function OperationsWorkspace({
     </div>
   );
 }
-

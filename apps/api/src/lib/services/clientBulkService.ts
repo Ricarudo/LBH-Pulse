@@ -1031,7 +1031,7 @@ export async function commitClientBulkCsv(
             relatedEntityId: batchId,
             actorUserId: user.id,
             actorName: user.name,
-            actorRole: user.role,
+            actorRole: user.roleLabel,
             type: "Imported",
             title: "Client CSV import completed",
             detail: `${result.created} created and ${result.updated} updated.`,

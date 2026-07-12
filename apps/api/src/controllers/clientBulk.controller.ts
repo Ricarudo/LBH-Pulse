@@ -20,7 +20,7 @@ import {
   previewClientBulkCsv
 } from "@/lib/services/clientBulkService";
 import type { ClientBulkCommitSelection } from "@pulse/contracts/client-bulk";
-import { AuthError, AuthService } from "@/shared/auth.service";
+import { AuthService } from "@/shared/auth.service";
 
 const csvUpload = FileInterceptor("file", {
   storage: memoryStorage(),
@@ -44,13 +44,13 @@ export class ClientBulkController {
 
   @Get("template")
   async template(@Req() request: Request, @Res() response: Response) {
-    await this.auth.requireUser(request, "crm:read");
+    await this.auth.requireUser(request, "clients:read");
     sendCsv(response, "pulse-client-import-template.csv", clientCsvTemplate());
   }
 
   @Get("export")
   async export(@Req() request: Request, @Res() response: Response) {
-    await this.auth.requireUser(request, "crm:read");
+    await this.auth.requireUser(request, "clients:read");
     const date = new Date().toISOString().slice(0, 10);
     sendCsv(response, `pulse-clients-${date}.csv`, await exportClientCsv());
   }
@@ -62,7 +62,7 @@ export class ClientBulkController {
     @Req() request: Request,
     @UploadedFile() file?: Express.Multer.File
   ) {
-    await this.auth.requireUser(request, "crm:read");
+    await this.auth.requireUser(request, "clients:read");
     if (!file) throw new Error("CLIENT_BULK_FILE_REQUIRED");
     const preview = await previewClientBulkCsv(file);
     return { preview };
@@ -77,10 +77,7 @@ export class ClientBulkController {
     @Body("fileDigest") fileDigest?: string,
     @Body("selections") rawSelections?: string
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
-    if (user.role !== "Admin") {
-      throw new AuthError("Admin access is required to import clients.", 403);
-    }
+    const user = await this.auth.requireUser(request, "clients:write");
     if (!file) throw new Error("CLIENT_BULK_FILE_REQUIRED");
     if (!fileDigest || !rawSelections) {
       throw new Error("CLIENT_BULK_INVALID_SELECTION");

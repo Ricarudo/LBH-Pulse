@@ -16,10 +16,12 @@ import {
   UsersRound
 } from "lucide-react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { usePulsePreferences } from "@/components/PulseShell";
 import { SettingsAccountsSection } from "@/components/SettingsAccountsSection";
 import { SettingsChecklistsSection } from "@/components/SettingsChecklistsSection";
+import { SettingsRolesSection } from "@/components/SettingsRolesSection";
+import { roleColorForeground } from "@pulse/contracts/access-control";
 import type {
   ThemeMode,
   AccentTheme,
@@ -32,6 +34,7 @@ export type SettingsSection =
   | "appearance"
   | "general"
   | "users"
+  | "roles"
   | "request-checklists"
   | "roadmap";
 
@@ -42,10 +45,12 @@ const personalTabs = [
 
 const adminTabs = [
   { key: "general", label: "General", icon: Building2 },
-  { key: "users", label: "Users & access", icon: UsersRound },
   { key: "request-checklists", label: "Request checklists", icon: ClipboardCheck },
   { key: "roadmap", label: "Roadmap", icon: Plug }
 ] as const;
+
+const userTab = { key: "users", label: "Users", icon: UsersRound } as const;
+const rolesTab = { key: "roles", label: "Roles & permissions", icon: ShieldCheck } as const;
 
 async function responseJson<T>(response: Response) {
   const data = await response.json().catch(() => ({}));
@@ -98,7 +103,7 @@ function AccountSection() {
         <dl className="settings-definition-grid">
           <div><dt>Name</dt><dd>{user.name}</dd></div>
           <div><dt>Email</dt><dd>{user.email}</dd></div>
-          <div><dt>Role</dt><dd>{user.roleLabel}</dd></div>
+          <div><dt>Role</dt><dd><span className="role-badge" style={{ backgroundColor: user.accessRole.color, color: roleColorForeground(user.accessRole.color) }}>{user.roleLabel}</span></dd></div>
           <div><dt>Sign-in provider</dt><dd>{user.authProvider === "LOCAL" ? "Local account" : "Microsoft Entra"}</dd></div>
         </dl>
       </section>
@@ -222,7 +227,7 @@ function AppearanceSection() {
   );
 }
 
-function GeneralSection() {
+function GeneralSection({ canManage }: { canManage: boolean }) {
   const { workspace, setWorkspaceContext } = usePulsePreferences();
   const [draft, setDraft] = useState<WorkspaceSettingsRecord>(workspace);
   const [message, setMessage] = useState("");
@@ -270,14 +275,14 @@ function GeneralSection() {
         <div><h2>Workspace identity & region</h2><p>These defaults format dates and provide workspace context across Pulse.</p></div>
       </div>
       <form className="settings-form settings-general-form" onSubmit={save}>
-        <label className="wide"><span>Workspace name</span><input value={draft.name} maxLength={80} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-        <label className="wide"><span>Time zone</span><input list="pulse-time-zones" value={draft.timeZone} onChange={(event) => setDraft({ ...draft, timeZone: event.target.value })} /><datalist id="pulse-time-zones">{timeZones.map((zone) => <option key={zone} value={zone} />)}</datalist></label>
-        <label><span>Formatting locale</span><select value={draft.locale} onChange={(event) => setDraft({ ...draft, locale: event.target.value as WorkspaceSettingsRecord["locale"] })}><option value="en-US">English (United States)</option><option value="es-PR">Español (Puerto Rico)</option></select></label>
-        <label><span>Date format</span><select value={draft.dateFormat} onChange={(event) => setDraft({ ...draft, dateFormat: event.target.value as WorkspaceSettingsRecord["dateFormat"] })}><option>MM/DD/YYYY</option><option>DD/MM/YYYY</option><option>YYYY-MM-DD</option></select></label>
-        <label><span>Week starts on</span><select value={draft.weekStartsOn} onChange={(event) => setDraft({ ...draft, weekStartsOn: Number(event.target.value) as 0 | 1 })}><option value={0}>Sunday</option><option value={1}>Monday</option></select></label>
+        <label className="wide"><span>Workspace name</span><input disabled={!canManage} value={draft.name} maxLength={80} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
+        <label className="wide"><span>Time zone</span><input disabled={!canManage} list="pulse-time-zones" value={draft.timeZone} onChange={(event) => setDraft({ ...draft, timeZone: event.target.value })} /><datalist id="pulse-time-zones">{timeZones.map((zone) => <option key={zone} value={zone} />)}</datalist></label>
+        <label><span>Formatting locale</span><select disabled={!canManage} value={draft.locale} onChange={(event) => setDraft({ ...draft, locale: event.target.value as WorkspaceSettingsRecord["locale"] })}><option value="en-US">English (United States)</option><option value="es-PR">Español (Puerto Rico)</option></select></label>
+        <label><span>Date format</span><select disabled={!canManage} value={draft.dateFormat} onChange={(event) => setDraft({ ...draft, dateFormat: event.target.value as WorkspaceSettingsRecord["dateFormat"] })}><option>MM/DD/YYYY</option><option>DD/MM/YYYY</option><option>YYYY-MM-DD</option></select></label>
+        <label><span>Week starts on</span><select disabled={!canManage} value={draft.weekStartsOn} onChange={(event) => setDraft({ ...draft, weekStartsOn: Number(event.target.value) as 0 | 1 })}><option value={0}>Sunday</option><option value={1}>Monday</option></select></label>
         <div className="settings-form-actions wide">
           <p className="settings-inline-message" aria-live="polite">{message || (dirty ? "You have unsaved changes." : "")}</p>
-          <button className="primary-button" disabled={!dirty || saving}>{saving ? "Saving…" : "Save changes"}</button>
+          <button className="primary-button" disabled={!canManage || !dirty || saving}>{saving ? "Saving…" : "Save changes"}</button>
         </div>
       </form>
     </section>
@@ -299,8 +304,12 @@ function RoadmapSection() {
 
 export function SettingsWorkspace({ section }: { section: SettingsSection }) {
   const { user, isLoading } = useCurrentUser();
-  const isAdmin = canRole(user?.role, "settings:read");
-  const tabs = isAdmin ? [...personalTabs, ...adminTabs] : personalTabs;
+  const tabs = [
+    ...personalTabs,
+    ...(canUser(user, "settings:read") ? adminTabs : []),
+    ...(canUser(user, "users:manage") ? [userTab] : []),
+    ...(user?.isSystemAdmin ? [rolesTab] : [])
+  ];
   const allowed = tabs.some((tab) => tab.key === section);
   const active = allowed ? section : "account";
   const activeTab = tabs.find((tab) => tab.key === active) ?? personalTabs[0];
@@ -330,9 +339,10 @@ export function SettingsWorkspace({ section }: { section: SettingsSection }) {
       <div className="settings-content">
         {active === "account" ? <AccountSection /> : null}
         {active === "appearance" ? <AppearanceSection /> : null}
-        {active === "general" ? <GeneralSection /> : null}
-        {active === "users" && user ? <SettingsAccountsSection currentUserId={user.id} /> : null}
-        {active === "request-checklists" ? <SettingsChecklistsSection /> : null}
+        {active === "general" ? <GeneralSection canManage={canUser(user, "settings:write")} /> : null}
+        {active === "users" && user ? <SettingsAccountsSection currentUserId={user.id} currentUserIsSystemAdmin={user.isSystemAdmin} /> : null}
+        {active === "roles" ? <SettingsRolesSection /> : null}
+        {active === "request-checklists" ? <SettingsChecklistsSection readOnly={!canUser(user, "settings:write")} /> : null}
         {active === "roadmap" ? <RoadmapSection /> : null}
       </div>
     </section>

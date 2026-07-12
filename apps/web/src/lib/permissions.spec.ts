@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 
-test("Admin and Sales users can create CRM records", () => {
-  assert.equal(canRole("Admin", "crm:write"), true);
-  assert.equal(canRole("Sales", "crm:write"), true);
-  assert.equal(canRole("ProjectManager", "crm:write"), false);
-  assert.equal(canRole("Technician", "crm:write"), false);
+test("effective permission lists control browser actions", () => {
+  const user = { permissions: ["requests:read", "requests:write"] } as const;
+  assert.equal(canUser(user, "requests:read"), true);
+  assert.equal(canUser(user, "requests:write"), true);
+  assert.equal(canUser(user, "clients:write"), false);
 });

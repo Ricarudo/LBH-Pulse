@@ -54,7 +54,7 @@ export class DashboardController {
     @Query("scope") scopeQuery?: string,
     @Query("widgets") widgetsQuery?: string
   ) {
-    const user = await this.auth.requireUser(request, "crm:read");
+    const user = await this.auth.requireUser(request);
     const scope = scopeQuery
       ? dashboardScopeSchema.parse(scopeQuery)
       : undefined;

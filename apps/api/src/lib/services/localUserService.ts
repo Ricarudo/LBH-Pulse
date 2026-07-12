@@ -2,8 +2,6 @@ import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import {
   isAuthProvider,
-  isLocalRole,
-  roleLabels,
   type AuthenticatedUser
 } from "@pulse/contracts/auth";
 import { recordActivity } from "@/lib/services/activityService";
@@ -27,22 +25,49 @@ type LocalUserShape = {
   updatedAt: Date;
   lastLoginAt: Date | null;
   deactivatedAt: Date | null;
+  accessRole: {
+    id: string;
+    name: string;
+    color: string;
+    protected: boolean;
+    systemKey: string | null;
+    archivedAt: Date | null;
+  };
 };
+
+const localUserInclude = {
+  accessRole: {
+    select: {
+      id: true,
+      name: true,
+      color: true,
+      protected: true,
+      systemKey: true,
+      archivedAt: true
+    }
+  }
+} as const;
 
 function formatDateTime(date?: Date | null) {
   return date?.toISOString() ?? "";
 }
 
 function toLocalAccountRecord(user: LocalUserShape): LocalAccountRecord {
-  const role = isLocalRole(user.role) ? user.role : "Technician";
   const authProvider = isAuthProvider(user.authProvider) ? user.authProvider : "LOCAL";
+  const accessRole = {
+    id: user.accessRole.id,
+    name: user.accessRole.name,
+    color: user.accessRole.color
+  };
 
   return {
     id: user.id,
     name: user.name,
     email: user.email,
-    role,
-    roleLabel: roleLabels[role],
+    role: accessRole.id,
+    roleId: accessRole.id,
+    roleLabel: accessRole.name,
+    accessRole,
     active: user.active,
     mustChangePassword: user.mustChangePassword,
     authProvider,
@@ -66,7 +91,8 @@ async function assertEmailAvailable(email: string, exceptUserId?: string) {
 
 async function getLocalUserOrThrow(id: string) {
   const user = await prisma.localUser.findUnique({
-    where: { id }
+    where: { id },
+    include: localUserInclude
   });
 
   if (!user) {
@@ -77,12 +103,13 @@ async function getLocalUserOrThrow(id: string) {
 }
 
 async function assertCanChangeAdminAccess(
-  existing: Pick<LocalUserShape, "id" | "role" | "active">,
+  existing: Pick<LocalUserShape, "id" | "role" | "active" | "accessRole">,
   nextRole: string,
   nextActive: boolean
 ) {
   const removingActiveAdmin =
-    existing.active && existing.role === "Admin" && (!nextActive || nextRole !== "Admin");
+    existing.active && existing.accessRole.systemKey === "ADMIN" &&
+    (!nextActive || nextRole !== existing.role);
 
   if (!removingActiveAdmin) {
     return;
@@ -92,12 +119,28 @@ async function assertCanChangeAdminAccess(
     where: {
       id: { not: existing.id },
       active: true,
-      role: "Admin"
+      accessRole: { systemKey: "ADMIN" }
     }
   });
 
   if (remainingActiveAdmins === 0) {
     throw new Error("LOCAL_USER_LAST_ADMIN");
+  }
+}
+
+async function getAssignableRoleOrThrow(roleId: string, actor: AuthenticatedUser) {
+  const role = await prisma.accessRole.findFirst({
+    where: { id: roleId, archivedAt: null },
+    select: { id: true, name: true, color: true, protected: true, systemKey: true }
+  });
+  if (!role) throw new Error("ACCESS_ROLE_ASSIGNMENT_INVALID");
+  if (role.protected && !actor.isSystemAdmin) throw new Error("LOCAL_USER_ADMIN_PROTECTED");
+  return role;
+}
+
+function assertActorCanManageAccount(existing: LocalUserShape, actor: AuthenticatedUser) {
+  if (existing.accessRole.protected && !actor.isSystemAdmin) {
+    throw new Error("LOCAL_USER_ADMIN_PROTECTED");
   }
 }
 
@@ -112,6 +155,7 @@ function changedFields(existing: LocalUserShape, updated: LocalUserShape) {
 
 export async function listLocalUsers() {
   const users = await prisma.localUser.findMany({
+    include: localUserInclude,
     orderBy: [
       { active: "desc" },
       { name: "asc" }
@@ -123,18 +167,20 @@ export async function listLocalUsers() {
 
 export async function createLocalUser(input: CreateLocalUserInput, actor: AuthenticatedUser) {
   await assertEmailAvailable(input.email);
+  const role = await getAssignableRoleOrThrow(input.roleId, actor);
 
   const user = await prisma.localUser.create({
     data: {
       name: input.name,
       email: input.email,
-      role: input.role,
+      role: role.id,
       passwordHash: hashPassword(input.password),
       active: input.active,
       mustChangePassword: true,
       authProvider: "LOCAL",
       deactivatedAt: input.active ? null : new Date()
-    }
+    },
+    include: localUserInclude
   });
 
   await recordActivity({
@@ -143,9 +189,10 @@ export async function createLocalUser(input: CreateLocalUserInput, actor: Authen
     relatedEntityId: user.id,
     type: "Created",
     title: `${user.name} account created`,
-    detail: `${roleLabels[input.role]} account created for local Pulse access.`,
+    detail: `${role.name} account created for local Pulse access.`,
     metadata: {
-      role: input.role,
+      roleId: role.id,
+      roleName: role.name,
       active: input.active,
       authProvider: "LOCAL"
     }
@@ -160,18 +207,20 @@ export async function updateLocalUser(
   actor: AuthenticatedUser
 ) {
   const existing = await getLocalUserOrThrow(id);
+  assertActorCanManageAccount(existing, actor);
   if (
     id === actor.id &&
-    ((input.role !== undefined && input.role !== existing.role) ||
+    ((input.roleId !== undefined && input.roleId !== existing.role) ||
       (input.active !== undefined && input.active !== existing.active))
   ) {
     throw new Error("LOCAL_USER_SELF_ACCESS");
   }
   const nextEmail = input.email ?? existing.email;
-  const nextRole = input.role ?? existing.role;
+  const nextRole = input.roleId ?? existing.role;
   const nextActive = input.active ?? existing.active;
 
   await assertEmailAvailable(nextEmail, id);
+  const nextAccessRole = await getAssignableRoleOrThrow(nextRole, actor);
   await assertCanChangeAdminAccess(existing, nextRole, nextActive);
 
   const updated = await prisma.localUser.update({
@@ -179,14 +228,15 @@ export async function updateLocalUser(
     data: {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.email !== undefined ? { email: input.email } : {}),
-      ...(input.role !== undefined ? { role: input.role } : {}),
+      ...(input.roleId !== undefined ? { role: input.roleId } : {}),
       ...(input.active !== undefined
         ? {
             active: input.active,
             deactivatedAt: input.active ? null : new Date()
           }
         : {})
-    }
+    },
+    include: localUserInclude
   });
 
   const changes = changedFields(existing, updated);
@@ -198,10 +248,12 @@ export async function updateLocalUser(
       relatedEntityId: updated.id,
       type: "Role Changed",
       title: `${updated.name} role changed`,
-      detail: `Role changed from ${existing.role} to ${updated.role}.`,
+      detail: `Role changed from ${existing.accessRole.name} to ${nextAccessRole.name}.`,
       metadata: {
-        previousRole: existing.role,
-        nextRole: updated.role
+        previousRoleId: existing.role,
+        previousRoleName: existing.accessRole.name,
+        nextRoleId: updated.role,
+        nextRoleName: nextAccessRole.name
       }
     });
   }
@@ -245,6 +297,7 @@ export async function resetLocalUserPassword(
   actor: AuthenticatedUser
 ) {
   const existing = await getLocalUserOrThrow(id);
+  assertActorCanManageAccount(existing, actor);
 
   if (existing.authProvider !== "LOCAL") {
     throw new Error("LOCAL_USER_PASSWORD_UNAVAILABLE");
@@ -255,7 +308,8 @@ export async function resetLocalUserPassword(
     data: {
       passwordHash: hashPassword(input.temporaryPassword),
       mustChangePassword: true
-    }
+    },
+    include: localUserInclude
   });
 
   await recordActivity({
@@ -264,7 +318,7 @@ export async function resetLocalUserPassword(
     relatedEntityId: updated.id,
     type: "Password Reset",
     title: `${updated.name} password reset`,
-    detail: "An Admin set a temporary local password and required a password change.",
+    detail: "A user manager set a temporary local password and required a password change.",
     metadata: {
       mustChangePassword: true
     }

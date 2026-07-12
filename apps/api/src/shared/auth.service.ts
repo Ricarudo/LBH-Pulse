@@ -3,11 +3,15 @@ import type { Request, Response } from "express";
 import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
 import {
-  canRole,
   toAuthenticatedUser,
-  type AuthenticatedUser,
-  type Permission
+  type AuthenticatedUser
 } from "@pulse/contracts/auth";
+import type { Permission } from "@pulse/contracts/access-control";
+import {
+  accessRoleInclude,
+  effectiveRolePermissions,
+  roleSummary
+} from "@/lib/services/roleAccessService";
 
 const sessionCookieName = "pulse.session";
 const sessionTtlSeconds = 60 * 60 * 12;
@@ -15,6 +19,11 @@ const sessionTtlSeconds = 60 * 60 * 12;
 type SessionPayload = {
   userId: string;
   exp: number;
+};
+
+export type PermissionRequirement = Permission | {
+  allOf?: Permission[];
+  anyOf?: Permission[];
 };
 
 export class AuthError extends Error {
@@ -97,31 +106,53 @@ export class AuthService {
     }
 
     const user = await prisma.localUser.findUnique({
-      where: { id: payload.userId }
+      where: { id: payload.userId },
+      include: { accessRole: { include: accessRoleInclude } }
     });
 
-    if (!user || !user.active) {
+    if (!user || !user.active || user.accessRole.archivedAt) {
       return null;
     }
 
-    return toAuthenticatedUser(user);
+    return toAuthenticatedUser({
+      ...user,
+      accessRole: roleSummary(user.accessRole),
+      permissions: effectiveRolePermissions(user.accessRole),
+      isSystemAdmin: user.accessRole.protected && user.accessRole.systemKey === "ADMIN"
+    });
   }
 
-  async requireUser(request: Request, permission?: Permission) {
+  async requireUser(request: Request, requirement?: PermissionRequirement) {
     const user = await this.getCurrentUser(request);
 
     if (!user) {
       throw new AuthError("Authentication required.", 401);
     }
 
-    if (permission && user.mustChangePassword) {
+    if (requirement && user.mustChangePassword) {
       throw new AuthError("Password change required before accessing Pulse.", 403);
     }
 
-    if (permission && !canRole(user.role, permission)) {
+    const allOf = typeof requirement === "string"
+      ? [requirement]
+      : requirement?.allOf ?? [];
+    const anyOf = typeof requirement === "string"
+      ? []
+      : requirement?.anyOf ?? [];
+    const hasAll = allOf.every((permission) => user.permissions.includes(permission));
+    const hasAny = !anyOf.length || anyOf.some((permission) => user.permissions.includes(permission));
+    if (requirement && (!hasAll || !hasAny)) {
       throw new AuthError("You do not have permission to perform this action.", 403);
     }
 
+    return user;
+  }
+
+  async requireSystemAdmin(request: Request) {
+    const user = await this.requireUser(request, "roles:manage");
+    if (!user.isSystemAdmin) {
+      throw new AuthError("Administrator access is required.", 403);
+    }
     return user;
   }
 

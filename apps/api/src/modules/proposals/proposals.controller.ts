@@ -17,7 +17,7 @@ export class ProposalsController {
     @Param("quoteId") quoteId: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "quotes:write");
     return {
       quote: await this.proposals.update(
         quoteId,

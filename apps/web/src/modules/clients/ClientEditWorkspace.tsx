@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { canUser } from "@pulse/contracts/auth";
 import {
   clientIndustries,
   clientLanguages,
@@ -664,7 +665,7 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
   const [contactModal, setContactModal] = useState<ContactModalState | null>(null);
 
   const profileHref = `/clients/${client?.id ?? clientId}`;
-  const canEdit = user?.role === "Admin";
+  const canEdit = canUser(user, "clients:write");
   const primaryContact = useMemo(
     () => contacts.find((contact) => contact.isPrimary || contact.isPrimaryContact),
     [contacts]
@@ -829,7 +830,7 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
     return (
       <section className="lead-empty-state detail">
         <ShieldAlert size={22} />
-        <strong>Admin access is required to edit clients.</strong>
+        <strong>Client management access is required to edit clients.</strong>
         <span>Client records are read-only for your current role.</span>
         <Link className="toolbar-button compact" href={`/clients/${clientId}`}>
           Back to profile
@@ -863,7 +864,7 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
           </Link>
           <div>
             <span>{client?.clientNumber}</span>
-            <h2>Edit Client</h2>
+            <h1>Edit Client</h1>
           </div>
           <div className="client-edit-header-actions">
             <Link className="toolbar-button compact" href={profileHref}>

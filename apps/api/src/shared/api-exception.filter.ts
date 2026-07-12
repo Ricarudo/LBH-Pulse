@@ -62,6 +62,35 @@ const errorMap: Record<string, ErrorPayload> = {
     status: 400,
     body: { error: "Choose one trade or request type for this template." }
   },
+  REQUEST_STEP_CLOSED: {
+    status: 409,
+    body: { error: "Closed or converted requests can receive comments, but cannot start a new current step." }
+  },
+  REQUEST_UPDATE_ASSIGNEE_REQUIRED: {
+    status: 400,
+    body: { error: "Choose a responsible assignee for the current step." }
+  },
+  REQUEST_UPDATE_ASSIGNEE_INVALID: {
+    status: 400,
+    body: { error: "The current-step assignee must be an active Pulse user." }
+  },
+  REQUEST_MENTION_USER_INVALID: {
+    status: 400,
+    body: { error: "One or more mentioned users are not active Pulse users." }
+  },
+  REQUEST_UPDATE_NOT_FOUND: { status: 404, body: { error: "Request update not found." } },
+  REQUEST_UPDATE_NOT_OPEN: { status: 409, body: { error: "Only an open current step can be completed." } },
+  REQUEST_UPDATE_NOT_UNDOABLE: { status: 409, body: { error: "This update is no longer undoable." } },
+  REQUEST_UPDATE_UNDO_CONFLICT: { status: 409, body: { error: "The request changed before this update could be undone." } },
+  REQUEST_COLLABORATOR_INVALID: {
+    status: 400,
+    body: { error: "The collaborator must be an active Pulse user." }
+  },
+  REQUEST_COLLABORATOR_NOT_FOUND: { status: 404, body: { error: "Request collaborator not found." } },
+  REQUEST_CURRENT_ASSIGNEE_REQUIRED: {
+    status: 409,
+    body: { error: "Reassign or complete the current step before removing its assignee." }
+  },
   REQUEST_CHECKLIST_TEMPLATE_ARCHIVED: {
     status: 409,
     body: { error: "Restore this template before editing it." }
@@ -84,6 +113,43 @@ const errorMap: Record<string, ErrorPayload> = {
     body: { error: "Password changes are only available for local Pulse accounts." }
   },
   LOCAL_USER_PASSWORD_INVALID: { status: 400, body: { error: "Current password is incorrect." } },
+  LOCAL_USER_ADMIN_PROTECTED: {
+    status: 403,
+    body: { error: "Only an Administrator can manage Administrator accounts." }
+  },
+  ACCESS_ROLE_ADMIN_REQUIRED: {
+    status: 403,
+    body: { error: "Administrator access is required to manage roles." }
+  },
+  ACCESS_ROLE_NOT_FOUND: { status: 404, body: { error: "Role not found." } },
+  ACCESS_ROLE_NAME_EXISTS: {
+    status: 409,
+    body: { error: "A role with that name already exists." }
+  },
+  ACCESS_ROLE_MATRIX_STALE: {
+    status: 409,
+    body: { error: "Roles changed in another session. Reload the matrix and try again." }
+  },
+  ACCESS_ROLE_PROTECTED: {
+    status: 400,
+    body: { error: "The Administrator role cannot be renamed or archived." }
+  },
+  ACCESS_ROLE_COPY_SOURCE_INVALID: {
+    status: 400,
+    body: { error: "Choose an active role to copy." }
+  },
+  ACCESS_ROLE_REPLACEMENT_REQUIRED: {
+    status: 400,
+    body: { error: "Choose a replacement role for assigned users." }
+  },
+  ACCESS_ROLE_REPLACEMENT_INVALID: {
+    status: 400,
+    body: { error: "Choose a different active replacement role." }
+  },
+  ACCESS_ROLE_ASSIGNMENT_INVALID: {
+    status: 400,
+    body: { error: "Choose an active role." }
+  },
   CLIENT_NOT_FOUND: { status: 404, body: { error: "Client not found." } },
   CONTACT_NOT_FOUND: { status: 404, body: { error: "Contact not found." } },
   CLIENT_VERSION_CONFLICT: {
@@ -182,6 +248,10 @@ const errorMap: Record<string, ErrorPayload> = {
   ITEM_KIT_EMPTY: {
     status: 400,
     body: { error: "This item does not have any kit components." }
+  },
+  DOCUMENT_ACCESS_DENIED: {
+    status: 403,
+    body: { error: "You do not have permission to access this document." }
   },
   ITEM_RELATION_CYCLE: {
     status: 409,

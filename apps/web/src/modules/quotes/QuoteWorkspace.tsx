@@ -13,7 +13,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { searchItems } from "@/lib/api/items";
 import {
   addAdHocQuoteItem,
@@ -79,7 +79,7 @@ function compactDate(value: string) {
 
 export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
   const { user } = useCurrentUser();
-  const canWrite = canRole(user?.role, "crm:write");
+  const canWrite = canUser(user, "quotes:write");
   const [quote, setQuote] = useState<QuoteDetailRecord | null>(null);
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
@@ -319,7 +319,7 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
           <nav className="breadcrumb" aria-label="Breadcrumb">
             <Link href="/hub">Home</Link><span>/</span><Link href="/quotes">Quotes</Link><span>/</span><span>{quote.quoteNumber}</span>
           </nav>
-          <h2>{quote.title}</h2>
+          <h1>{quote.title}</h1>
           <p>{quote.quoteNumber} · {quote.clientName || "Unlinked client"} · {quote.context.requestNumber || "Manual quote"}</p>
         </div>
         <div className="quote-header-actions">
@@ -347,9 +347,9 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
       </section>
 
       <div className="quote-workspace-grid">
-        <main className="quote-bom-panel">
+        <section className="quote-bom-panel" aria-labelledby="quote-bom-heading">
           <div className="panel-header">
-            <div><h2>Bill of Materials</h2><p className="panel-note">Build the quote from reusable Directory Items or one-off BOM lines.</p></div>
+            <div><h2 id="quote-bom-heading">Bill of Materials</h2><p className="panel-note">Build the quote from reusable Directory Items or one-off BOM lines.</p></div>
             <strong>{formatMoney(quote.total)}</strong>
           </div>
           {quoteBomSections.map((section) => (
@@ -391,7 +391,7 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
               </table>
             </section>
           ))}
-        </main>
+        </section>
 
         <aside className="quote-summary-rail">
           <section className="quote-total-card">

@@ -32,7 +32,7 @@ export class QuoteItemsController {
     @Param("quoteId") quoteId: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "quotes:write");
     const input = body && typeof body === "object"
       ? body as Record<string, unknown>
       : {};
@@ -57,7 +57,7 @@ export class QuoteItemsController {
     @Param("quoteId") quoteId: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "quotes:write");
     return {
       quote: await this.quoteItems.addKit(
         quoteId,
@@ -73,7 +73,7 @@ export class QuoteItemsController {
     @Param("quoteId") quoteId: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "quotes:write");
     return {
       quote: await this.quoteItems.reorder(
         quoteId,
@@ -90,7 +90,7 @@ export class QuoteItemsController {
     @Param("quoteItemId") quoteItemId: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "quotes:write");
     return {
       quote: await this.quoteItems.update(
         quoteId,
@@ -107,7 +107,7 @@ export class QuoteItemsController {
     @Param("quoteId") quoteId: string,
     @Param("quoteItemId") quoteItemId: string
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "quotes:write");
     return {
       quote: await this.quoteItems.remove(quoteId, quoteItemId, user)
     };

@@ -26,7 +26,7 @@ import {
   updateClientSchema,
   updateClientSiteSchema
 } from "@pulse/contracts/clients";
-import { AuthError, AuthService } from "@/shared/auth.service";
+import { AuthService } from "@/shared/auth.service";
 
 @Controller("clients")
 export class ClientsController {
@@ -34,14 +34,14 @@ export class ClientsController {
 
   @Get()
   async list(@Req() request: Request) {
-    await this.auth.requireUser(request, "crm:read");
+    await this.auth.requireUser(request, "clients:read");
     const clients = await listClients();
     return { clients };
   }
 
   @Post()
   async create(@Req() request: Request, @Body() body: unknown) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "clients:write");
     const payload = createClientSchema.parse(body);
     const client = await createClient(payload, user);
     return { client };
@@ -49,15 +49,15 @@ export class ClientsController {
 
   @Get(":id")
   async get(@Req() request: Request, @Param("id") id: string) {
-    await this.auth.requireUser(request, "crm:read");
+    await this.auth.requireUser(request, "clients:read");
     const client = await getClientById(id);
     return { client };
   }
 
   @Get(":id/related-work")
   async relatedWork(@Req() request: Request, @Param("id") id: string) {
-    await this.auth.requireUser(request, "crm:read");
-    return listClientRelatedWork(id);
+    const user = await this.auth.requireUser(request, "clients:read");
+    return listClientRelatedWork(id, user);
   }
 
   @Patch(":id")
@@ -66,10 +66,7 @@ export class ClientsController {
     @Param("id") id: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
-    if (user.role !== "Admin") {
-      throw new AuthError("Admin access is required to edit clients.", 403);
-    }
+    const user = await this.auth.requireUser(request, "clients:write");
 
     const payload = updateClientSchema.parse(body);
     const client = await updateClient(id, payload, user);
@@ -78,7 +75,7 @@ export class ClientsController {
 
   @Delete(":id")
   async archive(@Req() request: Request, @Param("id") id: string) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "clients:write");
     const client = await archiveClient(id, user);
     return { client };
   }
@@ -89,7 +86,7 @@ export class ClientsController {
     @Param("id") id: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "clients:write");
     const payload = addClientSiteSchema.parse(body);
     const client = await addClientSite(id, payload, user);
     return { client };
@@ -102,7 +99,7 @@ export class ClientsController {
     @Param("siteId") siteId: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "clients:write");
     const payload = updateClientSiteSchema.parse(body);
     const client = await updateClientSite(id, siteId, payload, user);
     return { client };
@@ -114,7 +111,7 @@ export class ClientsController {
     @Param("id") id: string,
     @Param("siteId") siteId: string
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "clients:write");
     const client = await removeClientSite(id, siteId, user);
     return { client };
   }
@@ -125,7 +122,7 @@ export class ClientsController {
     @Param("id") id: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request, "clients:write");
     const payload = addClientContactSchema.parse(body);
     const client = await addClientContact(id, payload, user);
     return { client };
@@ -138,10 +135,7 @@ export class ClientsController {
     @Param("contactId") contactId: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
-    if (user.role !== "Admin") {
-      throw new AuthError("Admin access is required to edit client contacts.", 403);
-    }
+    const user = await this.auth.requireUser(request, "clients:write");
 
     const payload = updateClientContactSchema.parse(body);
     const client = await updateClientContact(id, contactId, payload, user);
@@ -154,10 +148,7 @@ export class ClientsController {
     @Param("id") id: string,
     @Param("contactId") contactId: string
   ) {
-    const user = await this.auth.requireUser(request, "crm:write");
-    if (user.role !== "Admin") {
-      throw new AuthError("Admin access is required to edit client contacts.", 403);
-    }
+    const user = await this.auth.requireUser(request, "clients:write");
 
     const client = await removeClientContact(id, contactId, user);
     return { client };
@@ -169,7 +160,7 @@ export class ClientsController {
     @Param("id") id: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:activity:write");
+    const user = await this.auth.requireUser(request, { allOf: ["clients:read", "activity:write"] });
     const payload = createClientActivitySchema.parse(body);
     const client = await addClientActivity(id, payload, user);
     return { client };
@@ -182,7 +173,7 @@ export class ClientsController {
     @Param("id") id: string,
     @Body() body: unknown
   ) {
-    const user = await this.auth.requireUser(request, "crm:activity:write");
+    const user = await this.auth.requireUser(request, "clients:write");
     const payload = importClientInfoSchema.parse(body);
     const client = await importClientInfo(id, payload, user);
     return { client };

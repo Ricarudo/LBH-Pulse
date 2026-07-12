@@ -21,6 +21,7 @@ import {
   useState
 } from "react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { canUser } from "@pulse/contracts/auth";
 import type {
   ClientBulkCommitResult,
   ClientBulkFieldDiff,
@@ -161,7 +162,7 @@ export function ClientBulkWorkspace() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<ClientBulkCommitResult | null>(null);
-  const isAdmin = user?.role === "Admin";
+  const canImport = canUser(user, "clients:write");
 
   const visibleRows = useMemo(() => {
     if (!preview) return [];
@@ -319,7 +320,7 @@ export function ClientBulkWorkspace() {
               <span>/</span>
               <span>CSV tools</span>
             </nav>
-            <h2>Client CSV import and export</h2>
+            <h1>Client CSV import and export</h1>
             <p>Prepare, compare, and apply client directory changes safely.</p>
           </div>
         </div>
@@ -508,7 +509,7 @@ export function ClientBulkWorkspace() {
               Select all valid rows
             </label>
             <span>{selectedRows.size} selected</span>
-            {isAdmin ? (
+            {canImport ? (
               <button
                 className="primary-button"
                 type="button"
@@ -519,7 +520,7 @@ export function ClientBulkWorkspace() {
               </button>
             ) : (
               <span className="client-bulk-read-only">
-                Admin access is required to apply an import.
+                Client management access is required to apply an import.
               </span>
             )}
           </div>

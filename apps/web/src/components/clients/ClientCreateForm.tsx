@@ -3,7 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, Plus } from "lucide-react";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
   clientIndustries,
@@ -233,7 +233,7 @@ export function ClientCreateForm() {
     () => contacts.filter(hasContactContent),
     [contacts]
   );
-  const canCreateClient = canRole(user?.role, "crm:write");
+  const canCreateClient = canUser(user, "clients:write");
 
   function updateSite(index: number, site: ClientSiteInput) {
     setSites((current) =>
@@ -1045,7 +1045,7 @@ export function ClientCreateForm() {
       <section className="clients-hero">
         <div>
           <p className="eyebrow">Directory / New Client</p>
-          <h2>Create a client account in guided steps.</h2>
+          <h1>Create a client account in guided steps.</h1>
           <p>
             Pulse will save one core account record with the sites, contacts,
             billing defaults, and operating preferences attached.

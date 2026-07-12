@@ -29,7 +29,7 @@ export class DocumentsController {
     @Res() response: Response,
     @Param("id") id: string
   ) {
-    const user = await this.auth.requireUser(request, "crm:read");
+    const user = await this.auth.requireUser(request);
     const document = await getDocumentDownload(id, user);
     response.setHeader("Content-Type", document.mediaType);
     response.setHeader("Content-Length", String(document.byteSize));
@@ -45,7 +45,7 @@ export class DocumentsController {
     @Res() response: Response,
     @Param("id") id: string
   ) {
-    const user = await this.auth.requireUser(request, "crm:read");
+    const user = await this.auth.requireUser(request);
     const document = await getDocumentPreview(id, request.headers.range, user);
     const previewName = safeDownloadName(document.fileName);
     response.status(document.range ? 206 : 200);
@@ -76,7 +76,7 @@ export class DocumentsController {
 
   @Delete(":id")
   async remove(@Req() request: Request, @Param("id") id: string) {
-    const user = await this.auth.requireUser(request, "crm:write");
+    const user = await this.auth.requireUser(request);
     await softDeleteDocument(id, user);
     return { ok: true };
   }

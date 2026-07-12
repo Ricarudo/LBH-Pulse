@@ -1,6 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { canSeeActivity, type AuthenticatedUser } from "@pulse/contracts/auth";
+import { canUser, type AuthenticatedUser } from "@pulse/contracts/auth";
 import type { ActivityRecord } from "@pulse/contracts/activity";
 
 type RecordActivityInput = {
@@ -55,13 +55,37 @@ export async function recordActivity(input: RecordActivityInput) {
       relatedEntityId: input.relatedEntityId,
       actorUserId: input.user?.id,
       actorName: input.user?.name ?? "Pulse System",
-      actorRole: input.user?.role ?? "System",
+      actorRole: input.user?.roleLabel ?? "System",
       type: input.type,
       title: input.title,
       detail: input.detail || null,
       metadata: input.metadata === undefined ? Prisma.JsonNull : input.metadata
     }
   });
+}
+
+export function canAccessActivity(
+  user: AuthenticatedUser,
+  activity: { actorUserId?: string | null; relatedEntityType: string }
+) {
+  if (activity.relatedEntityType === "Request") return canUser(user, "requests:read");
+  if (activity.relatedEntityType === "Client" || activity.relatedEntityType === "ClientImport") {
+    return canUser(user, "clients:read");
+  }
+  if (activity.relatedEntityType === "Quote") return canUser(user, "quotes:read");
+  if (activity.relatedEntityType === "Project") return canUser(user, "projects:read");
+  if (activity.relatedEntityType === "Invoice") return canUser(user, "billing:read");
+  if (
+    activity.relatedEntityType === "WorkspaceSettings" ||
+    activity.relatedEntityType === "RequestChecklistTemplate"
+  ) {
+    return canUser(user, "settings:read");
+  }
+  if (activity.relatedEntityType === "AccessRole") return user.isSystemAdmin;
+  if (activity.relatedEntityType === "User") {
+    return activity.actorUserId === user.id || canUser(user, "users:manage");
+  }
+  return false;
 }
 
 export async function listActivities(
@@ -83,5 +107,5 @@ export async function listActivities(
     take: filters.take ?? 50
   });
 
-  return activities.filter((activity) => canSeeActivity(user, activity)).map(toActivityRecord);
+  return activities.filter((activity) => canAccessActivity(user, activity)).map(toActivityRecord);
 }

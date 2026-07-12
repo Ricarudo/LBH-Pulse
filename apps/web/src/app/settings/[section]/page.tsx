@@ -9,6 +9,7 @@ const sections = new Set<SettingsSection>([
   "appearance",
   "general",
   "users",
+  "roles",
   "request-checklists",
   "roadmap"
 ]);

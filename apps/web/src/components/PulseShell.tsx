@@ -6,6 +6,7 @@ import {
   createContext,
   FormEvent,
   type MouseEvent,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -19,6 +20,7 @@ import {
   m
 } from "motion/react";
 import type { AuthenticatedUser } from "@pulse/contracts/auth";
+import { roleColorForeground } from "@pulse/contracts/access-control";
 import type {
   AccentTheme,
   MotionMode,
@@ -30,6 +32,7 @@ import { setWorkspaceFormatting } from "@/lib/formatting";
 import { responsiveBreakpoints } from "@/lib/responsive";
 import {
   getMobileActiveKey,
+  canAccessPath,
   isNavigationItemActive,
   mobileOverflowGroups,
   mobilePrimaryItems,
@@ -74,6 +77,18 @@ type PulsePreferencesContextValue = {
 };
 
 const PulsePreferencesContext = createContext<PulsePreferencesContextValue | null>(null);
+type PulseAuthContextValue = {
+  user: AuthenticatedUser | null;
+  isLoading: boolean;
+  refresh: () => Promise<void>;
+};
+const PulseAuthContext = createContext<PulseAuthContextValue | null>(null);
+
+export function usePulseAuth() {
+  const value = useContext(PulseAuthContext);
+  if (!value) throw new Error("usePulseAuth must be used inside PulseShell.");
+  return value;
+}
 
 export function usePulsePreferences() {
   const value = useContext(PulsePreferencesContext);
@@ -174,7 +189,7 @@ function getShellRouteMeta(pathname: string): ShellRouteMeta {
   if (pathname.startsWith("/procurement")) {
     return {
       activePage: "procurement",
-      title: "Projects",
+      title: "Procurement",
       subtitle: "Purchase orders, vendor coordination, and material readiness."
     };
   }
@@ -182,7 +197,7 @@ function getShellRouteMeta(pathname: string): ShellRouteMeta {
   if (pathname.startsWith("/field")) {
     return {
       activePage: "field",
-      title: "Projects",
+      title: "Field Ops",
       subtitle: "Field jobs, technician activity, labor tracking, and site status."
     };
   }
@@ -223,6 +238,17 @@ function getShellRouteMeta(pathname: string): ShellRouteMeta {
 }
 
 const PulseShellContext = createContext(false);
+
+function AccessDenied() {
+  return (
+    <section className="access-denied" aria-labelledby="access-denied-title">
+      <div className="settings-icon-box"><UserRound size={22} /></div>
+      <h1 id="access-denied-title">Access denied</h1>
+      <p>Your current role does not have access to this area.</p>
+      <Link className="primary-button compact" href="/hub">Return to Dashboard</Link>
+    </section>
+  );
+}
 
 export function PulseShell({
   activePage,
@@ -291,10 +317,11 @@ function PulseShellFrame({
   const shouldHideHeader =
     hideHeader ||
     pathname === "/hub" ||
-    pathname === "/requests" ||
-    pathname === "/clients" ||
-    pathname === "/contacts" ||
-    pathname === "/quotes" ||
+    pathname.startsWith("/requests") ||
+    pathname.startsWith("/directory") ||
+    pathname.startsWith("/clients") ||
+    pathname.startsWith("/contacts") ||
+    pathname.startsWith("/quotes") ||
     pathname === "/projects" ||
     pathname === "/billing" ||
     pathname === "/settings" ||
@@ -303,6 +330,18 @@ function PulseShellFrame({
   const environmentLabel =
     process.env.NEXT_PUBLIC_PULSE_ENV_LABEL ||
     (process.env.NODE_ENV === "development" ? "Local Dev" : "");
+
+  const refreshCurrentUser = useCallback(async () => {
+    try {
+      const response = await fetch("/api/auth/session", { cache: "no-store" });
+      const data = (await response.json()) as { user: AuthenticatedUser | null };
+      setCurrentUser(response.ok ? data.user : null);
+    } catch {
+      setCurrentUser(null);
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
     const savedMode = window.localStorage.getItem(themeModeStorageKey);
@@ -319,20 +358,17 @@ function PulseShellFrame({
       setCollapsed(window.innerWidth < responsiveBreakpoints.largeDesktop);
     }
 
-    async function loadSession() {
-      try {
-        const response = await fetch("/api/auth/session", { cache: "no-store" });
-        const data = (await response.json()) as { user: AuthenticatedUser | null };
-        setCurrentUser(data.user);
-      } catch {
-        setCurrentUser(null);
-      } finally {
-        setLoaded(true);
-      }
-    }
-
-    void loadSession();
   }, []);
+
+  useEffect(() => {
+    void refreshCurrentUser();
+  }, [pathname, refreshCurrentUser]);
+
+  useEffect(() => {
+    const refreshOnFocus = () => void refreshCurrentUser();
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [refreshCurrentUser]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -648,6 +684,23 @@ function PulseShellFrame({
     }
   }
 
+  const visibleNavigationGroups = navigationGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canAccessPath(currentUser, item.href))
+    }))
+    .filter((group) => group.items.length > 0);
+  const visibleMobilePrimaryItems = mobilePrimaryItems.filter(
+    (item) => item.key === "more" || canAccessPath(currentUser, item.href)
+  );
+  const visibleMobileOverflowGroups = mobileOverflowGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canAccessPath(currentUser, item.href))
+    }))
+    .filter((group) => group.items.length > 0);
+  const routeAllowed = canAccessPath(currentUser, pathname);
+
   if (!loaded) {
     return null;
   }
@@ -751,8 +804,9 @@ function PulseShellFrame({
   }
 
   return (
-    <PulseShellContext.Provider value>
-      <PulsePreferencesContext.Provider value={{
+    <PulseAuthContext.Provider value={{ user: currentUser, isLoading: !loaded, refresh: refreshCurrentUser }}>
+      <PulseShellContext.Provider value>
+        <PulsePreferencesContext.Provider value={{
         themeMode,
         accentTheme,
         motionMode,
@@ -778,7 +832,7 @@ function PulseShellFrame({
                   <span>Pulse</span>
                 </Link>
 
-                <GlobalSearch onNavigationStart={beginNavigation} />
+                <GlobalSearch user={currentUser} onNavigationStart={beginNavigation} />
 
                 <div className="global-actions">
                   <span className="workspace-context" title={workspace.name}>
@@ -806,7 +860,15 @@ function PulseShellFrame({
                     </div>
                     <div>
                       <strong>{currentUser.name}</strong>
-                      <span>{currentUser.roleLabel}</span>
+                      <span
+                        className="role-badge compact"
+                        style={{
+                          backgroundColor: currentUser.accessRole.color,
+                          color: roleColorForeground(currentUser.accessRole.color)
+                        }}
+                      >
+                        {currentUser.roleLabel}
+                      </span>
                     </div>
                     <ChevronDown size={16} />
                   </button>
@@ -827,7 +889,16 @@ function PulseShellFrame({
                           <div>
                             <strong>{currentUser.name}</strong>
                             <p>{currentUser.email}</p>
-                            <span>{currentUser.roleLabel} · {workspace.name}</span>
+                            <span
+                              className="role-badge"
+                              style={{
+                                backgroundColor: currentUser.accessRole.color,
+                                color: roleColorForeground(currentUser.accessRole.color)
+                              }}
+                            >
+                              {currentUser.roleLabel}
+                            </span>
+                            <small>{workspace.name}</small>
                           </div>
                         </div>
                         <div className="profile-menu-section compact">
@@ -888,7 +959,7 @@ function PulseShellFrame({
                   </div>
 
                   <nav className="nav-list">
-                    {navigationGroups.map((group) => (
+                    {visibleNavigationGroups.map((group) => (
                       <div className="nav-section" key={group.label}>
                         <span className="nav-section-label">{group.label}</span>
                         {group.items.map((item) => {
@@ -937,14 +1008,14 @@ function PulseShellFrame({
                     isNavigating={Boolean(pendingHref)}
                     motionMode={motionMode}
                   >
-                    {children}
+                    {routeAllowed ? children : <AccessDenied />}
                   </PageTransition>
                 </main>
               </div>
 
               <MobileBottomNav
                 activeKey={mobileActiveKey}
-                items={mobilePrimaryItems}
+                items={visibleMobilePrimaryItems}
                 pathname={pathname}
                 moreOpen={moreOpen}
                 moreButtonRef={moreButtonRef}
@@ -985,7 +1056,7 @@ function PulseShellFrame({
                         </button>
                       </div>
                       <div className="mobile-more-groups">
-                        {mobileOverflowGroups.map((group) => (
+                        {visibleMobileOverflowGroups.map((group) => (
                           <section key={group.label}>
                             <h3>{group.label}</h3>
                             <div>
@@ -1019,7 +1090,8 @@ function PulseShellFrame({
             </div>
           </MotionConfig>
         </LazyMotion>
-      </PulsePreferencesContext.Provider>
-    </PulseShellContext.Provider>
+        </PulsePreferencesContext.Provider>
+      </PulseShellContext.Provider>
+    </PulseAuthContext.Provider>
   );
 }

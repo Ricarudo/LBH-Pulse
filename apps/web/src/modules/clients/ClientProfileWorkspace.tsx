@@ -21,7 +21,7 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import type { RequestRecord, RequestStatus } from "@pulse/contracts/requests";
@@ -514,9 +514,9 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   const [siteToEdit, setSiteToEdit] = useState<ClientSite | null>(null);
   const [focusedRecord, setFocusedRecord] = useState("");
 
-  const canEditClients = user?.role === "Admin";
-  const canWriteClients = canRole(user?.role, "crm:write");
-  const canWriteActivity = canRole(user?.role, "crm:activity:write");
+  const canEditClients = canUser(user, "clients:write");
+  const canWriteClients = canUser(user, "clients:write");
+  const canWriteActivity = canUser(user, "activity:write");
 
   useEffect(() => {
     async function loadClientProfile() {
@@ -926,7 +926,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
           </ProfileSection>
         </aside>
 
-        <main className="client-360-main-workspace">
+        <div className="client-360-main-workspace">
           <section className="client-360-toolbar" aria-label="Search and filter client workspace">
             <label className="lead-search client-360-search">
               <Search size={17} />
@@ -1160,7 +1160,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               </div>
             ) : null}
           </section>
-        </main>
+        </div>
       </div>
       {profileDialog === "contact" ? (
         <ClientProfileContactDialog

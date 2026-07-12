@@ -6,7 +6,8 @@ import path from "node:path";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { Express } from "express";
 import { prisma } from "@/lib/db";
-import type { AuthenticatedUser } from "@pulse/contracts/auth";
+import { canUser, type AuthenticatedUser } from "@pulse/contracts/auth";
+import type { Permission } from "@pulse/contracts/access-control";
 import { recordActivity } from "@/lib/services/activityService";
 import {
   projectDocumentCategories,
@@ -129,6 +130,39 @@ function documentOrigin(document: {
   if (document.quoteId) return { type: "Quote" as const, id: document.quoteId };
   if (document.projectId) return { type: "Project" as const, id: document.projectId };
   throw new Error("DOCUMENT_ORIGIN_INVALID");
+}
+
+async function assertDocumentAccess(
+  document: { requestId: string | null; quoteId: string | null; projectId: string | null },
+  user: AuthenticatedUser,
+  mode: "read" | "write"
+) {
+  const permissions = new Set<Permission>();
+  if (document.requestId) {
+    permissions.add(mode === "read" ? "requests:read" : "requests:write");
+    if (mode === "read") {
+      const request = await prisma.request.findUnique({
+        where: { id: document.requestId },
+        select: { relatedQuoteId: true, relatedQuote: { select: { project: { select: { id: true } } } } }
+      });
+      if (request?.relatedQuoteId) permissions.add("quotes:read");
+      if (request?.relatedQuote?.project) permissions.add("projects:read");
+    }
+  }
+  if (document.quoteId) {
+    permissions.add(mode === "read" ? "quotes:read" : "quotes:write");
+    if (mode === "read") {
+      const quote = await prisma.quote.findUnique({
+        where: { id: document.quoteId },
+        select: { project: { select: { id: true } } }
+      });
+      if (quote?.project) permissions.add("projects:read");
+    }
+  }
+  if (document.projectId) permissions.add(mode === "read" ? "projects:read" : "projects:write");
+  if (![...permissions].some((permission) => canUser(user, permission))) {
+    throw new Error("DOCUMENT_ACCESS_DENIED");
+  }
 }
 
 function visibleWhere(stage: Stage, lineage: Lineage) {
@@ -409,6 +443,7 @@ export async function uploadDocument(
 export async function getDocumentDownload(id: string, user: AuthenticatedUser) {
   const document = await prisma.lifecycleDocument.findFirst({ where: { id, deletedAt: null } });
   if (!document) throw new Error("DOCUMENT_NOT_FOUND");
+  await assertDocumentAccess(document, user, "read");
   if (document.scanStatus !== "Clean" || !document.objectKey) throw new Error("DOCUMENT_NOT_AVAILABLE");
   const { client, bucket } = storageConfig();
   const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: document.objectKey }));
@@ -484,6 +519,7 @@ export async function getDocumentPreview(
 ) {
   const document = await prisma.lifecycleDocument.findFirst({ where: { id, deletedAt: null } });
   if (!document) throw new Error("DOCUMENT_NOT_FOUND");
+  await assertDocumentAccess(document, user, "read");
   if (document.scanStatus !== "Clean" || !document.objectKey) throw new Error("DOCUMENT_NOT_AVAILABLE");
   const byteSize = Number(document.byteSize);
   const range = parseDocumentRange(rangeHeader, byteSize);
@@ -519,6 +555,7 @@ export async function getDocumentPreview(
 export async function softDeleteDocument(id: string, user: AuthenticatedUser) {
   const existing = await prisma.lifecycleDocument.findFirst({ where: { id, deletedAt: null } });
   if (!existing) throw new Error("DOCUMENT_NOT_FOUND");
+  await assertDocumentAccess(existing, user, "write");
   const origin = documentOrigin(existing);
   await prisma.lifecycleDocument.update({
     where: { id },

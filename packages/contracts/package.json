@@ -19,6 +19,10 @@
       "types": "./dist/activity.d.ts",
       "default": "./dist/activity.js"
     },
+    "./access-control": {
+      "types": "./dist/access-control.d.ts",
+      "default": "./dist/access-control.js"
+    },
     "./auth": {
       "types": "./dist/auth.d.ts",
       "default": "./dist/auth.js"

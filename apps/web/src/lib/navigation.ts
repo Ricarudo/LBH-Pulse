@@ -8,11 +8,13 @@ import {
   Home,
   Inbox,
   Menu,
+  MapPin,
   ReceiptText,
   Settings,
   UserRound
 } from "lucide-react";
 import type { GlobalSearchKind } from "@pulse/contracts/search";
+import { canUser, type AuthenticatedUser } from "@pulse/contracts/auth";
 
 export type PulsePage =
   | "hub"
@@ -98,7 +100,8 @@ export const mobileOverflowGroups = [
     items: [
       { href: "/directory", label: "Directory overview", icon: Building2 },
       { href: "/clients", label: "Clients", icon: Building2 },
-      { href: "/contacts", label: "Contacts", icon: UserRound }
+      { href: "/contacts", label: "Contacts", icon: UserRound },
+      { href: "/directory/sites", label: "Sites / Locations", icon: MapPin }
     ]
   },
   {
@@ -172,7 +175,54 @@ export function searchResultHref(kind: GlobalSearchKind, id: string) {
   if (kind === "client") return `/clients/${id}`;
   if (kind === "quote") return `/quotes/${id}`;
   if (kind === "project") return `/projects?record=${encodeURIComponent(id)}`;
+  if (kind === "item") return `/directory/items/${id}`;
   return `/billing?record=${encodeURIComponent(id)}`;
+}
+
+export function canAccessPath(
+  user: AuthenticatedUser | null | undefined,
+  pathname: string
+) {
+  if (!user) return false;
+  if (pathname === "/" || pathname.startsWith("/hub")) return true;
+  if (pathname.startsWith("/requests") || pathname === "/leads") {
+    return canUser(user, "requests:read");
+  }
+  if (pathname.startsWith("/quotes")) return canUser(user, "quotes:read");
+  if (
+    pathname.startsWith("/projects") ||
+    pathname.startsWith("/procurement") ||
+    pathname.startsWith("/field")
+  ) {
+    return canUser(user, "projects:read");
+  }
+  if (pathname.startsWith("/billing")) return canUser(user, "billing:read");
+  if (pathname.startsWith("/activity")) return canUser(user, "activity:read");
+  if (pathname.startsWith("/statistics")) return canUser(user, "analytics:read");
+  if (pathname.startsWith("/directory/items")) return canUser(user, "items:read");
+  if (
+    pathname.startsWith("/clients") ||
+    pathname.startsWith("/contacts") ||
+    pathname.startsWith("/directory/clients") ||
+    pathname.startsWith("/directory/contacts") ||
+    pathname.startsWith("/directory/sites")
+  ) {
+    return canUser(user, "clients:read");
+  }
+  if (pathname === "/directory" || pathname === "/directory/") {
+    return canUser(user, "clients:read") || canUser(user, "items:read");
+  }
+  if (pathname.startsWith("/settings/users")) return canUser(user, "users:manage");
+  if (pathname.startsWith("/settings/roles")) return user.isSystemAdmin;
+  if (
+    pathname.startsWith("/settings/general") ||
+    pathname.startsWith("/settings/request-checklists") ||
+    pathname.startsWith("/settings/roadmap")
+  ) {
+    return canUser(user, "settings:read");
+  }
+  if (pathname.startsWith("/settings")) return true;
+  return true;
 }
 
 const topLevelOrder: NavigationKey[] = [

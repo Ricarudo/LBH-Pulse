@@ -7,6 +7,11 @@ import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
 import { changeLocalUserPasswordSchema } from "@pulse/contracts/local-users";
 import { AuthError, AuthService } from "@/shared/auth.service";
+import {
+  accessRoleInclude,
+  effectiveRolePermissions,
+  roleSummary
+} from "@/lib/services/roleAccessService";
 
 const loginSchema = z.object({
   email: z.string().trim().email(),
@@ -31,12 +36,14 @@ export class AuthController {
   ) {
     const payload = loginSchema.parse(body);
     const user = await prisma.localUser.findUnique({
-      where: { email: payload.email.toLowerCase() }
+      where: { email: payload.email.toLowerCase() },
+      include: { accessRole: { include: accessRoleInclude } }
     });
 
     if (
       !user ||
       !user.active ||
+      Boolean(user.accessRole.archivedAt) ||
       user.authProvider !== "LOCAL" ||
       !verifyPassword(payload.password, user.passwordHash)
     ) {
@@ -46,9 +53,15 @@ export class AuthController {
 
     const updatedUser = await prisma.localUser.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() }
+      data: { lastLoginAt: new Date() },
+      include: { accessRole: { include: accessRoleInclude } }
     });
-    const authUser = toAuthenticatedUser(updatedUser);
+    const authUser = toAuthenticatedUser({
+      ...updatedUser,
+      accessRole: roleSummary(updatedUser.accessRole),
+      permissions: effectiveRolePermissions(updatedUser.accessRole),
+      isSystemAdmin: updatedUser.accessRole.protected && updatedUser.accessRole.systemKey === "ADMIN"
+    });
     this.auth.setSessionCookie(response, user.id);
 
     await recordActivity({
@@ -112,9 +125,15 @@ export class AuthController {
       data: {
         passwordHash: hashPassword(payload.newPassword),
         mustChangePassword: false
-      }
+      },
+      include: { accessRole: { include: accessRoleInclude } }
     });
-    const authUser = toAuthenticatedUser(updatedUser);
+    const authUser = toAuthenticatedUser({
+      ...updatedUser,
+      accessRole: roleSummary(updatedUser.accessRole),
+      permissions: effectiveRolePermissions(updatedUser.accessRole),
+      isSystemAdmin: updatedUser.accessRole.protected && updatedUser.accessRole.systemKey === "ADMIN"
+    });
 
     await recordActivity({
       user: authUser,

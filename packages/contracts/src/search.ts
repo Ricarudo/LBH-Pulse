@@ -3,7 +3,8 @@ export type GlobalSearchKind =
   | "client"
   | "quote"
   | "project"
-  | "invoice";
+  | "invoice"
+  | "item";
 
 export type GlobalSearchResult = {
   kind: GlobalSearchKind;

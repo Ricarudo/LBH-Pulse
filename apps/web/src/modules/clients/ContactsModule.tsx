@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, Building2, Filter, Plus, Search, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
   clientOwners,
@@ -134,7 +134,7 @@ export function ContactsModule() {
   const [loadError, setLoadError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const canCreateContact = canRole(user?.role, "crm:write");
+  const canCreateContact = canUser(user, "clients:write");
 
   useEffect(() => {
     async function loadContacts() {
@@ -242,7 +242,7 @@ export function ContactsModule() {
               <span>/</span>
               <span>Contacts</span>
             </nav>
-            <h2>Contacts</h2>
+            <h1>Contacts</h1>
             <p className="clients-command-summary">
               <strong>Directory</strong>
               <span aria-hidden="true"> · </span>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import {
   buildQuickCreatePayload,
   createBlankQuickCreateForm,
@@ -90,7 +90,7 @@ export function ClientsModule() {
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const clientNameInputRef = useRef<HTMLInputElement>(null);
 
-  const canWriteCrm = canRole(user?.role, "crm:write");
+  const canWriteCrm = canUser(user, "clients:write");
 
   const hasActiveFilters =
     searchTerm.trim() !== "" ||
@@ -295,7 +295,7 @@ export function ClientsModule() {
               <span>/</span>
               <span>Clients</span>
             </nav>
-            <h2>Clients</h2>
+            <h1>Clients</h1>
             <p className="clients-command-summary">
               <strong>Directory</strong>
               <span aria-hidden="true"> · </span>
