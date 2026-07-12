@@ -1,4 +1,3 @@
-import type { LocalRole } from "./auth";
 
 export const dashboardScopes = ["mine", "team", "all"] as const;
 export type DashboardScope = (typeof dashboardScopes)[number];
@@ -26,14 +25,14 @@ export type DashboardPreferencesRecord = {
 };
 
 export type DashboardTiming = "overdue" | "today" | "upcoming" | "later" | "none";
-export type DashboardWorkKind = "request" | "request-task" | "quote" | "project" | "invoice";
+export type DashboardWorkKind = "request" | "quote" | "project" | "invoice";
 
 export type DashboardWorkItem = {
   id: string;
   kind: DashboardWorkKind;
   entityId: string;
   requestId?: string;
-  taskId?: string;
+  stepId?: string;
   reference: string;
   title: string;
   context: string;
@@ -45,6 +44,7 @@ export type DashboardWorkItem = {
   attentionReasons: string[];
   href: string;
   canComplete: boolean;
+  suggested?: boolean;
 };
 
 export type DashboardScheduleItem = {
@@ -101,7 +101,8 @@ export type DashboardDataResponse = {
   viewer: {
     id: string;
     name: string;
-    role: LocalRole;
+    role: string;
+    roleName: string;
   };
   widgets: Partial<DashboardWidgetPayloadMap>;
 };

@@ -1,10 +1,9 @@
 import { Prisma } from "@/generated/prisma/client";
 import {
-  canRole,
-  canSeeActivity,
-  type AuthenticatedUser,
-  type LocalRole
+  canUser,
+  type AuthenticatedUser
 } from "@pulse/contracts/auth";
+import { canAccessActivity } from "@/lib/services/activityService";
 import {
   defaultDashboardPreferences,
   normalizeDashboardPreferences
@@ -125,20 +124,30 @@ function requestMatchesScope(
   request: {
     assignedToId: string | null;
     assignedTo: { name: string; role: string } | null;
+    collaborators: Array<{ user: { id: string; name: string; role: string } }>;
+    updates: Array<{ assigneeId: string | null; assignee: { name: string; role: string } | null }>;
   },
   teamNames: Set<string>
 ) {
   if (scope === "all") return true;
   if (scope === "mine") {
     return request.assignedToId === user.id ||
+      request.updates.some((update) => update.assigneeId === user.id) ||
+      request.collaborators.some((collaborator) => collaborator.user.id === user.id) ||
       normalizeDashboardOwner(request.assignedTo?.name) === normalizeDashboardOwner(user.name);
   }
   return request.assignedTo?.role === user.role ||
+    request.updates.some((update) => update.assignee?.role === user.role) ||
+    request.collaborators.some((collaborator) => collaborator.user.role === user.role) ||
     teamNames.has(normalizeDashboardOwner(request.assignedTo?.name));
 }
 
-function workHref(kind: DashboardWorkItem["kind"], entityId: string) {
-  if (kind === "request" || kind === "request-task") return `/requests/${entityId}`;
+function workHref(kind: DashboardWorkItem["kind"], entityId: string, updateId?: string) {
+  if (kind === "request") {
+    return updateId
+      ? `/requests/${entityId}?tab=updates&update=${encodeURIComponent(updateId)}`
+      : `/requests/${entityId}`;
+  }
   if (kind === "quote") return `/quotes?record=${encodeURIComponent(entityId)}`;
   if (kind === "project") return `/projects?record=${encodeURIComponent(entityId)}`;
   return `/billing?record=${encodeURIComponent(entityId)}`;
@@ -157,9 +166,11 @@ function requestAttentionReasons(request: {
   status: string;
   priority: string;
   assignedToId: string | null;
+  currentStep: { assigneeId: string | null; targetDate: Date | null } | null;
 }) {
   const reasons: string[] = [];
   if (!request.assignedToId) reasons.push("Needs an owner");
+  if (request.currentStep && !request.currentStep.assigneeId) reasons.push("Needs a step assignee");
   if (request.priority === "Urgent") reasons.push("Urgent priority");
   if (request.status === "Missing Info") reasons.push("Missing information");
   if (request.status === "Site Visit Required") reasons.push("Site visit required");
@@ -190,14 +201,14 @@ export async function getDashboardPreferences(
     where: { id: user.id },
     select: { dashboardPreferences: true }
   });
-  return normalizeDashboardPreferences(record.dashboardPreferences, user.role);
+  return normalizeDashboardPreferences(record.dashboardPreferences, user.isSystemAdmin);
 }
 
 export async function updateDashboardPreferences(
   user: AuthenticatedUser,
   input: DashboardPreferencesInput
 ): Promise<DashboardPreferencesRecord> {
-  const normalized = normalizeDashboardPreferences(input, user.role);
+  const normalized = normalizeDashboardPreferences(input, user.isSystemAdmin);
   await prisma.localUser.update({
     where: { id: user.id },
     data: {
@@ -208,7 +219,7 @@ export async function updateDashboardPreferences(
 }
 
 export async function resetDashboardPreferences(user: AuthenticatedUser) {
-  const preferences = defaultDashboardPreferences(user.role);
+  const preferences = defaultDashboardPreferences(user.isSystemAdmin);
   await prisma.localUser.update({
     where: { id: user.id },
     data: {
@@ -233,7 +244,7 @@ export async function getDashboardData(
   const businessDate = workspaceBusinessDate(
     workspace?.timeZone ?? "America/Puerto_Rico"
   );
-  const canComplete = canRole(user.role, "crm:activity:write");
+  const canComplete = canUser(user, "activity:write");
   const needsOperationalData = requestedWidgets.some((id) => id !== "recent-activity");
   const activeUsers = await prisma.localUser.findMany({
     where: {
@@ -260,14 +271,25 @@ export async function getDashboardData(
             priority: true,
             companyName: true,
             dueDate: true,
-            nextFollowUpAt: true,
-            nextAction: true,
             assignedToId: true,
             assignedTo: { select: { name: true, role: true } },
             client: { select: { displayName: true } },
-            tasks: {
-              where: { completedAt: null },
-              select: { id: true, title: true, owner: true, dueAt: true }
+            updates: {
+              where: { kind: "step", stepStatus: "open" },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: 1,
+              select: {
+                id: true,
+                title: true,
+                body: true,
+                targetDate: true,
+                stepStatus: true,
+                assigneeId: true,
+                assignee: { select: { name: true, role: true } }
+              }
+            },
+            collaborators: {
+              select: { user: { select: { id: true, name: true, role: true } } }
             }
           }
         }),
@@ -314,61 +336,56 @@ export async function getDashboardData(
       ])
     : [[], [], [], []] as const;
 
-  const scopedRequests = requests.filter((request) =>
-    requestMatchesScope(scope, user, request, teamNames)
-  );
-  const scopedQuotes = quotes.filter((quote) =>
-    recordMatchesScope(scope, user, quote.owner, teamNames)
-  );
-  const scopedProjects = projects.filter((project) =>
-    recordMatchesScope(scope, user, project.owner, teamNames)
-  );
-  const scopedInvoices = invoices.filter((invoice) =>
-    recordMatchesScope(scope, user, invoice.owner, teamNames)
-  );
+  const scopedRequests = canUser(user, "requests:read")
+    ? requests.filter((request) => requestMatchesScope(scope, user, request, teamNames))
+    : [];
+  const scopedQuotes = canUser(user, "quotes:read")
+    ? quotes.filter((quote) => recordMatchesScope(scope, user, quote.owner, teamNames))
+    : [];
+  const scopedProjects = canUser(user, "projects:read")
+    ? projects.filter((project) => recordMatchesScope(scope, user, project.owner, teamNames))
+    : [];
+  const scopedInvoices = canUser(user, "billing:read")
+    ? invoices.filter((invoice) => recordMatchesScope(scope, user, invoice.owner, teamNames))
+    : [];
 
   const workItems: DashboardWorkItem[] = [];
   for (const request of scopedRequests) {
     if (terminalRequestStatuses.has(request.status)) continue;
     const dueDate = dateOutput(request.dueDate);
+    const currentStep = request.updates[0] ?? null;
+    const suggestedTitle = !request.assignedToId
+      ? "Assign an owner"
+      : request.status === "Missing Info"
+        ? "Resolve missing information"
+        : request.status === "Site Visit Required"
+          ? "Complete required site visit"
+          : "Set a current step";
+    const stepTitle = currentStep
+      ? currentStep.title || currentStep.body || "Current step"
+      : suggestedTitle;
+    const stepDate = dateOutput(currentStep?.targetDate);
+    const workDate = stepDate || dueDate;
+    const explicitStep = Boolean(currentStep && currentStep.stepStatus === "open");
+    const stepOwner = currentStep?.assignee?.name || request.assignedTo?.name || "Unassigned";
     workItems.push({
       id: `request:${request.id}`,
       kind: "request",
       entityId: request.id,
+      stepId: currentStep?.id,
       reference: request.requestNumber,
-      title: request.title,
+      title: stepTitle,
       context: request.companyName || request.client?.displayName || "Request",
-      owner: request.assignedTo?.name ?? "Unassigned",
-      status: request.status,
+      owner: stepOwner,
+      status: explicitStep ? "Current step" : "Suggested",
       priority: request.priority,
-      dueDate: dueDate || undefined,
-      timing: classifyDashboardDate(dueDate, businessDate),
-      attentionReasons: requestAttentionReasons(request),
-      href: workHref("request", request.id),
-      canComplete: false
+      dueDate: workDate || undefined,
+      timing: classifyDashboardDate(workDate, businessDate),
+      attentionReasons: requestAttentionReasons({ ...request, currentStep }),
+      href: workHref("request", request.id, currentStep?.id),
+      canComplete: canComplete && explicitStep,
+      suggested: !explicitStep
     });
-
-    for (const task of request.tasks) {
-      if (!recordMatchesScope(scope, user, task.owner, teamNames) && scope !== "all") continue;
-      const taskDueDate = dateOutput(task.dueAt);
-      workItems.push({
-        id: `request-task:${task.id}`,
-        kind: "request-task",
-        entityId: request.id,
-        requestId: request.id,
-        taskId: task.id,
-        reference: request.requestNumber,
-        title: task.title,
-        context: request.title,
-        owner: task.owner || "Unassigned",
-        status: "Open task",
-        dueDate: taskDueDate || undefined,
-        timing: classifyDashboardDate(taskDueDate, businessDate),
-        attentionReasons: isUnassigned(task.owner) ? ["Needs an owner"] : [],
-        href: workHref("request-task", request.id),
-        canComplete
-      });
-    }
   }
 
   for (const quote of scopedQuotes) {
@@ -472,32 +489,18 @@ export async function getDashboardData(
       timing: classifyDashboardDate(dueDate, businessDate),
       href: workHref("request", request.id)
     });
-    const followUpDate = dateOutput(request.nextFollowUpAt);
-    if (followUpDate) addSchedule({
-      id: `request-follow-up:${request.id}`,
+    const currentStep = request.updates[0] ?? null;
+    const stepDate = dateOutput(currentStep?.targetDate);
+    if (stepDate) addSchedule({
+      id: `request-step:${request.id}`,
       kind: "follow-up",
       reference: request.requestNumber,
-      title: request.nextAction || `Follow up on ${request.title}`,
+      title: currentStep?.title || currentStep?.body || `Current step for ${request.title}`,
       context,
-      date: followUpDate,
-      timing: classifyDashboardDate(followUpDate, businessDate),
-      href: workHref("request", request.id)
+      date: stepDate,
+      timing: classifyDashboardDate(stepDate, businessDate),
+      href: workHref("request", request.id, currentStep?.id)
     });
-    for (const task of request.tasks) {
-      if (!recordMatchesScope(scope, user, task.owner, teamNames) && scope !== "all") continue;
-      const taskDate = dateOutput(task.dueAt);
-      if (!taskDate) continue;
-      addSchedule({
-        id: `task-due:${task.id}`,
-        kind: "request-task",
-        reference: request.requestNumber,
-        title: task.title,
-        context: request.title,
-        date: taskDate,
-        timing: classifyDashboardDate(taskDate, businessDate),
-        href: workHref("request-task", request.id)
-      });
-    }
   }
   for (const project of scopedProjects) {
     if (terminalProjectStatuses.has(project.status)) continue;
@@ -542,7 +545,7 @@ export async function getDashboardData(
     Invoice: invoiceIds
   };
   let activityItems: DashboardActivityItem[] = [];
-  if (widgetSet.has("recent-activity")) {
+  if (widgetSet.has("recent-activity") && canUser(user, "activity:read")) {
     const activities = await prisma.activity.findMany({
       where: {
         relatedEntityType: { in: Array.from(operationalActivityEntities) }
@@ -556,7 +559,7 @@ export async function getDashboardData(
         .map((candidate) => candidate.id)
     );
     activityItems = activities
-      .filter((activity) => canSeeActivity(user, activity))
+      .filter((activity) => canAccessActivity(user, activity))
       .filter((activity) => {
         if (scope === "all") return true;
         const actorMatches = scope === "mine"
@@ -653,7 +656,8 @@ export async function getDashboardData(
     viewer: {
       id: user.id,
       name: user.name,
-      role: user.role
+      role: user.role,
+      roleName: user.roleLabel
     },
     widgets
   };

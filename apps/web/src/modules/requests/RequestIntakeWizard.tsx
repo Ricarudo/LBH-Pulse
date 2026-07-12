@@ -25,7 +25,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  canRole,
+  canUser,
   type AuthenticatedUser
 } from "@pulse/contracts/auth";
 import { useResponsiveMode } from "@/lib/responsive";
@@ -551,7 +551,7 @@ export function RequestIntakeWizard({
     selectedClient?.contacts.find((contact) => contact.id === selectedContactId) ?? null;
   const selectedSite =
     selectedClient?.sites.find((site) => site.id === selectedSiteId) ?? null;
-  const canCreateContact = canRole(currentUser?.role, "crm:write");
+  const canCreateContact = canUser(currentUser, "clients:write");
   const isBusy = isSavingClient || isSavingContact || isSavingSite || isSavingRequest;
   isBusyRef.current = isBusy;
 
@@ -906,7 +906,7 @@ export function RequestIntakeWizard({
     }
 
     if (!canCreateContact) {
-      setContactErrors({ form: "CRM write access is required to create points of contact." });
+      setContactErrors({ form: "Client management access is required to create points of contact." });
       return;
     }
 
@@ -1086,8 +1086,6 @@ export function RequestIntakeWizard({
           assignedToId: normalized.assignedToId,
           receivedDate: today,
           dueDate: normalized.dueDate,
-          nextAction: "",
-          nextFollowUpAt: "",
           missingInfo: "",
           siteVisitNeeded: normalized.siteVisitNeeded,
           siteVisitCompleted: false,
@@ -1685,7 +1683,7 @@ export function RequestIntakeWizard({
                   <div className="request-wizard-empty">
                     <strong>No points of contact yet.</strong>
                     {!canCreateContact ? (
-                      <span>CRM write access is required to create one.</span>
+                      <span>Client management access is required to create one.</span>
                     ) : null}
                   </div>
                 ) : null}
@@ -2322,7 +2320,7 @@ export function RequestIntakeWizard({
                   {selectedClient && !selectedClient.contacts.length ? (
                     <div className="request-wizard-empty">
                       <strong>No points of contact yet.</strong>
-                      {!canCreateContact ? <span>CRM write access is required to create one.</span> : null}
+                      {!canCreateContact ? <span>Client management access is required to create one.</span> : null}
                     </div>
                   ) : null}
 

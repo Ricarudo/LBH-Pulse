@@ -1,25 +1,42 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { toAuthenticatedUser, type AuthenticatedUser } from "@pulse/contracts/auth";
+import {
+  canUser,
+  type AuthenticatedUser,
+} from "@pulse/contracts/auth";
+import { effectiveRolePermissions } from "@/lib/services/roleAccessService";
 import { recordActivity } from "@/lib/services/activityService";
 import { toInvoiceRecord, toProjectRecord, toQuoteRecord } from "@/lib/services/workService";
 import type {
+  CreateRequestUpdateInput,
   RequestActivityType,
   RequestAssignee,
-  RequestRecord
+  RequestRecord,
+  RequestStepStatus,
+  RequestUpdate
 } from "@pulse/contracts/requests";
 import type {
   ConvertRequestInput,
   CreateRequestActivityInput,
   CreateRequestInput,
   CreateRequestTaskInput,
+  RequestUpdateFilter,
   UpdateRequestChecklistItemInput,
   UpdateRequestInput
 } from "@pulse/contracts/requests";
 
+const requestUpdateInclude = {
+  author: { include: { accessRole: true } },
+  assignee: { include: { accessRole: true } },
+  mentions: {
+    include: { user: true },
+    orderBy: { createdAt: "asc" }
+  }
+} satisfies Prisma.RequestUpdateInclude;
+
 const requestInclude = {
-  assignedTo: true,
-  createdBy: true,
+  assignedTo: { include: { accessRole: true } },
+  createdBy: { include: { accessRole: true } },
   client: true,
   contact: true,
   site: true,
@@ -56,6 +73,15 @@ const requestInclude = {
       createdAt: "desc"
     }
   },
+  updates: {
+    include: requestUpdateInclude,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 100
+  },
+  collaborators: {
+    include: { user: { include: { accessRole: true } } },
+    orderBy: { createdAt: "asc" }
+  },
   documents: {
     where: { deletedAt: null },
     orderBy: {
@@ -67,13 +93,6 @@ const requestInclude = {
 type RequestWithRelations = Prisma.RequestGetPayload<{
   include: typeof requestInclude;
 }>;
-
-const requestAssigneeWhere = {
-  active: true,
-  role: {
-    in: ["Admin", "Sales", "ProjectManager"]
-  }
-};
 
 function parseDateInput(value?: string) {
   if (!value) {
@@ -181,14 +200,23 @@ function deriveIntakeStatus(request: RequestWithRelations) {
 }
 
 function isValidRequestAssignee(
-  assignee?: { id: string; name: string; email: string; role: string } | null
+  assignee?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    active: boolean;
+    accessRole: {
+      archivedAt: Date | null;
+      protected: boolean;
+      systemKey: string | null;
+      permissions: Array<{ permission: string }>;
+    };
+  } | null
 ) {
-  return Boolean(
-    assignee &&
-      (assignee.role === "Admin" ||
-        assignee.role === "Sales" ||
-        assignee.role === "ProjectManager")
-  );
+  if (!assignee || !assignee.active || assignee.accessRole.archivedAt) return false;
+  const permissions = effectiveRolePermissions(assignee.accessRole);
+  return permissions.includes("requests:read") && permissions.includes("activity:write");
 }
 
 async function resolveRequestAssignee(assignedToId?: string | null) {
@@ -196,9 +224,10 @@ async function resolveRequestAssignee(assignedToId?: string | null) {
     return null;
   }
 
-  const assignee = (await prisma.localUser.findUnique({
-    where: { id: assignedToId }
-  })) as { id: string; name: string; email: string; role: string } | null;
+  const assignee = await prisma.localUser.findUnique({
+    where: { id: assignedToId },
+    include: { accessRole: { include: { permissions: true } } }
+  });
 
   if (!isValidRequestAssignee(assignee)) {
     throw new Error("REQUEST_ASSIGNEE_INVALID");
@@ -207,15 +236,138 @@ async function resolveRequestAssignee(assignedToId?: string | null) {
   return assignee;
 }
 
-function toRequestRecord(request: RequestWithRelations): RequestRecord {
+function toAuthorSnapshot(user: {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+  accessRole?: { id: string; name: string; color: string } | null;
+} | null, fallbackName = "Pulse System", fallbackRole = ""): {
+  id: string | null;
+  name: string;
+  email: string;
+  role: string;
+  roleLabel: string;
+  roleColor: string;
+} {
+  const role = user?.accessRole?.id ?? user?.role ?? "";
+  return {
+    id: user?.id ?? null,
+    name: user?.name || fallbackName,
+    email: user?.email ?? "",
+    role,
+    roleLabel: user?.accessRole?.name ?? (fallbackRole || "Pulse System"),
+    roleColor: user?.accessRole?.color ?? "#64748B"
+  };
+}
+
+function toAssigneeSnapshot(user: {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  accessRole: { id: string; name: string; color: string };
+} | null | undefined): RequestAssignee | null {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.accessRole.id,
+    roleLabel: user.accessRole.name,
+    roleColor: user.accessRole.color
+  };
+}
+
+function toRequestUpdateRecord(
+  update: RequestWithRelations["updates"][number],
+  viewerId?: string
+): RequestUpdate {
+  const author = toAuthorSnapshot(
+    update.author,
+    update.authorNameSnapshot,
+    update.authorRoleSnapshot ?? ""
+  );
+  const assignee = update.assignee
+    ? toAssigneeSnapshot(update.assignee)
+    : update.assigneeId && update.assigneeNameSnapshot
+      ? {
+          id: update.assigneeId,
+          name: update.assigneeNameSnapshot,
+          email: update.assigneeEmailSnapshot ?? "",
+          role: "",
+          roleLabel: "Former assignee",
+          roleColor: "#64748B"
+        }
+      : null;
+  const stepStatus: RequestStepStatus | null = update.stepStatus === "open" ||
+    update.stepStatus === "completed" ||
+    update.stepStatus === "superseded"
+    ? update.stepStatus
+    : null;
+
+  return {
+    id: update.id,
+    requestId: update.requestId,
+    kind: (update.kind === "comment" || update.kind === "step" || update.kind === "system"
+      ? update.kind
+      : "system") as "comment" | "step" | "system",
+    title: update.title || (update.kind === "step" ? "Current step" : "Update"),
+    body: update.body ?? "",
+    author,
+    assignee,
+    targetDate: formatDateInput(update.targetDate),
+    stepStatus,
+    supersedesId: update.supersedesId,
+    createdAt: formatDateTime(update.createdAt),
+    updatedAt: formatDateTime(update.updatedAt),
+    mentions: update.mentions.map((mention) => ({
+      id: mention.id,
+      userId: mention.userId,
+      userName: mention.user.name,
+      readAt: formatDateTime(mention.readAt)
+    }))
+  };
+}
+
+function toRequestRecord(request: RequestWithRelations, viewerId?: string): RequestRecord {
   const assignedToName = request.assignedTo?.name ?? "Unassigned";
-  const assignedToRole =
-    request.assignedTo?.role === "Admin" ||
-    request.assignedTo?.role === "Sales" ||
-    request.assignedTo?.role === "ProjectManager" ||
-    request.assignedTo?.role === "Technician"
-      ? request.assignedTo.role
-      : "";
+  const assignedToRole = request.assignedTo?.role ?? "";
+
+  const updates = request.updates.map((update) => toRequestUpdateRecord(update, viewerId));
+  const currentStep = updates.find((update) => update.id === request.currentStepId) ?? null;
+  const lead = toAssigneeSnapshot(request.assignedTo);
+  const collaborators = request.collaborators
+    .map((collaborator) => toAssigneeSnapshot(collaborator.user))
+    .filter((collaborator): collaborator is RequestAssignee => Boolean(collaborator));
+  const unreadMentionCount = viewerId
+    ? request.updates.reduce(
+        (count, update) =>
+          count + update.mentions.filter(
+            (mention) => mention.userId === viewerId && !mention.readAt
+          ).length,
+        0
+      )
+    : 0;
+  const compatibilityActivity = updates
+    .filter((update) => update.kind !== "step")
+    .map((update) => ({
+      id: update.id,
+      type: (update.kind === "comment" ? "Note" : "Status") as RequestActivityType,
+      title: update.title,
+      body: update.body || undefined,
+      actor: update.author.name,
+      at: update.createdAt
+    }));
+  const compatibilityTasks = updates
+    .filter((update) => update.kind === "step")
+    .map((update) => ({
+      id: update.id,
+      title: update.title,
+      dueAt: update.targetDate,
+      owner: update.assignee?.name ?? update.author.name ?? "Unassigned",
+      completed: update.stepStatus === "completed"
+    }));
 
   return {
     id: request.id,
@@ -250,8 +402,8 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
     createdByName: request.createdBy?.name ?? "Pulse System",
     receivedDate: formatDateInput(request.receivedDate),
     dueDate: formatDateInput(request.dueDate),
-    nextAction: request.nextAction ?? "",
-    nextFollowUpAt: formatDateInput(request.nextFollowUpAt),
+    nextAction: currentStep?.body ?? "",
+    nextFollowUpAt: currentStep?.targetDate ?? "",
     lastActivityAt: formatDateTime(request.lastActivityAt ?? request.updatedAt),
     missingInfo: request.missingInfo ?? "",
     siteVisitNeeded: request.siteVisitNeeded,
@@ -263,6 +415,11 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
     archivedAt: request.archivedAt ? request.archivedAt.toISOString() : undefined,
     createdAt: formatDateInput(request.createdAt),
     updatedAt: request.updatedAt.toISOString(),
+    lead,
+    collaborators,
+    currentStep,
+    unreadMentionCount,
+    updates,
     documents: request.documents.map((document) => {
       const available = document.scanStatus === "Clean" && Boolean(document.objectKey);
       return {
@@ -284,21 +441,8 @@ function toRequestRecord(request: RequestWithRelations): RequestRecord {
         previewUrl: available ? `/api/documents/${document.id}/preview` : null
       };
     }),
-    activity: request.activities.map((activity) => ({
-      id: activity.id,
-      type: activity.type as RequestActivityType,
-      title: activity.title,
-      body: activity.body ?? undefined,
-      actor: activity.actor,
-      at: formatDateTime(activity.createdAt)
-    })),
-    tasks: request.tasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      dueAt: formatDateInput(task.dueAt),
-      owner: task.owner,
-      completed: Boolean(task.completedAt)
-    })),
+    activity: compatibilityActivity,
+    tasks: compatibilityTasks,
     checklistItems: request.checklistItems.map((item) => ({
       id: item.id,
       label: item.label,
@@ -377,6 +521,438 @@ async function getRequestOrThrow(id: string) {
   }
 
   return request;
+}
+
+type RequestDb = typeof prisma | Prisma.TransactionClient;
+
+function updateActorFields(user?: AuthenticatedUser) {
+  return {
+    authorId: user?.id ?? null,
+    authorNameSnapshot: user?.name ?? "Pulse System",
+    authorEmailSnapshot: user?.email ?? null,
+    authorRoleSnapshot: user?.roleLabel ?? "System"
+  };
+}
+
+async function createRequestSystemUpdate(
+  db: RequestDb,
+  requestId: string,
+  title: string,
+  body: string | null,
+  user?: AuthenticatedUser,
+  createdAt = new Date()
+) {
+  const update = await db.requestUpdate.create({
+    data: {
+      requestId,
+      kind: "system",
+      title,
+      body,
+      ...updateActorFields(user),
+      createdAt,
+      updatedAt: createdAt
+    }
+  });
+  await db.request.update({
+    where: { id: requestId },
+    data: { lastActivityAt: createdAt }
+  });
+  return update;
+}
+
+function isClosedOrConverted(status: string) {
+  return ["No Bid", "Cancelled", "Duplicate", "Converted to Quote"].includes(status);
+}
+
+async function resolveRequestUpdateAssignee(assigneeId?: string | null) {
+  if (!assigneeId) return null;
+  const assignee = await prisma.localUser.findFirst({
+    where: { id: assigneeId, active: true },
+    include: { accessRole: { include: { permissions: true } } }
+  });
+  if (!isValidRequestAssignee(assignee)) throw new Error("REQUEST_UPDATE_ASSIGNEE_INVALID");
+  return assignee;
+}
+
+async function resolveRequestMentionIds(mentionIds: string[]) {
+  const uniqueIds = Array.from(new Set(mentionIds));
+  if (!uniqueIds.length) return [];
+  const users = await prisma.localUser.findMany({
+    where: { id: { in: uniqueIds }, active: true },
+    include: { accessRole: { include: { permissions: true } } }
+  });
+  if (
+    users.length !== uniqueIds.length ||
+    users.some((user) =>
+      user.accessRole.archivedAt ||
+      !effectiveRolePermissions(user.accessRole).includes("requests:read")
+    )
+  ) {
+    throw new Error("REQUEST_MENTION_USER_INVALID");
+  }
+  return uniqueIds;
+}
+
+type CreateRequestUpdateOptions = {
+  allowNullableAssignee?: boolean;
+  legacyTaskId?: string;
+};
+
+async function createRequestUpdateInternal(
+  id: string,
+  input: CreateRequestUpdateInput,
+  user?: AuthenticatedUser,
+  options: CreateRequestUpdateOptions = {}
+) {
+  const existingRequest = await getRequestOrThrow(id);
+  if (input.kind === "step" && isClosedOrConverted(existingRequest.status)) {
+    throw new Error("REQUEST_STEP_CLOSED");
+  }
+
+  const assignee = await resolveRequestUpdateAssignee(input.assigneeId);
+  if (input.kind === "step" && !assignee && !options.allowNullableAssignee) {
+    throw new Error("REQUEST_UPDATE_ASSIGNEE_REQUIRED");
+  }
+  const mentionIds = await resolveRequestMentionIds(input.mentionIds);
+  const now = new Date();
+  const request = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Request" WHERE "id" = ${id} FOR UPDATE`;
+    const locked = await tx.request.findUnique({
+      where: { id },
+      select: { id: true, status: true, currentStepId: true, assignedToId: true, requestNumber: true, title: true }
+    });
+    if (!locked) throw new Error("REQUEST_NOT_FOUND");
+    if (input.kind === "step" && isClosedOrConverted(locked.status)) {
+      throw new Error("REQUEST_STEP_CLOSED");
+    }
+
+    const previousStep = locked.currentStepId
+      ? await tx.requestUpdate.findUnique({ where: { id: locked.currentStepId } })
+      : null;
+    if (input.kind === "step" && previousStep?.stepStatus === "open") {
+      await tx.requestUpdate.update({
+        where: { id: previousStep.id },
+        data: { stepStatus: "superseded" }
+      });
+    }
+
+    const created = await tx.requestUpdate.create({
+      data: {
+        requestId: id,
+        kind: input.kind,
+        title: input.title || (input.kind === "step" ? input.body : "Comment"),
+        body: input.body,
+        ...updateActorFields(user),
+        assigneeId: assignee?.id ?? null,
+        assigneeNameSnapshot: assignee?.name ?? null,
+        assigneeEmailSnapshot: assignee?.email ?? null,
+        targetDate: parseDateInput(input.targetDate),
+        stepStatus: input.kind === "step" ? "open" : null,
+        supersedesId: input.kind === "step" ? previousStep?.id ?? null : null,
+        legacyTaskId: options.legacyTaskId,
+        createdAt: now,
+        updatedAt: now,
+        mentions: mentionIds.length
+          ? { create: mentionIds.map((userId) => ({ userId })) }
+          : undefined
+      },
+      include: requestUpdateInclude
+    });
+
+    if (input.kind === "step" && assignee) {
+      const existingCollaborator = await tx.requestCollaborator.findUnique({
+        where: { requestId_userId: { requestId: id, userId: assignee.id } }
+      });
+      if (!existingCollaborator && locked.assignedToId !== assignee.id) {
+        await tx.requestCollaborator.create({
+          data: { requestId: id, userId: assignee.id, addedById: user?.id ?? null }
+        });
+      }
+    }
+
+    await tx.request.update({
+      where: { id },
+      data: {
+        lastActivityAt: now,
+        ...(input.kind === "step" ? { currentStepId: created.id } : {})
+      }
+    });
+
+    if (input.kind === "step" && previousStep?.stepStatus === "open") {
+      await createRequestSystemUpdate(
+        tx,
+        id,
+        "Current step replaced",
+        `${previousStep.title || previousStep.body || "Previous step"} was superseded.`,
+        user,
+        now
+      );
+    }
+
+    return tx.request.findUniqueOrThrow({
+      where: { id },
+      include: requestInclude
+    });
+  });
+
+  await recordActivity({
+    user,
+    relatedEntityType: "Request",
+    relatedEntityId: id,
+    type: input.kind === "step" ? "Current Step Posted" : "Request Update Posted",
+    title: input.title || input.body,
+    detail: input.body,
+    metadata: { requestNumber: request.requestNumber, kind: input.kind }
+  });
+
+  return toRequestRecord(request, user?.id);
+}
+
+export async function createRequestUpdate(
+  id: string,
+  input: CreateRequestUpdateInput,
+  user?: AuthenticatedUser
+) {
+  return createRequestUpdateInternal(id, input, user);
+}
+
+export async function listRequestUpdates(
+  id: string,
+  filter: RequestUpdateFilter = "all",
+  cursor?: string,
+  take = 25,
+  viewerId?: string
+) {
+  await getRequestOrThrow(id);
+  const limit = Math.min(Math.max(take, 1), 50);
+  const updates = await prisma.requestUpdate.findMany({
+    where: {
+      requestId: id,
+      ...(filter !== "all" ? { kind: filter } : {})
+    },
+    include: requestUpdateInclude,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    take: limit + 1
+  });
+  const hasMore = updates.length > limit;
+  const page = hasMore ? updates.slice(0, limit) : updates;
+  return {
+    updates: page.map((update) => toRequestUpdateRecord(update, viewerId)),
+    nextCursor: hasMore ? page.at(-1)?.id ?? null : null,
+    hasMore
+  };
+}
+
+export async function completeRequestUpdate(
+  id: string,
+  updateId: string,
+  user?: AuthenticatedUser
+) {
+  const now = new Date();
+  const request = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Request" WHERE "id" = ${id} FOR UPDATE`;
+    const update = await tx.requestUpdate.findFirst({
+      where: { id: updateId, requestId: id, kind: "step" }
+    });
+    if (!update) throw new Error("REQUEST_UPDATE_NOT_FOUND");
+    if (update.stepStatus !== "open") throw new Error("REQUEST_UPDATE_NOT_OPEN");
+    await tx.requestUpdate.update({
+      where: { id: updateId },
+      data: { stepStatus: "completed" }
+    });
+    const lockedRequest = await tx.request.findUniqueOrThrow({
+      where: { id },
+      select: { currentStepId: true }
+    });
+    await tx.request.update({
+      where: { id },
+      data: {
+        ...(lockedRequest.currentStepId === updateId ? { currentStepId: null } : {}),
+        lastActivityAt: now
+      }
+    });
+    await createRequestSystemUpdate(
+      tx,
+      id,
+      "Current step completed",
+      update.title || update.body,
+      user,
+      now
+    );
+    return tx.request.findUniqueOrThrow({ where: { id }, include: requestInclude });
+  });
+  await recordActivity({
+    user,
+    relatedEntityType: "Request",
+    relatedEntityId: id,
+    type: "Current Step Completed",
+    title: `Current step completed on ${request.requestNumber}`,
+    detail: request.title,
+    metadata: { updateId }
+  });
+  return toRequestRecord(request, user?.id);
+}
+
+export async function undoRequestUpdate(
+  id: string,
+  updateId: string,
+  user?: AuthenticatedUser
+) {
+  const now = new Date();
+  const request = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Request" WHERE "id" = ${id} FOR UPDATE`;
+    const locked = await tx.request.findUniqueOrThrow({
+      where: { id },
+      select: { currentStepId: true }
+    });
+    const update = await tx.requestUpdate.findFirst({
+      where: { id: updateId, requestId: id, kind: "step" }
+    });
+    if (!update) throw new Error("REQUEST_UPDATE_NOT_FOUND");
+
+    if (update.stepStatus === "open" && update.supersedesId) {
+      if (locked.currentStepId !== update.id) throw new Error("REQUEST_UPDATE_UNDO_CONFLICT");
+      await tx.requestUpdate.update({
+        where: { id: update.id },
+        data: { stepStatus: "superseded" }
+      });
+      await tx.requestUpdate.update({
+        where: { id: update.supersedesId },
+        data: { stepStatus: "open" }
+      });
+      await tx.request.update({
+        where: { id },
+        data: { currentStepId: update.supersedesId, lastActivityAt: now }
+      });
+      await createRequestSystemUpdate(
+        tx,
+        id,
+        "Step replacement undone",
+        update.title || update.body,
+        user,
+        now
+      );
+    } else if (update.stepStatus === "completed") {
+      if (locked.currentStepId) throw new Error("REQUEST_UPDATE_UNDO_CONFLICT");
+      await tx.requestUpdate.update({
+        where: { id: update.id },
+        data: { stepStatus: "open" }
+      });
+      await tx.request.update({
+        where: { id },
+        data: { currentStepId: update.id, lastActivityAt: now }
+      });
+      await createRequestSystemUpdate(
+        tx,
+        id,
+        "Step completion undone",
+        update.title || update.body,
+        user,
+        now
+      );
+    } else {
+      throw new Error("REQUEST_UPDATE_NOT_UNDOABLE");
+    }
+
+    return tx.request.findUniqueOrThrow({ where: { id }, include: requestInclude });
+  });
+  await recordActivity({
+    user,
+    relatedEntityType: "Request",
+    relatedEntityId: id,
+    type: "Current Step Undo",
+    title: `Current step change undone on ${request.requestNumber}`,
+    detail: request.title,
+    metadata: { updateId }
+  });
+  return toRequestRecord(request, user?.id);
+}
+
+export async function markRequestMentionsRead(id: string, userId: string) {
+  await getRequestOrThrow(id);
+  const result = await prisma.requestUpdateMention.updateMany({
+    where: {
+      userId,
+      readAt: null,
+      update: { requestId: id }
+    },
+    data: { readAt: new Date() }
+  });
+  return { marked: result.count };
+}
+
+export async function updateRequestLead(
+  id: string,
+  leadId: string | null,
+  user?: AuthenticatedUser
+) {
+  return updateRequest(id, { assignedToId: leadId ?? "" }, user);
+}
+
+export async function addRequestCollaborator(
+  id: string,
+  userId: string,
+  actor?: AuthenticatedUser
+) {
+  await getRequestOrThrow(id);
+  const collaborator = await resolveRequestUpdateAssignee(userId);
+  if (!collaborator) throw new Error("REQUEST_COLLABORATOR_INVALID");
+  await prisma.requestCollaborator.upsert({
+    where: { requestId_userId: { requestId: id, userId } },
+    create: { requestId: id, userId, addedById: actor?.id ?? null },
+    update: {}
+  });
+  await createRequestSystemUpdate(
+    prisma,
+    id,
+    "Collaborator added",
+    `${collaborator.name} joined the request team.`,
+    actor
+  );
+  await recordActivity({
+    user: actor,
+    relatedEntityType: "Request",
+    relatedEntityId: id,
+    type: "Collaborator Added",
+    title: `${collaborator.name} added to request team`,
+    detail: `Collaborator ${collaborator.name} was added to the request.`,
+    metadata: { collaboratorId: collaborator.id }
+  });
+  return getRequestById(id, actor?.id);
+}
+
+export async function removeRequestCollaborator(
+  id: string,
+  userId: string,
+  actor?: AuthenticatedUser
+) {
+  const request = await getRequestOrThrow(id);
+  const currentStep = request.updates.find((update) => update.id === request.currentStepId);
+  if (currentStep?.assignee?.id === userId && currentStep.stepStatus === "open") {
+    throw new Error("REQUEST_CURRENT_ASSIGNEE_REQUIRED");
+  }
+  const result = await prisma.requestCollaborator.deleteMany({
+    where: { requestId: id, userId }
+  });
+  if (!result.count) throw new Error("REQUEST_COLLABORATOR_NOT_FOUND");
+  await createRequestSystemUpdate(
+    prisma,
+    id,
+    "Collaborator removed",
+    "A collaborator left the request team.",
+    actor
+  );
+  await recordActivity({
+    user: actor,
+    relatedEntityType: "Request",
+    relatedEntityId: id,
+    type: "Collaborator Removed",
+    title: "Collaborator removed from request team",
+    detail: `Collaborator ${userId} was removed from the request.`,
+    metadata: { collaboratorId: userId }
+  });
+  return getRequestById(id, actor?.id);
 }
 
 async function findChecklistTemplates(
@@ -496,7 +1072,7 @@ async function reconcileRequestChecklists(
   }
 }
 
-export async function listRequests() {
+export async function listRequests(viewerId?: string) {
   const requests = await prisma.request.findMany({
     where: {
       archivedAt: null
@@ -509,10 +1085,10 @@ export async function listRequests() {
     ]
   });
 
-  return requests.map(toRequestRecord);
+  return requests.map((request) => toRequestRecord(request, viewerId));
 }
 
-export async function listClientRelatedWork(clientId: string) {
+export async function listClientRelatedWork(clientId: string, user: AuthenticatedUser) {
   const client = await prisma.client.findFirst({
     where: {
       archivedAt: null,
@@ -564,10 +1140,14 @@ export async function listClientRelatedWork(clientId: string) {
     })
   ]);
 
-  const requestRecords = clientRequests.map(toRequestRecord);
-  const quoteRecords = quotes.map((quote) => toQuoteRecord(quote));
-  const projectRecords = projects.map((project) => toProjectRecord(project));
-  const invoiceRecords = invoices.map(toInvoiceRecord);
+  const requestRecords = canUser(user, "requests:read")
+    ? clientRequests.map((request) => toRequestRecord(request, user.id))
+    : [];
+  const quoteRecords = canUser(user, "quotes:read") ? quotes.map((quote) => toQuoteRecord(quote)) : [];
+  const projectRecords = canUser(user, "projects:read")
+    ? projects.map((project) => toProjectRecord(project))
+    : [];
+  const invoiceRecords = canUser(user, "billing:read") ? invoices.map(toInvoiceRecord) : [];
 
   return {
     requests: requestRecords,
@@ -593,7 +1173,8 @@ export async function listClientRelatedWork(clientId: string) {
 
 export async function listRequestAssignees() {
   const users = await prisma.localUser.findMany({
-    where: requestAssigneeWhere,
+    where: { active: true },
+    include: { accessRole: { include: { permissions: true } } },
     orderBy: [
       {
         name: "asc"
@@ -601,11 +1182,28 @@ export async function listRequestAssignees() {
     ]
   });
 
-  return users.map((user) => toAuthenticatedUser(user)) satisfies RequestAssignee[];
+  return users
+    .filter((user) => isValidRequestAssignee(user))
+    .map((user) => toAssigneeSnapshot(user)!) satisfies RequestAssignee[];
 }
 
-export async function getRequestById(id: string) {
-  return toRequestRecord(await getRequestOrThrow(id));
+export async function listRequestTeamMembers() {
+  const users = await prisma.localUser.findMany({
+    where: { active: true },
+    include: { accessRole: { include: { permissions: true } } },
+    orderBy: { name: "asc" }
+  });
+
+  return users
+    .filter((user) =>
+      !user.accessRole.archivedAt &&
+      effectiveRolePermissions(user.accessRole).includes("requests:read")
+    )
+    .map((user) => toAssigneeSnapshot(user)!) satisfies RequestAssignee[];
+}
+
+export async function getRequestById(id: string, viewerId?: string) {
+  return toRequestRecord(await getRequestOrThrow(id), viewerId);
 }
 
 export async function createRequest(input: CreateRequestInput, user?: AuthenticatedUser) {
@@ -645,8 +1243,6 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
         createdById: user?.id ?? null,
         receivedDate: parseDateInput(input.receivedDate) ?? now,
         dueDate: parseDateInput(input.dueDate),
-        nextAction: input.nextAction || null,
-        nextFollowUpAt: parseDateInput(input.nextFollowUpAt),
         missingInfo: input.missingInfo || null,
         siteVisitNeeded: input.siteVisitNeeded,
         siteVisitCompleted: input.siteVisitCompleted,
@@ -659,24 +1255,15 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
         trades: {
           create: serviceCategories.map((serviceCategory) => ({ serviceCategory }))
         },
-        activities: {
+        updates: {
           create: {
-            type: "Note",
+            kind: "system",
             title: "Request created",
             body: input.description || "New intake request captured in Pulse.",
-            actor: user?.name ?? "Pulse System",
+            ...updateActorFields(user),
             createdAt: now
           }
-        },
-        notesList: input.internalNotes
-          ? {
-              create: {
-                body: input.internalNotes,
-                actor: user?.name ?? "Pulse System",
-                createdAt: now
-              }
-            }
-          : undefined
+        }
       },
     });
 
@@ -697,6 +1284,31 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
           }
         }
       });
+    }
+
+    if (input.nextAction?.trim()) {
+      const legacyStep = await tx.requestUpdate.create({
+        data: {
+          requestId: created.id,
+          kind: "step",
+          title: input.nextAction.trim(),
+          body: input.nextAction.trim(),
+          ...updateActorFields(user),
+          assigneeId: assignedTo?.id ?? null,
+          assigneeNameSnapshot: assignedTo?.name ?? null,
+          assigneeEmailSnapshot: assignedTo?.email ?? null,
+          targetDate: parseDateInput(input.nextFollowUpAt),
+          stepStatus: isClosedOrConverted(input.status) ? "superseded" : "open",
+          createdAt: now,
+          updatedAt: now
+        }
+      });
+      if (!isClosedOrConverted(input.status)) {
+        await tx.request.update({
+          where: { id: created.id },
+          data: { currentStepId: legacyStep.id }
+        });
+      }
     }
 
     const hydrated = await tx.request.findUniqueOrThrow({
@@ -806,12 +1418,6 @@ export async function updateRequest(
         ? { receivedDate: parseDateInput(input.receivedDate) ?? existingRequest.receivedDate }
         : {}),
       ...(input.dueDate !== undefined ? { dueDate: parseDateInput(input.dueDate) } : {}),
-      ...(input.nextAction !== undefined
-        ? { nextAction: input.nextAction || null }
-        : {}),
-      ...(input.nextFollowUpAt !== undefined
-        ? { nextFollowUpAt: parseDateInput(input.nextFollowUpAt) }
-        : {}),
       ...(input.missingInfo !== undefined
         ? { missingInfo: input.missingInfo || null }
         : {}),
@@ -831,21 +1437,12 @@ export async function updateRequest(
         ? { relatedQuoteId: input.relatedQuoteId || null }
         : {}),
       lastActivityAt: now,
-      activities: {
-        create: {
-          type: "Note",
-          title: "Request updated",
-          body: "Request fields were updated from the edit form.",
-          actor: user?.name ?? "Pulse System",
-          createdAt: now
-        }
-      }
     },
     include: requestInclude
   });
 
   const derivedStatus = deriveIntakeStatus(request);
-  const finalRequest =
+  let finalRequest =
     derivedStatus !== request.status
       ? await prisma.request.update({
           where: { id },
@@ -858,19 +1455,42 @@ export async function updateRequest(
     input.assignedToId !== undefined &&
     previousAssigneeName !== nextAssigneeName
   ) {
-    await prisma.requestActivity.create({
-      data: {
-        requestId: request.id,
-        type: "Owner",
-        title: `Assigned to ${nextAssigneeName}`,
-        body:
-          previousAssigneeName === "Unassigned"
-            ? "Request assignment was set."
-            : `Reassigned from ${previousAssigneeName}.`,
-        actor: user?.name ?? "Pulse System",
-        createdAt: now
-      }
-    });
+    await createRequestSystemUpdate(
+      prisma,
+      request.id,
+      `Lead assigned to ${nextAssigneeName}`,
+      previousAssigneeName === "Unassigned"
+        ? "Request lead was set."
+        : `Reassigned from ${previousAssigneeName}.`,
+      user,
+      now
+    );
+  } else if (!input.nextAction?.trim()) {
+    await createRequestSystemUpdate(
+      prisma,
+      request.id,
+      "Request updated",
+      "Request fields were updated.",
+      user,
+      now
+    );
+  }
+
+  finalRequest = await getRequestOrThrow(id);
+  if (input.nextAction?.trim() && !isClosedOrConverted(finalRequest.status)) {
+    finalRequest = await createRequestUpdateInternal(
+      id,
+      {
+        kind: "step",
+        title: input.nextAction.trim(),
+        body: input.nextAction.trim(),
+        assigneeId: input.assignedToId || finalRequest.assignedTo?.id || "",
+        targetDate: input.nextFollowUpAt ?? "",
+        mentionIds: []
+      },
+      user,
+      { allowNullableAssignee: true }
+    ).then(async () => getRequestOrThrow(id));
   }
 
   await recordActivity({
@@ -886,7 +1506,7 @@ export async function updateRequest(
     }
   });
 
-  return toRequestRecord(finalRequest);
+  return toRequestRecord(finalRequest, user?.id);
 }
 
 export async function archiveRequest(id: string, user?: AuthenticatedUser) {
@@ -897,15 +1517,7 @@ export async function archiveRequest(id: string, user?: AuthenticatedUser) {
     where: { id },
     data: {
       archivedAt: now,
-      lastActivityAt: now,
-      activities: {
-        create: {
-          type: "Status",
-          title: "Request archived",
-          actor: user?.name ?? "Pulse System",
-          createdAt: now
-        }
-      }
+      lastActivityAt: now
     },
     include: requestInclude
   });
@@ -919,7 +1531,12 @@ export async function archiveRequest(id: string, user?: AuthenticatedUser) {
     detail: request.title
   });
 
-  return toRequestRecord(request);
+  await createRequestSystemUpdate(prisma, request.id, "Request archived", request.title, user, now);
+  const archivedRequest = await prisma.request.findUniqueOrThrow({
+    where: { id },
+    include: requestInclude
+  });
+  return toRequestRecord(archivedRequest, user?.id);
 }
 
 export async function changeRequestStatus(
@@ -965,18 +1582,7 @@ export async function changeRequestStatus(
     where: { id },
     data: {
       status: nextStatus,
-      lastActivityAt: now,
-      activities: {
-        create: {
-          type: "Status",
-          title: isReopening
-            ? `Request reopened as ${nextStatus}`
-            : `Status changed to ${nextStatus}`,
-          body: normalizedReason || (isReopening ? "Request returned to active intake." : null),
-          actor: user?.name ?? "Pulse System",
-          createdAt: now
-        }
-      }
+      lastActivityAt: now
     },
     include: requestInclude
   });
@@ -997,7 +1603,15 @@ export async function changeRequestStatus(
     }
   });
 
-  return toRequestRecord(request);
+  await createRequestSystemUpdate(
+    prisma,
+    request.id,
+    isReopening ? `Request reopened as ${nextStatus}` : `Status changed to ${nextStatus}`,
+    normalizedReason || (isReopening ? "Request returned to active intake." : null),
+    user,
+    now
+  );
+  return toRequestRecord(await getRequestOrThrow(id), user?.id);
 }
 
 export async function addRequestActivity(
@@ -1005,47 +1619,18 @@ export async function addRequestActivity(
   input: CreateRequestActivityInput,
   user?: AuthenticatedUser
 ) {
-  await getRequestOrThrow(id);
-
-  const now = new Date();
-  const request = await prisma.request.update({
-    where: { id },
-    data: {
-      lastActivityAt: now,
-      activities: {
-        create: {
-          type: input.type,
-          title: input.title,
-          body: input.body || null,
-          actor: user?.name ?? input.actor ?? "Pulse System",
-          createdAt: now
-        }
-      },
-      notesList:
-        input.type === "Note" && input.body
-          ? {
-              create: {
-                body: input.body,
-                actor: user?.name ?? input.actor ?? "Pulse System",
-                createdAt: now
-              }
-            }
-          : undefined
+  return createRequestUpdateInternal(
+    id,
+    {
+      kind: "comment",
+      title: input.title,
+      body: input.body || input.title,
+      assigneeId: "",
+      targetDate: "",
+      mentionIds: []
     },
-    include: requestInclude
-  });
-
-  await recordActivity({
-    user,
-    relatedEntityType: "Request",
-    relatedEntityId: request.id,
-    type: input.type === "Note" ? "Note Added" : input.type,
-    title: input.title,
-    detail: input.body,
-    metadata: { requestNumber: request.requestNumber }
-  });
-
-  return toRequestRecord(request);
+    user
+  );
 }
 
 export async function createRequestTask(
@@ -1053,43 +1638,24 @@ export async function createRequestTask(
   input: CreateRequestTaskInput,
   user?: AuthenticatedUser
 ) {
-  await getRequestOrThrow(id);
-
-  const now = new Date();
-  const request = await prisma.request.update({
-    where: { id },
-    data: {
-      lastActivityAt: now,
-      tasks: {
-        create: {
-          title: input.title,
-          dueAt: parseDateInput(input.dueAt),
-          owner: input.owner || "Unassigned"
-        }
-      },
-      activities: {
-        create: {
-          type: "Task",
-          title: "Task created",
-          body: input.title,
-          actor: user?.name ?? "Pulse System",
-          createdAt: now
-        }
-      }
+  const owner = input.owner && input.owner !== "Unassigned"
+    ? await prisma.localUser.findFirst({
+        where: { active: true, name: { equals: input.owner, mode: "insensitive" } }
+      })
+    : null;
+  return createRequestUpdateInternal(
+    id,
+    {
+      kind: "step",
+      title: input.title,
+      body: input.title,
+      assigneeId: owner?.id ?? "",
+      targetDate: input.dueAt,
+      mentionIds: []
     },
-    include: requestInclude
-  });
-
-  await recordActivity({
     user,
-    relatedEntityType: "Request",
-    relatedEntityId: request.id,
-    type: "Updated",
-    title: `Task added to ${request.requestNumber}`,
-    detail: input.title
-  });
-
-  return toRequestRecord(request);
+    { allowNullableAssignee: true }
+  );
 }
 
 export async function completeRequestTask(
@@ -1099,50 +1665,16 @@ export async function completeRequestTask(
   user?: AuthenticatedUser
 ) {
   await getRequestOrThrow(id);
-
-  const now = new Date();
-  const result = await prisma.requestTask.updateMany({
+  const update = await prisma.requestUpdate.findFirst({
     where: {
-      id: taskId,
-      requestId: id
-    },
-    data: {
-      completedAt: completed ? now : null
+      requestId: id,
+      OR: [{ id: taskId }, { legacyTaskId: taskId }]
     }
   });
-
-  if (result.count === 0) {
-    throw new Error("REQUEST_NOT_FOUND");
-  }
-
-  const request = await prisma.request.update({
-    where: { id },
-    data: {
-      lastActivityAt: now,
-      activities: {
-        create: {
-          type: "Task",
-          title: completed ? "Task completed" : "Task reopened",
-          actor: user?.name ?? "Pulse System",
-          createdAt: now
-        }
-      }
-    },
-    include: requestInclude
-  });
-
-  await recordActivity({
-    user,
-    relatedEntityType: "Request",
-    relatedEntityId: request.id,
-    type: "Updated",
-    title: completed
-      ? `Task completed on ${request.requestNumber}`
-      : `Task reopened on ${request.requestNumber}`,
-    detail: request.title
-  });
-
-  return toRequestRecord(request);
+  if (!update) throw new Error("REQUEST_NOT_FOUND");
+  return completed
+    ? completeRequestUpdate(id, update.id, user)
+    : undoRequestUpdate(id, update.id, user);
 }
 
 export async function updateRequestChecklistItem(
@@ -1200,18 +1732,7 @@ export async function updateRequestChecklistItem(
       ...(marksSiteVisitComplete && input.completed !== undefined
         ? { siteVisitCompleted: completed }
         : {}),
-      lastActivityAt: now,
-      activities: {
-        create: {
-          type: "Task",
-          title: completed
-            ? `Checklist completed: ${existingItem.label}`
-            : `Checklist reopened: ${existingItem.label}`,
-          body: input.notes || null,
-          actor: user?.name ?? "Pulse System",
-          createdAt: now
-        }
-      }
+      lastActivityAt: now
     },
     include: requestInclude
   });
@@ -1226,10 +1747,23 @@ export async function updateRequestChecklistItem(
         })
       : updatedRequest;
 
+  await createRequestSystemUpdate(
+    prisma,
+    finalRequest.id,
+    completed
+      ? `Checklist completed: ${existingItem.label}`
+      : `Checklist reopened: ${existingItem.label}`,
+    input.notes || null,
+    user,
+    now
+  );
+
+  const hydratedRequest = await getRequestOrThrow(id);
+
   await recordActivity({
     user,
     relatedEntityType: "Request",
-    relatedEntityId: finalRequest.id,
+    relatedEntityId: hydratedRequest.id,
     type: "Checklist Updated",
     title: completed
       ? `Completed ${existingItem.label}`
@@ -1240,13 +1774,13 @@ export async function updateRequestChecklistItem(
       itemLabel: existingItem.label,
       completed,
       completedAt: completed ? now.toISOString() : null,
-      requestNumber: finalRequest.requestNumber,
-      status: finalRequest.status,
-      readyForQuote: buildChecklistSummary(finalRequest).readyForQuote
+      requestNumber: hydratedRequest.requestNumber,
+      status: hydratedRequest.status,
+      readyForQuote: buildChecklistSummary(hydratedRequest).readyForQuote
     }
   });
 
-  return toRequestRecord(finalRequest);
+  return toRequestRecord(hydratedRequest, user?.id);
 }
 
 export async function convertRequest(
@@ -1309,26 +1843,26 @@ export async function convertRequest(
         })
       : null;
 
-    return tx.request.update({
+    const updatedRequest = await tx.request.update({
       where: { id },
       data: {
         status: "Converted to Quote",
         relatedQuoteId: quote?.id ?? existingRequest.relatedQuoteId,
-        lastActivityAt: now,
-        activities: {
-          create: {
-            type: "Conversion",
-            title: "Request converted",
-            body: quote
-              ? `Created quote workspace ${quote.quoteNumber}.`
-              : "Request marked as converted to quote.",
-            actor: user?.name ?? "Pulse System",
-            createdAt: now
-          }
-        }
+        lastActivityAt: now
       },
       include: requestInclude
     });
+    await createRequestSystemUpdate(
+      tx,
+      id,
+      "Request converted",
+      quote
+        ? `Created quote workspace ${quote.quoteNumber}.`
+        : "Request marked as converted to quote.",
+      user,
+      now
+    );
+    return tx.request.findUniqueOrThrow({ where: { id }, include: requestInclude });
   });
 
   await recordActivity({
@@ -1354,5 +1888,5 @@ export async function convertRequest(
     });
   }
 
-  return toRequestRecord(request);
+  return toRequestRecord(request, user?.id);
 }

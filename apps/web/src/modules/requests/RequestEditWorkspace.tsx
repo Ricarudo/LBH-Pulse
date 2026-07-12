@@ -14,7 +14,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ClientRecord } from "@pulse/contracts/clients";
 import {
@@ -50,8 +50,6 @@ type EditFormState = {
   assignedToId: string;
   receivedDate: string;
   dueDate: string;
-  nextAction: string;
-  nextFollowUpAt: string;
   missingInfo: string;
   siteVisitNeeded: boolean;
   siteVisitCompleted: boolean;
@@ -112,8 +110,6 @@ function formFromRequest(request: RequestRecord): EditFormState {
     assignedToId: request.assignedToId ?? "",
     receivedDate: request.receivedDate,
     dueDate: request.dueDate,
-    nextAction: request.nextAction,
-    nextFollowUpAt: request.nextFollowUpAt,
     missingInfo: request.missingInfo,
     siteVisitNeeded: request.siteVisitNeeded,
     siteVisitCompleted: request.siteVisitCompleted,
@@ -151,7 +147,7 @@ export function RequestEditWorkspace({
 }) {
   const router = useRouter();
   const { user } = useCurrentUser();
-  const canWriteCrm = canRole(user?.role, "crm:write");
+  const canWriteCrm = canUser(user, "requests:write");
   const [request, setRequest] = useState<RequestRecord | null>(null);
   const [form, setForm] = useState<EditFormState | null>(null);
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
@@ -556,12 +552,12 @@ export function RequestEditWorkspace({
               <span><CalendarClock size={18} /></span>
               <div>
                 <h2>Ownership and scheduling</h2>
-                <p>Set accountability and the next client-facing commitment.</p>
+                <p>Set the request lead and overall deadline. Use Updates for the current step.</p>
               </div>
             </div>
             <div className="request-edit-field-grid">
               <label>
-                Owner
+                Lead
                 <select value={form.assignedToId} onChange={(event) => updateField("assignedToId", event.target.value)}>
                   <option value="">Unassigned</option>
                   {assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
@@ -574,14 +570,6 @@ export function RequestEditWorkspace({
               <label>
                 Due date
                 <input type="date" value={form.dueDate} onChange={(event) => updateField("dueDate", event.target.value)} />
-              </label>
-              <label>
-                Follow-up date
-                <input type="date" value={form.nextFollowUpAt} onChange={(event) => updateField("nextFollowUpAt", event.target.value)} />
-              </label>
-              <label className="wide">
-                Next action
-                <input value={form.nextAction} onChange={(event) => updateField("nextAction", event.target.value)} />
               </label>
             </div>
           </section>

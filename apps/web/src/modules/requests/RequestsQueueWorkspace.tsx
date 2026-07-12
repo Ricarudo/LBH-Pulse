@@ -6,11 +6,9 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronRight,
-  LayoutList,
   MoreHorizontal,
   Plus,
   RotateCcw,
-  Rows3,
   Search,
   SlidersHorizontal,
   UserRound,
@@ -33,9 +31,8 @@ import {
   type ServiceCategory
 } from "@pulse/contracts/requests";
 
-type QueueView = "my" | "open" | "unassigned" | "attention" | "closed";
+type QueueView = "my" | "mentioned" | "open" | "unassigned" | "attention" | "closed";
 type QueueSort = "activity" | "due" | "priority" | "request";
-type QueueDensity = "balanced" | "spacious";
 
 type QueueFilterState = {
   status: "All" | RequestStatus;
@@ -52,7 +49,6 @@ type RequestsQueueWorkspaceProps = {
   isLoading: boolean;
   loadError: string;
   canWrite: boolean;
-  getNextAction: (request: RequestRecord) => string;
   onCreateRequest: () => void;
   onOwnerChange: (request: RequestRecord, assignedToId: string) => Promise<void>;
   onStatusChange: (
@@ -62,7 +58,6 @@ type RequestsQueueWorkspaceProps = {
   ) => Promise<void>;
 };
 
-const densityStorageKey = "pulse.requests.density";
 const closedStatuses: RequestStatus[] = [
   "Converted to Quote",
   "No Bid",
@@ -84,7 +79,7 @@ function needsAttention(request: RequestRecord) {
   return (
     request.priority === "Urgent" ||
     Boolean(request.dueDate && request.dueDate < today) ||
-    Boolean(request.nextFollowUpAt && request.nextFollowUpAt <= today) ||
+    Boolean(request.currentStep?.targetDate && request.currentStep.targetDate < today) ||
     request.status === "Missing Info" ||
     request.status === "Site Visit Required" ||
     request.checklistSummary.missingRequired.length > 0 ||
@@ -97,7 +92,15 @@ function activityTimestamp(request: RequestRecord) {
 }
 
 function dueTimestamp(request: RequestRecord) {
-  return request.dueDate ? Date.parse(`${request.dueDate}T00:00:00`) : Number.MAX_SAFE_INTEGER;
+  const date = request.currentStep?.targetDate || request.dueDate;
+  return date ? Date.parse(`${date}T00:00:00`) : Number.MAX_SAFE_INTEGER;
+}
+
+function mentionTimestamp(request: RequestRecord) {
+  return request.updates.reduce((latest, update) => {
+    const hasUnreadMention = update.mentions.some((mention) => !mention.readAt);
+    return hasUnreadMention ? Math.max(latest, Date.parse(update.createdAt) || 0) : latest;
+  }, 0);
 }
 
 function formatShortDate(value: string) {
@@ -139,12 +142,14 @@ function requestMatchesUser(
   return Boolean(
     currentUser &&
       (request.assignedToId === currentUser.id ||
-        request.assignedToName === currentUser.name)
+        request.assignedToName === currentUser.name ||
+        request.currentStep?.assignee?.id === currentUser.id ||
+        request.collaborators.some((collaborator) => collaborator.id === currentUser.id))
   );
 }
 
 function parseView(value: string | null): QueueView {
-  return ["my", "open", "unassigned", "attention", "closed"].includes(value ?? "")
+  return ["my", "mentioned", "open", "unassigned", "attention", "closed"].includes(value ?? "")
     ? (value as QueueView)
     : "my";
 }
@@ -182,7 +187,6 @@ export function RequestsQueueWorkspace({
   isLoading,
   loadError,
   canWrite,
-  getNextAction,
   onCreateRequest,
   onOwnerChange,
   onStatusChange
@@ -191,7 +195,6 @@ export function RequestsQueueWorkspace({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [density, setDensity] = useState<QueueDensity>("balanced");
   const [quickUpdateId, setQuickUpdateId] = useState("");
   const [updatingIds, setUpdatingIds] = useState<string[]>([]);
   const [statusMenuId, setStatusMenuId] = useState("");
@@ -212,13 +215,6 @@ export function RequestsQueueWorkspace({
     category: (searchParams.get("category") as ServiceCategory | null) ?? "All",
     source: (searchParams.get("source") as RequestSource | null) ?? "All"
   };
-
-  useEffect(() => {
-    const storedDensity = window.localStorage.getItem(densityStorageKey);
-    if (storedDensity === "balanced" || storedDensity === "spacious") {
-      setDensity(storedDensity);
-    }
-  }, []);
 
   useEffect(() => {
     function closeOverlay(event: KeyboardEvent) {
@@ -252,11 +248,6 @@ export function RequestsQueueWorkspace({
 
     const query = next.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
-
-  function setQueueDensity(value: QueueDensity) {
-    setDensity(value);
-    window.localStorage.setItem(densityStorageKey, value);
   }
 
   function setView(view: QueueView) {
@@ -318,6 +309,9 @@ export function RequestsQueueWorkspace({
       my: requests.filter(
         (request) => isOpenRequest(request) && requestMatchesUser(request, currentUser)
       ).length,
+      mentioned: requests.filter(
+        (request) => isOpenRequest(request) && request.unreadMentionCount > 0
+      ).length,
       open: requests.filter(isOpenRequest).length,
       unassigned: requests.filter(
         (request) => isOpenRequest(request) && !request.assignedToId
@@ -342,6 +336,8 @@ export function RequestsQueueWorkspace({
         const matchesView =
           activeView === "my"
             ? isOpenRequest(request) && requestMatchesUser(request, currentUser)
+            : activeView === "mentioned"
+              ? isOpenRequest(request) && request.unreadMentionCount > 0
             : activeView === "open"
               ? isOpenRequest(request)
               : activeView === "unassigned"
@@ -359,7 +355,9 @@ export function RequestsQueueWorkspace({
             request.siteName,
             request.siteAddress,
             ...request.serviceCategories,
-            request.nextAction
+            request.currentStep?.title,
+            request.currentStep?.body,
+            request.currentStep?.assignee?.name
           ]
             .join(" ")
             .toLowerCase()
@@ -394,6 +392,10 @@ export function RequestsQueueWorkspace({
           });
         }
 
+        if (activeView === "mentioned") {
+          return mentionTimestamp(right) - mentionTimestamp(left);
+        }
+
         return activityTimestamp(right) - activityTimestamp(left);
       });
   }, [activeView, currentUser, filters, requests, searchTerm, sort]);
@@ -407,6 +409,7 @@ export function RequestsQueueWorkspace({
     requests.find((request) => request.id === pendingTerminal?.requestId) ?? null;
   const viewOptions: { key: QueueView; label: string; count: number }[] = [
     { key: "my", label: "My work", count: viewCounts.my },
+    { key: "mentioned", label: "Mentioned", count: viewCounts.mentioned },
     { key: "open", label: "All open", count: viewCounts.open },
     { key: "unassigned", label: "Unassigned", count: viewCounts.unassigned },
     { key: "attention", label: "Needs attention", count: viewCounts.attention },
@@ -421,7 +424,7 @@ export function RequestsQueueWorkspace({
     `/requests/${requestId}?returnTo=${encodeURIComponent(queueReturnTo)}`;
 
   return (
-    <section className={`requests-queue requests-queue-${density}`}>
+    <section className="requests-queue">
       <header className="requests-queue-heading">
         <div>
           <nav className="breadcrumb requests-queue-breadcrumb" aria-label="Breadcrumb">
@@ -429,7 +432,7 @@ export function RequestsQueueWorkspace({
             <span>/</span>
             <span>Requests</span>
           </nav>
-          <h2>{activeViewLabel}</h2>
+          <h1>{activeViewLabel}</h1>
           <p className="requests-queue-summary">
             <strong>Sales intake</strong>
             <span aria-hidden="true"> · </span>
@@ -503,24 +506,13 @@ export function RequestsQueueWorkspace({
               </select>
             </label>
 
-            <div className="queue-density-control" aria-label="Queue density">
-              <button
-                type="button"
-                aria-label="Balanced density"
-                aria-pressed={density === "balanced"}
-                onClick={() => setQueueDensity("balanced")}
-              >
-                <Rows3 size={17} />
-              </button>
-              <button
-                type="button"
-                aria-label="Spacious density"
-                aria-pressed={density === "spacious"}
-                onClick={() => setQueueDensity("spacious")}
-              >
-                <LayoutList size={17} />
-              </button>
-            </div>
+          </div>
+
+          <div className="requests-queue-meta">
+            <span>
+              <strong>{filteredRequests.length}</strong>{" "}
+              {filteredRequests.length === 1 ? "request" : "requests"}
+            </span>
           </div>
         </div>
 
@@ -646,14 +638,6 @@ export function RequestsQueueWorkspace({
           </div>
         ) : null}
 
-        <div className="requests-queue-meta">
-          <span>
-            <strong>{filteredRequests.length}</strong>{" "}
-            {filteredRequests.length === 1 ? "request" : "requests"}
-          </span>
-          <span>Sorted by {sort === "activity" ? "newest activity" : sort}</span>
-        </div>
-
         {loadError ? (
           <div className="requests-queue-state error">
             <AlertTriangle size={20} />
@@ -670,7 +654,7 @@ export function RequestsQueueWorkspace({
               <tr>
                 <th>Request</th>
                 <th>Client / site</th>
-                <th>Next action</th>
+                <th>Next step</th>
                 <th>Status / priority</th>
                 <th>Owner</th>
                 <th>Timing</th>
@@ -690,11 +674,11 @@ export function RequestsQueueWorkspace({
                     const updating = updatingIds.includes(request.id);
                     const missingRequired =
                       request.checklistSummary.missingRequired.length;
+                    const step = request.currentStep;
+                    const stepTarget = step?.targetDate || "";
+                    const stepOverdue = Boolean(stepTarget && stepTarget < today);
                     const timingAttention =
-                      Boolean(request.dueDate && request.dueDate < today) ||
-                      Boolean(
-                        request.nextFollowUpAt && request.nextFollowUpAt <= today
-                      );
+                      Boolean(request.dueDate && request.dueDate < today) || stepOverdue;
 
                     return (
                       <tr
@@ -722,20 +706,21 @@ export function RequestsQueueWorkspace({
                               "Site not captured"}
                           </span>
                         </td>
-                        <td className="queue-next-action">
-                          <strong>{getNextAction(request)}</strong>
-                          {request.checklistSummary.missingRequired.length ? (
+                        <td className={`queue-next-action${stepOverdue ? " overdue" : ""}`}>
+                          <Link
+                            href={`${requestHref(request.id)}&tab=updates${step?.id ? `&update=${encodeURIComponent(step.id)}` : ""}`}
+                            onClick={(event) => event.stopPropagation()}
+                            className="queue-next-step-link"
+                          >
+                            <strong>{step ? (step.title || step.body) : "Suggested"}</strong>
                             <span>
-                              {request.checklistSummary.missingRequired.length} blocker
-                              {request.checklistSummary.missingRequired.length === 1
-                                ? ""
-                                : "s"}
+                              {step
+                                ? `${step.assignee?.name || "Unassigned"}${stepTarget ? ` · ${formatShortDate(stepTarget)}` : ""}`
+                                : (request.checklistSummary.missingRequired[0] || "Set a current step")}
                             </span>
-                          ) : (
-                            <span>Intake progressing</span>
-                          )}
+                          </Link>
                         </td>
-                        <td>
+                        <td className="queue-owner-team">
                           <div className="queue-status-action">
                             <span
                               className={`queue-status tone-${statusTone(
@@ -819,9 +804,8 @@ export function RequestsQueueWorkspace({
                                 </option>
                               ))}
                             </select>
-                          ) : (
-                            <strong>{request.assignedToName || "Unassigned"}</strong>
-                          )}
+                          ) : <strong>{request.lead?.name || request.assignedToName || "Unassigned"}</strong>}
+                          {request.collaborators.length ? <span>{request.collaborators.length} collaborator{request.collaborators.length === 1 ? "" : "s"}</span> : null}
                         </td>
                         <td className={timingAttention ? "queue-timing attention" : "queue-timing"}>
                           <strong>
@@ -830,13 +814,7 @@ export function RequestsQueueWorkspace({
                               ? `Due ${formatShortDate(request.dueDate)}`
                               : "No due date"}
                           </strong>
-                          <span>
-                            {request.nextFollowUpAt
-                              ? `Follow-up ${formatShortDate(
-                                  request.nextFollowUpAt
-                                )}`
-                              : "No follow-up"}
-                          </span>
+                          <span>Overall deadline only</span>
                         </td>
                         <td>
                           <div className="queue-readiness">
@@ -893,14 +871,14 @@ export function RequestsQueueWorkspace({
             ? Array.from({ length: 4 }, (_, index) => (
                 <div className="queue-mobile-skeleton" key={index} />
               ))
-            : filteredRequests.map((request) => {
+              : filteredRequests.map((request) => {
                 const missingRequired =
                   request.checklistSummary.missingRequired.length;
+                const step = request.currentStep;
+                const stepTarget = step?.targetDate || "";
                 const timingAttention =
                   Boolean(request.dueDate && request.dueDate < today) ||
-                  Boolean(
-                    request.nextFollowUpAt && request.nextFollowUpAt <= today
-                  );
+                  Boolean(stepTarget && stepTarget < today);
 
                 return (
                   <article
@@ -911,31 +889,37 @@ export function RequestsQueueWorkspace({
                     }
                     key={request.id}
                   >
-                    <Link href={requestHref(request.id)}>
-                      <div className="queue-mobile-card-heading">
-                        <span>{request.requestNumber}</span>
-                        <span
-                          className={`queue-status tone-${statusTone(
-                            request.status
-                          )}`}
-                        >
-                          {request.status}
+                    <div className="queue-mobile-card-main">
+                      <Link className="queue-mobile-card-summary" href={requestHref(request.id)}>
+                        <div className="queue-mobile-card-heading">
+                          <span>{request.requestNumber}</span>
+                          <span
+                            className={`queue-status tone-${statusTone(
+                              request.status
+                            )}`}
+                          >
+                            {request.status}
+                          </span>
+                        </div>
+                        <h3>{request.title}</h3>
+                        <p>{request.companyName || "New prospect"}</p>
+                        <span className="queue-mobile-site">
+                          {request.siteName ||
+                            request.siteAddress ||
+                            "Site not captured"}
                         </span>
-                      </div>
-                      <h3>{request.title}</h3>
-                      <p>{request.companyName || "New prospect"}</p>
-                      <span className="queue-mobile-site">
-                        {request.siteName ||
-                          request.siteAddress ||
-                          "Site not captured"}
-                      </span>
+                      </Link>
 
-                      <div className="queue-mobile-action">
-                        <span>Next action</span>
-                        <strong>{getNextAction(request)}</strong>
-                      </div>
+                      <Link
+                        className={`queue-mobile-action${timingAttention && stepTarget < today ? " overdue" : ""}`}
+                        href={`${requestHref(request.id)}&tab=updates${step?.id ? `&update=${encodeURIComponent(step.id)}` : ""}`}
+                      >
+                        <span>{step ? "Next step" : "Suggested"}</span>
+                        <strong>{step ? (step.title || step.body) : (request.checklistSummary.missingRequired[0] || "Set a current step")}</strong>
+                        <small>{step ? `${step.assignee?.name || "Unassigned"}${stepTarget ? ` · ${formatShortDate(stepTarget)}` : ""}` : "Checklist recommendation"}</small>
+                      </Link>
 
-                      <div className="queue-mobile-footer">
+                      <Link className="queue-mobile-footer" href={requestHref(request.id)}>
                         <div className={timingAttention ? "attention" : ""}>
                           <CalendarClock size={15} />
                           <span>
@@ -957,8 +941,8 @@ export function RequestsQueueWorkspace({
                           </span>
                         </div>
                         <ChevronRight size={18} />
-                      </div>
-                    </Link>
+                      </Link>
+                    </div>
                     <button
                       className="queue-mobile-quick-update"
                       type="button"

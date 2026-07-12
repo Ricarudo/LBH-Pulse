@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  AtSign,
   ArrowLeft,
   CalendarClock,
   Check,
@@ -9,7 +10,6 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
-  ClipboardList,
   Edit3,
   FileText,
   Mail,
@@ -19,7 +19,7 @@ import {
   RotateCcw,
   Save,
   Send,
-  StickyNote,
+  Users,
   UserRound,
   X
 } from "lucide-react";
@@ -33,47 +33,38 @@ import {
   useRef,
   useState
 } from "react";
-import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { convertRequestToQuote } from "@/lib/api/requests";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { formatWorkspaceDate } from "@/lib/formatting";
-import type { ActivityRecord } from "@pulse/contracts/activity";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
 import {
-  requestPriorities,
+  requestUpdateFilters,
   type RequestAssignee,
   type RequestChecklistItem,
   type RequestPriority,
   type RequestRecord,
-  type RequestStatus
+  type RequestStatus,
+  type RequestUpdate,
+  type RequestUpdateFilter
 } from "@pulse/contracts/requests";
 
 type RequestResponse = { request: RequestRecord };
 type RequestListResponse = {
   requests: RequestRecord[];
   assignees: RequestAssignee[];
+  teamMembers?: RequestAssignee[];
 };
-type ActivityListResponse = { activities: ActivityRecord[] };
-type RequestRecordTab = "checklist" | "details" | "files" | "activity";
-
-type ActionDraft = {
-  assignedToId: string;
-  nextAction: string;
-  nextFollowUpAt: string;
-  dueDate: string;
-  priority: RequestPriority;
-};
+type RequestRecordTab = "checklist" | "details" | "files" | "updates";
 
 const terminalStatuses: RequestStatus[] = ["No Bid", "Cancelled", "Duplicate"];
 const requestRecordTabs: Array<{ id: RequestRecordTab; label: string }> = [
   { id: "checklist", label: "Checklist" },
   { id: "details", label: "Details" },
   { id: "files", label: "Files" },
-  { id: "activity", label: "Activity" }
+  { id: "updates", label: "Updates" }
 ];
-const today = new Date().toISOString().slice(0, 10);
 
 async function requestJson<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
@@ -92,16 +83,6 @@ async function requestJson<T>(url: string, init?: RequestInit) {
   }
 
   return data as T;
-}
-
-function actionDraftFromRequest(request: RequestRecord): ActionDraft {
-  return {
-    assignedToId: request.assignedToId ?? "",
-    nextAction: request.nextAction,
-    nextFollowUpAt: request.nextFollowUpAt,
-    dueDate: request.dueDate,
-    priority: request.priority
-  };
 }
 
 function formatDate(value: string) {
@@ -135,20 +116,6 @@ function siteSummary(request: RequestRecord) {
   );
 }
 
-function getNextAction(request: RequestRecord) {
-  if (request.nextAction) return request.nextAction;
-  if (!request.assignedToId) return "Assign an owner";
-  if (request.checklistSummary.missingRequired.length) {
-    return `Resolve ${request.checklistSummary.missingRequired[0]}`;
-  }
-  if (request.siteVisitNeeded && !request.siteVisitCompleted) {
-    return "Complete required site visit";
-  }
-  return request.checklistSummary.readyForQuote
-    ? "Create quote workspace"
-    : "Set next follow-up";
-}
-
 function groupItems(items: RequestChecklistItem[]) {
   return items.reduce<Record<string, RequestChecklistItem[]>>((groups, item) => {
     const group = item.group || "Intake";
@@ -159,27 +126,43 @@ function groupItems(items: RequestChecklistItem[]) {
 
 export function RequestRecordWorkspace({
   requestId,
-  returnTo
+  returnTo,
+  initialTab = "checklist",
+  focusUpdateId
 }: {
   requestId: string;
   returnTo: string;
+  initialTab?: RequestRecordTab;
+  focusUpdateId?: string;
 }) {
   const router = useRouter();
   const { user } = useCurrentUser();
-  const canWriteCrm = canRole(user?.role, "crm:write");
-  const canWriteActivity = canRole(user?.role, "crm:activity:write");
+  const canWriteCrm = canUser(user, "requests:write");
+  const canWriteActivity = canUser(user, "activity:write");
+  const canWriteQuotes = canUser(user, "quotes:write");
+  const canViewQuotes = canUser(user, "quotes:read");
   const [request, setRequest] = useState<RequestRecord | null>(null);
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
-  const [activities, setActivities] = useState<ActivityRecord[]>([]);
-  const [actionDraft, setActionDraft] = useState<ActionDraft | null>(null);
-  const [activeTab, setActiveTab] = useState<RequestRecordTab>("checklist");
+  const [teamMembers, setTeamMembers] = useState<RequestAssignee[]>([]);
+  const [updates, setUpdates] = useState<RequestUpdate[]>([]);
+  const [updateFilter, setUpdateFilter] = useState<RequestUpdateFilter>("all");
+  const [updatesCursor, setUpdatesCursor] = useState<string | null>(null);
+  const [updatesHasMore, setUpdatesHasMore] = useState(false);
+  const [isLoadingUpdates, setIsLoadingUpdates] = useState(false);
+  const [activeTab, setActiveTab] = useState<RequestRecordTab>(initialTab);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSavingAction, setIsSavingAction] = useState(false);
   const [pendingChecklistIds, setPendingChecklistIds] = useState<string[]>([]);
   const [expandedChecklistIds, setExpandedChecklistIds] = useState<string[]>([]);
   const [checklistNotes, setChecklistNotes] = useState<Record<string, string>>({});
-  const [noteText, setNoteText] = useState("");
-  const [taskTitle, setTaskTitle] = useState("");
+  const [updateBody, setUpdateBody] = useState("");
+  const [isCurrentStepDraft, setIsCurrentStepDraft] = useState(false);
+  const [stepAssigneeId, setStepAssigneeId] = useState("");
+  const [stepTargetDate, setStepTargetDate] = useState("");
+  const [mentionIds, setMentionIds] = useState<string[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [isPostingUpdate, setIsPostingUpdate] = useState(false);
+  const [undoAction, setUndoAction] = useState<{ updateId: string; label: string } | null>(null);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
@@ -192,21 +175,34 @@ export function RequestRecordWorkspace({
     checklist: null,
     details: null,
     files: null,
-    activity: null
+    updates: null
   });
+  const updateRefs = useRef<Record<string, HTMLElement | null>>({});
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const recordHref = `/requests/${requestId}?returnTo=${encodeURIComponent(returnTo)}`;
   const editHref = `/requests/${requestId}/edit?returnTo=${encodeURIComponent(returnTo)}`;
 
-  const loadActivities = useCallback(async () => {
+  const loadUpdates = useCallback(async (filter: RequestUpdateFilter, cursor?: string | null) => {
     try {
-      const data = await requestJson<ActivityListResponse>(
-        `/api/activity?relatedEntityType=Request&relatedEntityId=${requestId}&take=25`,
+      setIsLoadingUpdates(true);
+      const params = new URLSearchParams({ kind: filter, take: "25" });
+      if (cursor) params.set("cursor", cursor);
+      const data = await requestJson<{
+        updates: RequestUpdate[];
+        nextCursor: string | null;
+        hasMore: boolean;
+      }>(
+        `/api/requests/${requestId}/updates?${params.toString()}`,
         { cache: "no-store" }
       );
-      setActivities(data.activities);
+      setUpdates((current) => cursor ? [...current, ...data.updates] : data.updates);
+      setUpdatesCursor(data.nextCursor);
+      setUpdatesHasMore(data.hasMore);
     } catch {
-      setActivities([]);
+      if (!cursor) setUpdates([]);
+    } finally {
+      setIsLoadingUpdates(false);
     }
   }, [requestId]);
 
@@ -224,9 +220,9 @@ export function RequestRecordWorkspace({
           })
         ]);
         setRequest(requestData.request);
-        setActionDraft(actionDraftFromRequest(requestData.request));
+        setUpdates(requestData.request.updates);
         setAssignees(listData.assignees);
-        await loadActivities();
+        setTeamMembers(listData.teamMembers ?? listData.assignees);
       } catch (loadError) {
         setError(
           loadError instanceof Error ? loadError.message : "Unable to load request."
@@ -237,13 +233,43 @@ export function RequestRecordWorkspace({
     }
 
     void load();
-  }, [loadActivities, requestId]);
+  }, [requestId]);
+
+  useEffect(() => {
+    if (activeTab !== "updates" || !request) return;
+    void loadUpdates(updateFilter);
+    if (user?.id && request.unreadMentionCount > 0) {
+      void requestJson(`/api/requests/${request.id}/mentions/read`, { method: "POST" })
+        .then(() => requestJson<RequestResponse>(`/api/requests/${request.id}`, { cache: "no-store" }))
+        .then((data) => {
+          setRequest(data.request);
+          setUpdates(data.request.updates);
+        })
+        .catch(() => undefined);
+    }
+  }, [activeTab, loadUpdates, request?.id, request?.unreadMentionCount, updateFilter, user?.id]);
+
+  useEffect(() => {
+    if (activeTab !== "updates" || !focusUpdateId) return;
+    const timeout = window.setTimeout(() => {
+      const target = updateRefs.current[focusUpdateId];
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      target?.focus();
+    }, 80);
+    return () => window.clearTimeout(timeout);
+  }, [activeTab, focusUpdateId, updates]);
 
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(""), 4200);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    if (!undoAction) return;
+    const timeout = window.setTimeout(() => setUndoAction(null), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [undoAction]);
 
   useEffect(() => {
     function closeOnEscape(event: globalThis.KeyboardEvent) {
@@ -279,12 +305,6 @@ export function RequestRecordWorkspace({
     return { openRequired, optional, completed, inactive, systemBlockers };
   }, [request]);
 
-  const actionDirty = Boolean(
-    request &&
-      actionDraft &&
-      JSON.stringify(actionDraft) !==
-        JSON.stringify(actionDraftFromRequest(request))
-  );
   const isClosed = Boolean(request && terminalStatuses.includes(request.status));
   const isConverted = request?.status === "Converted to Quote";
   const recordLocked = isClosed || isConverted;
@@ -292,31 +312,9 @@ export function RequestRecordWorkspace({
 
   function replaceRequest(updated: RequestRecord) {
     setRequest(updated);
-    setActionDraft(actionDraftFromRequest(updated));
-  }
-
-  async function saveActionPanel() {
-    if (!request || !actionDraft || !canWriteCrm || !actionDirty) return;
-    try {
-      setIsSavingAction(true);
-      setError("");
-      const data = await requestJson<RequestResponse>(
-        `/api/requests/${request.id}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify(actionDraft)
-        }
-      );
-      replaceRequest(data.request);
-      await loadActivities();
-      setToast("Action and ownership updated.");
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error ? saveError.message : "Unable to update request."
-      );
-    } finally {
-      setIsSavingAction(false);
-    }
+    setUpdates(updated.updates);
+    setUpdatesCursor(null);
+    setUpdatesHasMore(false);
   }
 
   async function toggleChecklistItem(item: RequestChecklistItem) {
@@ -351,7 +349,6 @@ export function RequestRecordWorkspace({
         }
       );
       replaceRequest(data.request);
-      await loadActivities();
       setToast(item.completed ? "Checklist item reopened." : "Checklist item completed.");
     } catch (toggleError) {
       setRequest(previous);
@@ -384,7 +381,6 @@ export function RequestRecordWorkspace({
         }
       );
       replaceRequest(data.request);
-      await loadActivities();
       setToast("Checklist note saved.");
     } catch (noteError) {
       setError(
@@ -399,69 +395,151 @@ export function RequestRecordWorkspace({
     }
   }
 
-  async function addTask() {
-    if (!request || !canWriteActivity || !taskTitle.trim()) return;
-    try {
-      const data = await requestJson<RequestResponse>(
-        `/api/requests/${request.id}/tasks`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            title: taskTitle.trim(),
-            dueAt: request.nextFollowUpAt || request.dueDate || today,
-            owner: request.assignedToName || "Unassigned"
-          })
-        }
-      );
-      replaceRequest(data.request);
-      setTaskTitle("");
-      await loadActivities();
-      setToast("Follow-up task added.");
-    } catch (taskError) {
-      setError(taskError instanceof Error ? taskError.message : "Unable to add task.");
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const normalized = mentionQuery.toLowerCase();
+    return teamMembers
+      .filter((member) =>
+        member.name.toLowerCase().includes(normalized) ||
+        member.email.toLowerCase().includes(normalized)
+      )
+      .slice(0, 5);
+  }, [mentionQuery, teamMembers]);
+
+  function updateComposerBody(value: string) {
+    setUpdateBody(value);
+    const match = /(?:^|\s)@([^\s@]*)$/.exec(value);
+    setMentionQuery(match ? match[1] : null);
+    setMentionIndex(0);
+  }
+
+  function insertMention(member: RequestAssignee) {
+    const match = /(?:^|\s)@([^\s@]*)$/.exec(updateBody);
+    if (!match) return;
+    const start = match.index + (match[0].startsWith(" ") ? 1 : 0);
+    setUpdateBody(`${updateBody.slice(0, start)}@${member.name} `);
+    setMentionIds((current) => Array.from(new Set([...current, member.id])));
+    setMentionQuery(null);
+    window.setTimeout(() => composerRef.current?.focus(), 0);
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!mentionSuggestions.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setMentionIndex((current) => (current + 1) % mentionSuggestions.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setMentionIndex((current) => (current - 1 + mentionSuggestions.length) % mentionSuggestions.length);
+    } else if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      insertMention(mentionSuggestions[mentionIndex]);
     }
   }
 
-  async function toggleTask(taskId: string, completed: boolean) {
-    if (!request || !canWriteActivity) return;
+  async function postUpdate() {
+    if (!request || !canWriteActivity || !updateBody.trim() || isPostingUpdate) return;
+    if (isCurrentStepDraft && !stepAssigneeId) {
+      setError("Choose a responsible assignee for the current step.");
+      return;
+    }
     try {
-      const data = await requestJson<RequestResponse>(
-        `/api/requests/${request.id}/tasks/${taskId}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ completed: !completed })
-        }
-      );
+      setIsPostingUpdate(true);
+      const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/updates`, {
+        method: "POST",
+        body: JSON.stringify({
+          kind: isCurrentStepDraft ? "step" : "comment",
+          body: updateBody.trim(),
+          assigneeId: isCurrentStepDraft ? stepAssigneeId : "",
+          targetDate: isCurrentStepDraft ? stepTargetDate : "",
+          mentionIds
+        })
+      });
       replaceRequest(data.request);
-      await loadActivities();
-    } catch (taskError) {
-      setError(
-        taskError instanceof Error ? taskError.message : "Unable to update task."
-      );
+      setUpdateBody("");
+      setMentionIds([]);
+      setMentionQuery(null);
+      if (isCurrentStepDraft && data.request.currentStep) {
+        setUndoAction({ updateId: data.request.currentStep.id, label: "Undo step replacement" });
+      }
+      setIsCurrentStepDraft(false);
+      setStepTargetDate("");
+      setToast(isCurrentStepDraft ? "Current step posted." : "Update posted.");
+    } catch (postError) {
+      setError(postError instanceof Error ? postError.message : "Unable to post update.");
+    } finally {
+      setIsPostingUpdate(false);
     }
   }
 
-  async function addActivityNote() {
-    if (!request || !canWriteActivity || !noteText.trim()) return;
+  async function completeCurrentStep() {
+    if (!request?.currentStep || !canWriteActivity) return;
     try {
       const data = await requestJson<RequestResponse>(
-        `/api/requests/${request.id}/activities`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            type: "Note",
-            title: "Note added",
-            body: noteText.trim(),
-            actor: user?.name ?? "Pulse User"
-          })
-        }
+        `/api/requests/${request.id}/updates/${request.currentStep.id}/complete`,
+        { method: "POST", body: JSON.stringify({ completed: true }) }
       );
       replaceRequest(data.request);
-      setNoteText("");
-      await loadActivities();
-      setToast("Activity note added.");
-    } catch (noteError) {
-      setError(noteError instanceof Error ? noteError.message : "Unable to add note.");
+      setUndoAction({ updateId: request.currentStep.id, label: "Undo completion" });
+      setToast("Current step completed.");
+    } catch (completeError) {
+      setError(completeError instanceof Error ? completeError.message : "Unable to complete step.");
+    }
+  }
+
+  async function undoUpdate() {
+    if (!request || !undoAction) return;
+    try {
+      const data = await requestJson<RequestResponse>(
+        `/api/requests/${request.id}/updates/${undoAction.updateId}/undo`,
+        { method: "POST" }
+      );
+      replaceRequest(data.request);
+      setUndoAction(null);
+      setToast("Update change undone.");
+    } catch (undoError) {
+      setError(undoError instanceof Error ? undoError.message : "Unable to undo update.");
+    }
+  }
+
+  async function changeLead(leadId: string) {
+    if (!request || !canWriteCrm) return;
+    try {
+      const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/lead`, {
+        method: "PATCH",
+        body: JSON.stringify({ leadId })
+      });
+      replaceRequest(data.request);
+      setToast(leadId ? "Lead updated." : "Lead cleared.");
+    } catch (leadError) {
+      setError(leadError instanceof Error ? leadError.message : "Unable to update lead.");
+    }
+  }
+
+  async function addCollaborator(userId: string) {
+    if (!request || !canWriteCrm || !userId) return;
+    try {
+      const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/collaborators`, {
+        method: "POST",
+        body: JSON.stringify({ userId })
+      });
+      replaceRequest(data.request);
+      setToast("Collaborator added.");
+    } catch (collaboratorError) {
+      setError(collaboratorError instanceof Error ? collaboratorError.message : "Unable to add collaborator.");
+    }
+  }
+
+  async function removeCollaborator(userId: string) {
+    if (!request || !canWriteCrm) return;
+    try {
+      const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/collaborators/${userId}`, {
+        method: "DELETE"
+      });
+      replaceRequest(data.request);
+      setToast("Collaborator removed.");
+    } catch (collaboratorError) {
+      setError(collaboratorError instanceof Error ? collaboratorError.message : "Unable to remove collaborator.");
     }
   }
 
@@ -482,7 +560,6 @@ export function RequestRecordWorkspace({
       replaceRequest(data.request);
       setCloseStatus(null);
       setCloseReason("");
-      await loadActivities();
       setToast(`Request moved to ${data.request.status}.`);
     } catch (statusError) {
       setError(
@@ -507,7 +584,6 @@ export function RequestRecordWorkspace({
         }
       );
       replaceRequest(data.request);
-      await loadActivities();
       setToast(`Request reopened as ${data.request.status}.`);
     } catch (statusError) {
       setError(
@@ -529,7 +605,6 @@ export function RequestRecordWorkspace({
       });
       replaceRequest(data.request);
       setConversionOpen(false);
-      await loadActivities();
       setToast(
         data.request.relatedQuoteNumber
           ? `Created ${data.request.relatedQuoteNumber}.`
@@ -688,6 +763,166 @@ export function RequestRecordWorkspace({
     ));
   }
 
+  function renderCurrentStepCard(className = "") {
+    const step = request?.currentStep;
+    return (
+      <section className={`request-current-step-card ${className}`.trim()} id={className.includes("mobile") ? "request-mobile-current-step-card" : "request-current-step-card"}>
+        <div className="record-section-heading">
+          <div>
+            <span>Current step</span>
+            <h2>{step ? step.title || step.body : "No current step"}</h2>
+          </div>
+          {step ? <span className="request-step-status">Open</span> : null}
+        </div>
+        {step ? (
+          <>
+            <p>{step.body}</p>
+            <div className="request-current-step-meta">
+              <span><UserRound size={14} /> {step.assignee?.name || "Unassigned"}</span>
+              <span><CalendarClock size={14} /> {step.targetDate ? formatDate(step.targetDate) : "No target date"}</span>
+            </div>
+            <button
+              className="request-step-complete-button"
+              type="button"
+              onClick={() => void completeCurrentStep()}
+              disabled={!canWriteActivity}
+            >
+              <CheckCircle2 size={16} /> Complete step
+            </button>
+          </>
+        ) : (
+          <p className="request-current-step-empty">Use Updates to promote one responsible, dated step when the request needs a clear next move.</p>
+        )}
+      </section>
+    );
+  }
+
+  function renderUpdateComposer(idSuffix: string) {
+    const textareaId = `request-update-body-${idSuffix}`;
+    return (
+      <section className={`request-update-composer ${idSuffix === "mobile" ? "request-mobile-update-composer" : ""}`.trim()}>
+        <label htmlFor={textareaId}>
+          Add an update
+          <textarea
+            ref={idSuffix === "desktop" ? composerRef : undefined}
+            id={textareaId}
+            value={updateBody}
+            onChange={(event) => updateComposerBody(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            placeholder="Share context, a decision, or what changed…"
+            disabled={!canWriteActivity || isPostingUpdate}
+            aria-describedby={`${textareaId}-supporting`}
+          />
+        </label>
+        <p id={`${textareaId}-supporting`} className="request-update-supporting-text">
+          Updates are immutable. Add a new update when context changes. Type @ to mention an active Pulse user.
+        </p>
+        {mentionSuggestions.length ? (
+          <div className="request-mention-suggestions" role="listbox" aria-label="Mention suggestions">
+            {mentionSuggestions.map((member, index) => (
+              <button
+                type="button"
+                role="option"
+                aria-selected={index === mentionIndex}
+                key={member.id}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMention(member)}
+              >
+                <AtSign size={14} />
+                <span><strong>{member.name}</strong><small>{member.email}</small></span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="request-update-composer-footer">
+          <button
+            type="button"
+            className={isCurrentStepDraft ? "request-update-chip active" : "request-update-chip"}
+            aria-pressed={isCurrentStepDraft}
+            onClick={() => setIsCurrentStepDraft((current) => !current)}
+            disabled={!canWriteActivity || isClosed || isConverted}
+          >
+            <CheckCircle2 size={14} /> Set as current step
+          </button>
+          <button
+            className="primary"
+            type="button"
+            onClick={() => void postUpdate()}
+            disabled={!canWriteActivity || !updateBody.trim() || isPostingUpdate}
+          >
+            <Send size={15} /> {isPostingUpdate ? "Posting…" : "Post update"}
+          </button>
+        </div>
+        {isCurrentStepDraft ? (
+          <div className="request-step-fields">
+            <label>
+              Responsible assignee <span aria-hidden="true">*</span>
+              <select value={stepAssigneeId} onChange={(event) => setStepAssigneeId(event.target.value)} disabled={!canWriteActivity}>
+                <option value="">Choose a Pulse user</option>
+                {teamMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+              </select>
+            </label>
+            <label>
+              Target date <span className="optional-label">Optional</span>
+              <input type="date" value={stepTargetDate} onChange={(event) => setStepTargetDate(event.target.value)} disabled={!canWriteActivity} />
+            </label>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
+  function renderTeamPanel() {
+    const collaboratorIds = new Set(request?.collaborators.map((collaborator) => collaborator.id) ?? []);
+    return (
+      <section className="request-team-panel" id="request-team-panel">
+        <div className="record-section-heading">
+          <div><span>Request team</span><h2>Lead & collaborators</h2></div>
+          <Users size={17} />
+        </div>
+        <label>
+          Lead
+          <select
+            value={request?.lead?.id ?? ""}
+            onChange={(event) => void changeLead(event.target.value)}
+            disabled={!canWriteCrm || isConverted}
+          >
+            <option value="">Unassigned</option>
+            {assignees.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+          </select>
+        </label>
+        <div className="request-collaborator-list">
+          {request?.collaborators.map((collaborator) => (
+            <div className="request-collaborator-row" key={collaborator.id}>
+              <span><UserRound size={14} />{collaborator.name}</span>
+              <button
+                type="button"
+                onClick={() => void removeCollaborator(collaborator.id)}
+                disabled={!canWriteCrm || (request.currentStep?.assignee?.id === collaborator.id && request.currentStep.stepStatus === "open")}
+                aria-label={`Remove ${collaborator.name} from request team`}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <label>
+          Add collaborator
+          <select
+            value=""
+            onChange={(event) => void addCollaborator(event.target.value)}
+            disabled={!canWriteCrm || isConverted}
+          >
+            <option value="">Choose a Pulse user</option>
+            {teamMembers.filter((member) => member.id !== request?.lead?.id && !collaboratorIds.has(member.id)).map((member) => (
+              <option key={member.id} value={member.id}>{member.name}</option>
+            ))}
+          </select>
+        </label>
+      </section>
+    );
+  }
+
   if (isLoading) {
     return (
       <section className="request-record-skeleton" aria-label="Loading request">
@@ -698,7 +933,7 @@ export function RequestRecordWorkspace({
     );
   }
 
-  if (!request || error && !actionDraft) {
+  if (!request) {
     return (
       <section className="request-record-empty">
         <AlertTriangle size={24} />
@@ -744,16 +979,18 @@ export function RequestRecordWorkspace({
               Reopen request
             </button>
           ) : isConverted ? (
-            <Link className="record-primary-action" href={request.relatedQuoteId ? `/quotes/${request.relatedQuoteId}` : "/quotes"}>
-              <FileText size={16} />
-              {request.relatedQuoteNumber || "View quotes"}
-            </Link>
+            canViewQuotes ? (
+              <Link className="record-primary-action" href={request.relatedQuoteId ? `/quotes/${request.relatedQuoteId}` : "/quotes"}>
+                <FileText size={16} />
+                {request.relatedQuoteNumber || "View quotes"}
+              </Link>
+            ) : <span className="status-pill">Converted</span>
           ) : (
             <button
               className="record-primary-action"
               type="button"
               onClick={handleQuoteAction}
-              disabled={!canWriteCrm}
+              disabled={!canWriteCrm || (request.checklistSummary.readyForQuote && !canWriteQuotes)}
             >
               <Send size={16} />
               {request.checklistSummary.readyForQuote
@@ -809,14 +1046,14 @@ export function RequestRecordWorkspace({
           </small>
         </div>
         <div>
-          <span>Owner</span>
-          <strong>{request.assignedToName || "Unassigned"}</strong>
-          <small><UserRound size={14} /> {request.assignedToRole || "Needs assignment"}</small>
+          <span>Lead / team</span>
+          <strong>{request.lead?.name || "Unassigned"}</strong>
+          <small><UserRound size={14} /> {request.collaborators.length ? `${request.collaborators.length} collaborator${request.collaborators.length === 1 ? "" : "s"}` : "No collaborators"}</small>
         </div>
         <div>
           <span>Timing</span>
           <strong>{request.dueDate ? `Due ${formatDate(request.dueDate)}` : "No due date"}</strong>
-          <small><CalendarClock size={14} /> {request.nextFollowUpAt ? `Follow-up ${formatDate(request.nextFollowUpAt)}` : "No follow-up"}</small>
+          <small><CalendarClock size={14} /> {request.currentStep?.targetDate ? `Step target ${formatDate(request.currentStep.targetDate)}` : "No step target"}</small>
         </div>
       </section>
 
@@ -829,6 +1066,8 @@ export function RequestRecordWorkspace({
           </button>
         </div>
       ) : null}
+
+      {renderCurrentStepCard("request-mobile-current-step")}
 
       <div className="request-record-workspace">
         <section className="request-supporting-panel request-record-primary-panel">
@@ -845,7 +1084,7 @@ export function RequestRecordWorkspace({
                 aria-selected={activeTab === tab.id}
                 aria-controls={`request-panel-${tab.id}`}
                 tabIndex={activeTab === tab.id ? 0 : -1}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => selectTab(tab.id)}
                 onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
               >
                 {tab.label}
@@ -854,6 +1093,9 @@ export function RequestRecordWorkspace({
                 ) : null}
                 {tab.id === "files" && request.documents.length ? (
                   <span>{request.documents.length}</span>
+                ) : null}
+                {tab.id === "updates" && request.unreadMentionCount ? (
+                  <span aria-label={`${request.unreadMentionCount} unread mentions`}>{request.unreadMentionCount}</span>
                 ) : null}
               </button>
             ))}
@@ -1010,200 +1252,78 @@ export function RequestRecordWorkspace({
               />
             ) : null}
 
-            {activeTab === "activity" ? (
-              <div className="request-activity-panel">
-                <div className="record-note-composer">
-                  <label>
-                    Add activity note
-                    <textarea
-                      value={noteText}
-                      onChange={(event) => setNoteText(event.target.value)}
-                      placeholder="Record an update, client conversation, or decision..."
-                      disabled={!canWriteActivity}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => void addActivityNote()}
-                    disabled={!canWriteActivity || !noteText.trim()}
-                  >
-                    <StickyNote size={16} />
-                    Add note
-                  </button>
+            {activeTab === "updates" ? (
+              <div className="request-updates-panel">
+                {renderUpdateComposer("mobile")}
+                <div className="request-updates-toolbar" role="tablist" aria-label="Update filters">
+                  {requestUpdateFilters.map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      role="tab"
+                      aria-selected={updateFilter === filter}
+                      onClick={() => setUpdateFilter(filter)}
+                    >
+                      {filter === "all" ? "All" : filter[0].toUpperCase() + filter.slice(1) + (filter === "system" ? "" : "s")}
+                    </button>
+                  ))}
                 </div>
-                <ActivityTimeline
-                  activities={activities}
-                  emptyMessage="No shared activity has been recorded for this request yet."
-                />
+                {updates.length ? (
+                  <ol className="request-update-list">
+                    {updates.map((update) => (
+                      <li
+                        key={update.id}
+                        id={`request-update-${update.id}`}
+                        ref={(element) => { updateRefs.current[update.id] = element; }}
+                        className={`request-update-item kind-${update.kind}`}
+                        tabIndex={-1}
+                        data-update-id={update.id}
+                      >
+                        <div className="request-update-item-marker" aria-hidden="true">
+                          {update.kind === "step" ? <CheckCircle2 size={16} /> : update.kind === "comment" ? <AtSign size={16} /> : <CalendarClock size={16} />}
+                        </div>
+                        <div className="request-update-item-content">
+                          <div className="request-update-item-headline">
+                            <strong>{update.title}</strong>
+                            <span className="request-update-item-status">
+                              {update.kind === "step" ? update.stepStatus : update.kind === "system" ? "System" : "Comment"}
+                            </span>
+                          </div>
+                          {update.body ? <p>{update.body}</p> : null}
+                          <div className="request-update-item-meta">
+                            <span>{update.author.name}</span>
+                            <time dateTime={update.createdAt}>{formatWorkspaceDate(update.createdAt, true)}</time>
+                            {update.kind === "step" && update.assignee ? <span>Assigned to {update.assignee.name}</span> : null}
+                            {update.kind === "step" && update.targetDate ? <span>Target {formatDate(update.targetDate)}</span> : null}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <div className="activity-empty-state"><AtSign size={18} /><span>No updates match this filter yet.</span></div>
+                )}
+                {updatesHasMore ? (
+                  <button className="request-updates-load-more" type="button" onClick={() => void loadUpdates(updateFilter, updatesCursor)} disabled={isLoadingUpdates}>
+                    {isLoadingUpdates ? "Loading…" : "Load older updates"}
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
         </section>
 
         <aside className="request-action-rail">
-          <section className="request-action-panel" id="request-action-panel" tabIndex={-1}>
-            <div className="record-section-heading">
-              <div>
-                <span>Current move</span>
-                <h2>Action and ownership</h2>
-              </div>
-              {actionDirty ? <em>Unsaved</em> : <Check size={17} />}
-            </div>
-            <label>
-              Next action
-              <textarea
-                value={actionDraft?.nextAction ?? ""}
-                onChange={(event) =>
-                  setActionDraft((current) =>
-                    current ? { ...current, nextAction: event.target.value } : current
-                  )
-                }
-                placeholder={getNextAction(request)}
-                disabled={!canWriteCrm || recordLocked}
-              />
-            </label>
-            <label>
-              Owner
-              <select
-                value={actionDraft?.assignedToId ?? ""}
-                onChange={(event) =>
-                  setActionDraft((current) =>
-                    current
-                      ? { ...current, assignedToId: event.target.value }
-                      : current
-                  )
-                }
-                disabled={!canWriteCrm || recordLocked}
-              >
-                <option value="">Unassigned</option>
-                {assignees.map((assignee) => (
-                  <option key={assignee.id} value={assignee.id}>{assignee.name}</option>
-                ))}
-              </select>
-            </label>
-            <div className="request-action-date-grid">
-              <label>
-                Follow-up
-                <input
-                  type="date"
-                  value={actionDraft?.nextFollowUpAt ?? ""}
-                  onChange={(event) =>
-                    setActionDraft((current) =>
-                      current
-                        ? { ...current, nextFollowUpAt: event.target.value }
-                        : current
-                    )
-                  }
-                  disabled={!canWriteCrm || recordLocked}
-                />
-              </label>
-              <label>
-                Due date
-                <input
-                  type="date"
-                  value={actionDraft?.dueDate ?? ""}
-                  onChange={(event) =>
-                    setActionDraft((current) =>
-                      current ? { ...current, dueDate: event.target.value } : current
-                    )
-                  }
-                  disabled={!canWriteCrm || recordLocked}
-                />
-              </label>
-            </div>
-            <label>
-              Priority
-              <select
-                value={actionDraft?.priority ?? request.priority}
-                onChange={(event) =>
-                  setActionDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          priority: event.target.value as RequestPriority
-                        }
-                      : current
-                  )
-                }
-                disabled={!canWriteCrm || recordLocked}
-              >
-                {requestPriorities.map((priority) => (
-                  <option key={priority} value={priority}>{priority}</option>
-                ))}
-              </select>
-            </label>
-            <div className="request-action-panel-buttons">
-              <button
-                type="button"
-                onClick={() => setActionDraft(actionDraftFromRequest(request))}
-                disabled={!actionDirty || isSavingAction}
-              >
-                Reset
-              </button>
-              <button
-                className="primary"
-                type="button"
-                onClick={() => void saveActionPanel()}
-                disabled={!actionDirty || isSavingAction}
-              >
-                <Save size={15} />
-                {isSavingAction ? "Saving..." : "Save changes"}
-              </button>
-            </div>
-          </section>
-
-          <section className="request-followup-panel">
-            <div className="record-section-heading">
-              <div>
-                <span>Follow-ups</span>
-                <h2>Tasks</h2>
-              </div>
-              <strong>{request.tasks.filter((task) => !task.completed).length}</strong>
-            </div>
-            <div className="record-task-composer">
-              <input
-                value={taskTitle}
-                onChange={(event) => setTaskTitle(event.target.value)}
-                placeholder="Add follow-up task"
-                disabled={!canWriteActivity}
-              />
-              <button
-                type="button"
-                onClick={() => void addTask()}
-                disabled={!canWriteActivity || !taskTitle.trim()}
-              >
-                Add
-              </button>
-            </div>
-            <div className="record-task-list">
-              {request.tasks.length ? (
-                request.tasks.map((task) => (
-                  <button
-                    type="button"
-                    key={task.id}
-                    className={task.completed ? "complete" : ""}
-                    onClick={() => void toggleTask(task.id, task.completed)}
-                    disabled={!canWriteActivity}
-                  >
-                    {task.completed ? <CheckCircle2 size={18} /> : <ClipboardList size={18} />}
-                    <span>
-                      <strong>{task.title}</strong>
-                      <small>{task.owner} · {task.dueAt ? formatDate(task.dueAt) : "No due date"}</small>
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <p>No follow-up tasks yet.</p>
-              )}
-            </div>
-          </section>
+          {renderCurrentStepCard()}
+          {renderUpdateComposer("desktop")}
+          {renderTeamPanel()}
         </aside>
       </div>
 
       <div className="request-mobile-action-bar">
         <Link href={editHref}><Edit3 size={17} /> Edit</Link>
         {!isConverted && !isClosed ? (
-          <button type="button" onClick={handleQuoteAction}>
+          <button type="button" onClick={handleQuoteAction} disabled={!canWriteCrm || (request.checklistSummary.readyForQuote && !canWriteQuotes)}>
             <Send size={17} />
             {request.checklistSummary.readyForQuote ? "Create quote" : "Resolve blockers"}
           </button>
@@ -1212,13 +1332,20 @@ export function RequestRecordWorkspace({
             <RotateCcw size={17} />
             Reopen
           </button>
-        ) : (
+        ) : canViewQuotes ? (
           <Link href={request.relatedQuoteId ? `/quotes/${request.relatedQuoteId}` : "/quotes"}><FileText size={17} /> View quote</Link>
-        )}
+        ) : <span>Converted</span>}
       </div>
 
       {toast ? (
         <div className="lead-toast" role="status" aria-live="polite">{toast}</div>
+      ) : null}
+
+      {undoAction ? (
+        <div className="request-undo-snackbar" role="status" aria-live="polite">
+          <span>{undoAction.label}</span>
+          <button type="button" onClick={() => void undoUpdate()}>Undo</button>
+        </div>
       ) : null}
 
       {closeStatus ? (
@@ -1240,7 +1367,7 @@ export function RequestRecordWorkspace({
                 autoFocus
                 value={closeReason}
                 onChange={(event) => setCloseReason(event.target.value)}
-                placeholder="Add a concise reason for the activity history..."
+                placeholder="Add a concise reason for the request history..."
               />
             </label>
             <div className="record-dialog-actions">
@@ -1274,7 +1401,7 @@ export function RequestRecordWorkspace({
             <div className="record-conversion-summary">
               <strong>{request.companyName || request.title}</strong>
               <span>{request.serviceCategory} · Owner: {request.assignedToName || "Unassigned"}</span>
-              <p>The checklist and activity history remain attached to this request.</p>
+              <p>The checklist and Updates remain attached to this request.</p>
             </div>
             <div className="record-dialog-actions">
               <button type="button" onClick={() => setConversionOpen(false)}>Cancel</button>

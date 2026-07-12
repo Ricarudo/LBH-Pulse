@@ -26,7 +26,7 @@ describe("dashboard greeting", () => {
 
 describe("dashboard layout", () => {
   it("uses the intended five-widget starter layout", () => {
-    const preferences = defaultDashboardPreferences("Admin");
+    const preferences = defaultDashboardPreferences(true);
     assert.equal(preferences.defaultScope, "all");
     assert.deepEqual(
       preferences.widgets.map((widget) => [widget.id, widget.width]),
@@ -45,7 +45,7 @@ describe("dashboard layout", () => {
       version: 1,
       defaultScope: "mine",
       widgets: [{ id: "recent-activity", visible: true, width: "full" }]
-    }, "Sales");
+    }, false);
     assert.equal(preferences.widgets[0].id, "recent-activity");
     assert.equal(preferences.widgets.length, 5);
     assert.equal(preferences.widgets[1].visible, false);

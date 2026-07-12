@@ -36,8 +36,8 @@ describe("dashboard date classification", () => {
 
 describe("dashboard preferences", () => {
   it("defaults admins to all Pulse and other roles to personal work", () => {
-    assert.equal(defaultDashboardPreferences("Admin").defaultScope, "all");
-    assert.equal(defaultDashboardPreferences("Sales").defaultScope, "mine");
+    assert.equal(defaultDashboardPreferences(true).defaultScope, "all");
+    assert.equal(defaultDashboardPreferences(false).defaultScope, "mine");
   });
 
   it("adds newly registered widgets as hidden without disturbing saved order", () => {
@@ -47,7 +47,7 @@ describe("dashboard preferences", () => {
       widgets: [
         { id: "work-queue", visible: true, width: "half" }
       ]
-    }, "Sales");
+    }, false);
 
     assert.equal(preferences.widgets[0].id, "work-queue");
     assert.equal(preferences.widgets[0].width, "half");

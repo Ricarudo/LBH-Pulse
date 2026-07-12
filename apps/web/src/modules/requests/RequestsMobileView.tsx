@@ -50,7 +50,6 @@ type RequestsMobileViewProps = {
   assigneeFilter: string;
   priorityFilter: "All" | RequestPriority;
   capabilities: RequestsMobileCapabilities;
-  getNextAction: (request: RequestRecord) => string;
   onSearchChange: (value: string) => void;
   onStatusFilterChange: (value: "All" | RequestStatus) => void;
   onSourceFilterChange: (value: "All" | RequestSource) => void;
@@ -149,7 +148,6 @@ export function RequestsMobileView({
   assigneeFilter,
   priorityFilter,
   capabilities,
-  getNextAction,
   onSearchChange,
   onStatusFilterChange,
   onSourceFilterChange,
@@ -334,7 +332,8 @@ export function RequestsMobileView({
                   max={checklist.total}
                 />
                 <div className="requests-mobile-next-action">
-                  <span>{getNextAction(request)}</span>
+                  <span>{request.currentStep ? "Next step" : "Suggested"}</span>
+                  <strong>{request.currentStep?.title || request.currentStep?.body || request.checklistSummary.missingRequired[0] || "Set a current step"}</strong>
                   <ArrowRight size={15} />
                 </div>
               </MobileRecordCard>

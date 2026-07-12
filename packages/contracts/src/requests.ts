@@ -1,4 +1,3 @@
-import type { LocalRole } from "./auth";
 import type { LifecycleDocumentRecord } from "./documents";
 
 export const requestStatuses = [
@@ -128,8 +127,54 @@ export type RequestAssignee = {
   id: string;
   name: string;
   email: string;
-  role: LocalRole;
+  role: string;
   roleLabel: string;
+  roleColor: string;
+};
+
+export const requestUpdateKinds = ["comment", "step", "system"] as const;
+export type RequestUpdateKind = (typeof requestUpdateKinds)[number];
+
+export const requestUpdateFilters = ["all", "comment", "step", "system"] as const;
+export type RequestUpdateFilter = (typeof requestUpdateFilters)[number];
+
+export const requestStepStatuses = ["open", "completed", "superseded"] as const;
+export type RequestStepStatus = (typeof requestStepStatuses)[number];
+
+export type RequestUpdateAuthor = {
+  id: string | null;
+  name: string;
+  email: string;
+  role: string;
+  roleLabel: string;
+  roleColor: string;
+};
+
+export type RequestUpdate = {
+  id: string;
+  requestId: string;
+  kind: RequestUpdateKind;
+  title: string;
+  body: string;
+  author: RequestUpdateAuthor;
+  assignee: RequestAssignee | null;
+  targetDate: string;
+  stepStatus: RequestStepStatus | null;
+  supersedesId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  mentions: Array<{
+    id: string;
+    userId: string;
+    userName: string;
+    readAt: string;
+  }>;
+};
+
+export type RequestUpdatePage = {
+  updates: RequestUpdate[];
+  nextCursor: string | null;
+  hasMore: boolean;
 };
 
 export type RequestRecord = {
@@ -155,7 +200,7 @@ export type RequestRecord = {
   siteId: string | null;
   assignedToId: string | null;
   assignedToName: string;
-  assignedToRole: LocalRole | "";
+  assignedToRole: string;
   createdById: string | null;
   createdByName: string;
   receivedDate: string;
@@ -173,6 +218,11 @@ export type RequestRecord = {
   archivedAt?: string;
   createdAt: string;
   updatedAt: string;
+  lead: RequestAssignee | null;
+  collaborators: RequestAssignee[];
+  currentStep: RequestUpdate | null;
+  unreadMentionCount: number;
+  updates: RequestUpdate[];
   documents: LifecycleDocumentRecord[];
   activity: RequestActivity[];
   tasks: RequestTask[];
@@ -327,9 +377,46 @@ export const convertRequestSchema = z.object({
   createQuote: z.boolean().default(true)
 });
 
+export const requestUpdateFilterSchema = z.enum(requestUpdateFilters);
+
+export const createRequestUpdateSchema = z
+  .object({
+    kind: z.enum(["comment", "step"]).default("comment"),
+    title: optionalText,
+    body: z.string().trim().min(1, "Write an update before posting."),
+    assigneeId: nullableIdSchema,
+    targetDate: optionalDateText,
+    mentionIds: z.array(z.string().trim().min(1)).default([])
+  })
+  .superRefine((data, context) => {
+    if (data.kind === "step" && !data.assigneeId) {
+      context.addIssue({
+        code: "custom",
+        message: "Choose a responsible assignee for the current step.",
+        path: ["assigneeId"]
+      });
+    }
+  });
+
+export const requestTeamLeadSchema = z.object({
+  leadId: nullableIdSchema
+});
+
+export const requestCollaboratorSchema = z.object({
+  userId: z.string().trim().min(1)
+});
+
+export const requestUpdateCompleteSchema = z.object({
+  completed: z.boolean().default(true)
+});
+
 export type CreateRequestInput = z.infer<typeof createRequestSchema>;
 export type UpdateRequestInput = z.infer<typeof updateRequestSchema>;
 export type CreateRequestActivityInput = z.infer<typeof createRequestActivitySchema>;
 export type CreateRequestTaskInput = z.infer<typeof createRequestTaskSchema>;
 export type UpdateRequestChecklistItemInput = z.infer<typeof updateRequestChecklistItemSchema>;
 export type ConvertRequestInput = z.infer<typeof convertRequestSchema>;
+export type CreateRequestUpdateInput = z.infer<typeof createRequestUpdateSchema>;
+export type RequestTeamLeadInput = z.infer<typeof requestTeamLeadSchema>;
+export type RequestCollaboratorInput = z.infer<typeof requestCollaboratorSchema>;
+export type RequestUpdateCompleteInput = z.infer<typeof requestUpdateCompleteSchema>;

@@ -1,4 +1,3 @@
-import type { LocalRole } from "@pulse/contracts/auth";
 import {
   dashboardWidgetIds,
   type DashboardPreferencesRecord,
@@ -46,17 +45,17 @@ const defaultPlacements: DashboardWidgetPlacement[] = [
   { id: "module-health", visible: true, width: "full" }
 ];
 
-export function defaultDashboardPreferences(role: LocalRole): DashboardPreferencesRecord {
+export function defaultDashboardPreferences(isSystemAdmin: boolean): DashboardPreferencesRecord {
   return {
     version: 1,
-    defaultScope: role === "Admin" ? "all" : "mine",
+    defaultScope: isSystemAdmin ? "all" : "mine",
     widgets: defaultPlacements.map((widget) => ({ ...widget }))
   };
 }
 
 export function normalizeDashboardPreferences(
   value: DashboardPreferencesRecord,
-  role: LocalRole
+  isSystemAdmin: boolean
 ) {
   const seen = new Set<DashboardWidgetId>();
   const widgets = value.widgets
@@ -78,7 +77,7 @@ export function normalizeDashboardPreferences(
 
   return {
     version: 1 as const,
-    defaultScope: value.defaultScope ?? (role === "Admin" ? "all" : "mine"),
+    defaultScope: value.defaultScope ?? (isSystemAdmin ? "all" : "mine"),
     widgets
   };
 }

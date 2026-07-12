@@ -7,6 +7,8 @@ type RequestPageProps = {
   }>;
   searchParams?: Promise<{
     returnTo?: string;
+    tab?: string;
+    update?: string;
   }>;
 };
 
@@ -33,6 +35,8 @@ export default async function RequestPage({
       <RequestRecordWorkspace
         requestId={id}
         returnTo={safeReturnTo(query?.returnTo)}
+        initialTab={query?.tab === "updates" ? "updates" : "checklist"}
+        focusUpdateId={query?.update}
       />
     </PulseShell>
   );

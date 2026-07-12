@@ -25,7 +25,6 @@ import {
   Blocks,
   CalendarDays,
   Check,
-  ClipboardCheck,
   EyeOff,
   GripVertical,
   LayoutDashboard,
@@ -45,7 +44,7 @@ import {
   useState,
   type ReactNode
 } from "react";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import {
   dashboardGreeting,
   dashboardWidgetCatalog,
@@ -319,13 +318,13 @@ function WidgetPagination({
 function WorkQueueWidget({
   data,
   filter,
-  completingTaskId,
-  onCompleteTask
+  completingStepId,
+  onCompleteStep
 }: {
   data?: DashboardDataResponse["widgets"]["work-queue"];
   filter: AttentionFilter;
-  completingTaskId: string;
-  onCompleteTask: (item: DashboardWorkItem) => void;
+  completingStepId: string;
+  onCompleteStep: (item: DashboardWorkItem) => void;
 }) {
   const [page, setPage] = useState(0);
   const items = data ? visibleWorkItems(data.items, filter) : [];
@@ -360,7 +359,7 @@ function WorkQueueWidget({
             {pageItems.map((item) => (
               <article className="dashboard-work-row" key={item.id}>
                 <div className={`dashboard-work-kind kind-${item.kind}`}>
-                  {item.kind === "request-task" ? <ClipboardCheck size={17} /> : <Blocks size={17} />}
+                  <Blocks size={17} />
                 </div>
                 <div className="dashboard-work-copy">
                   <div className="dashboard-work-primary">
@@ -379,15 +378,15 @@ function WorkQueueWidget({
                     ))}
                   </div>
                 </div>
-                {item.canComplete && item.taskId ? (
+                {item.canComplete && item.stepId ? (
                   <button
                     className="dashboard-complete-button"
                     type="button"
-                    disabled={completingTaskId === item.taskId}
-                    onClick={() => onCompleteTask(item)}
+                    disabled={completingStepId === item.stepId}
+                    onClick={() => onCompleteStep(item)}
                   >
                     <Check size={16} />
-                    {completingTaskId === item.taskId ? "Completing…" : "Complete"}
+                    {completingStepId === item.stepId ? "Completing…" : "Complete"}
                   </button>
                 ) : (
                   <Link className="dashboard-row-link" href={item.href} aria-label={`Open ${item.reference}`}>
@@ -578,7 +577,7 @@ export function HubDashboard() {
   const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
   const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>("all");
-  const [completingTaskId, setCompletingTaskId] = useState("");
+  const [completingStepId, setCompletingStepId] = useState("");
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -594,7 +593,7 @@ export function HubDashboard() {
     [activePreferences]
   );
   const visibleWidgetKey = visibleWidgets.map((widget) => widget.id).join(",");
-  const canCreateRequest = canRole(user?.role, "crm:write");
+  const canCreateRequest = canUser(user, "requests:write");
 
   useEffect(() => {
     if (!user) return;
@@ -607,13 +606,13 @@ export function HubDashboard() {
           { cache: "no-store" }
         );
         if (!active) return;
-        const normalized = normalizeDashboardPreferences(response.preferences, currentUser.role);
+        const normalized = normalizeDashboardPreferences(response.preferences, currentUser.isSystemAdmin);
         setPreferences(normalized);
         setDraft(normalized);
         setScope(normalized.defaultScope);
       } catch {
         if (!active) return;
-        const fallback = defaultDashboardPreferences(currentUser.role);
+        const fallback = defaultDashboardPreferences(currentUser.isSystemAdmin);
         setPreferences(fallback);
         setDraft(fallback);
         setScope(fallback.defaultScope);
@@ -673,7 +672,7 @@ export function HubDashboard() {
       "/api/dashboard/preferences",
       { method: "PUT", body: JSON.stringify(next) }
     );
-    const normalized = normalizeDashboardPreferences(response.preferences, user!.role);
+    const normalized = normalizeDashboardPreferences(response.preferences, user!.isSystemAdmin);
     setPreferences(normalized);
     setDraft(normalized);
     return normalized;
@@ -759,7 +758,7 @@ export function HubDashboard() {
         "/api/dashboard/preferences",
         { method: "DELETE" }
       );
-      const normalized = normalizeDashboardPreferences(response.preferences, user!.role);
+      const normalized = normalizeDashboardPreferences(response.preferences, user!.isSystemAdmin);
       setPreferences(normalized);
       setDraft(normalized);
       setScope(normalized.defaultScope);
@@ -773,20 +772,20 @@ export function HubDashboard() {
     }
   }
 
-  async function completeTask(item: DashboardWorkItem) {
-    if (!item.requestId || !item.taskId) return;
-    setCompletingTaskId(item.taskId);
+  async function completeStep(item: DashboardWorkItem) {
+    if (!item.entityId || !item.stepId) return;
+    setCompletingStepId(item.stepId);
     try {
-      await requestJson(`/api/requests/${item.requestId}/tasks/${item.taskId}`, {
-        method: "PATCH",
+      await requestJson(`/api/requests/${item.entityId}/updates/${item.stepId}/complete`, {
+        method: "POST",
         body: JSON.stringify({ completed: true })
       });
       setMessage(`${item.title} completed.`);
       await loadDashboard(true);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to complete task.");
+      setMessage(error instanceof Error ? error.message : "Unable to complete step.");
     } finally {
-      setCompletingTaskId("");
+      setCompletingStepId("");
     }
   }
 
@@ -805,8 +804,8 @@ export function HubDashboard() {
         <WorkQueueWidget
           data={data?.widgets["work-queue"]}
           filter={attentionFilter}
-          completingTaskId={completingTaskId}
-          onCompleteTask={(item) => void completeTask(item)}
+          completingStepId={completingStepId}
+          onCompleteStep={(item) => void completeStep(item)}
         />
       );
     }
@@ -967,7 +966,7 @@ export function HubDashboard() {
           items={visibleWidgets.map((widget) => widget.id)}
           strategy={rectSortingStrategy}
         >
-          <main className="dashboard-grid">
+          <div className="dashboard-grid">
             {visibleWidgets.map((placement) => (
               <WidgetFrame
                 placement={placement}
@@ -988,7 +987,7 @@ export function HubDashboard() {
                 {renderWidget(placement.id)}
               </WidgetFrame>
             ))}
-          </main>
+          </div>
         </SortableContext>
       </DndContext>
 

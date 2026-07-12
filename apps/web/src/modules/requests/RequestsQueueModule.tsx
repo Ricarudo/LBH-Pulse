@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { canRole } from "@pulse/contracts/auth";
+import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ClientRecord } from "@pulse/contracts/clients";
 import type {
@@ -45,64 +45,6 @@ async function requestJson<T>(url: string, init?: RequestInit) {
   return data as T;
 }
 
-function isReadyForQuote(request: RequestRecord) {
-  return (
-    request.checklistSummary.readyForQuote ||
-    request.status === "Ready for Quote"
-  );
-}
-
-function getMissingInfoItems(request: RequestRecord) {
-  const items = [];
-
-  if (!request.companyName && !request.contactName) {
-    items.push("client or contact");
-  }
-
-  if (!request.contactPhone && !request.contactEmail) {
-    items.push("contact method");
-  }
-
-  if (!request.siteName && !request.siteAddress && !request.siteId) {
-    items.push("site/location");
-  }
-
-  if (request.missingInfo) {
-    items.push(request.missingInfo);
-  }
-
-  return Array.from(new Set(items));
-}
-
-function getNextAction(request: RequestRecord) {
-  if (request.nextAction) {
-    return request.nextAction;
-  }
-
-  if (!request.assignedToId) {
-    return "Assign an owner";
-  }
-
-  const missingInfo = request.checklistSummary.missingRequired.length
-    ? request.checklistSummary.missingRequired
-    : getMissingInfoItems(request);
-  if (missingInfo.length > 0) {
-    return `Collect ${missingInfo.join(", ")}`;
-  }
-
-  if (request.siteVisitNeeded && !request.siteVisitCompleted) {
-    return "Complete required site visit";
-  }
-
-  if (isReadyForQuote(request)) {
-    return "Create quote workspace";
-  }
-
-  return request.nextFollowUpAt
-    ? "Follow up with client"
-    : "Set next follow-up";
-}
-
 export function RequestsQueueModule({
   openNewOnLoad = false
 }: {
@@ -118,7 +60,7 @@ export function RequestsQueueModule({
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
-  const canWriteCrm = canRole(user?.role, "crm:write");
+  const canWriteCrm = canUser(user, "requests:write");
 
   useEffect(() => {
     async function loadQueue() {
@@ -278,7 +220,6 @@ export function RequestsQueueModule({
         isLoading={isLoading}
         loadError={loadError}
         canWrite={canWriteCrm}
-        getNextAction={getNextAction}
         onCreateRequest={openCreateForm}
         onOwnerChange={updateOwner}
         onStatusChange={updateStatus}
