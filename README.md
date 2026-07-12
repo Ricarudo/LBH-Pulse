@@ -123,6 +123,14 @@ sudo cp ./pulse-local-ca.crt /usr/local/share/ca-certificates/pulse-local-ca.crt
 sudo update-ca-certificates
 ```
 
+### Android
+
+Transfer `pulse-local-ca.crt` to the phone, then open **Settings → Security &
+privacy → More security settings → Encryption & credentials → Install a
+certificate → CA certificate**. Select the file, confirm the device lock, and
+restart Chrome before opening `https://pulse.lbh.app` again. Android labels vary
+slightly by device manufacturer.
+
 Some browsers maintain a separate certificate store. Import
 `pulse-local-ca.crt` into the browser's Authorities store if it still reports an
 untrusted issuer.
