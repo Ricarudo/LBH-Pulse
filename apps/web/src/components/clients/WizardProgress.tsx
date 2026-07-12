@@ -38,6 +38,9 @@ export function WizardProgress({
             ]
               .filter(Boolean)
               .join(" ")}
+            aria-label={`${step.label}${
+              isActive ? ", current step" : isComplete ? ", completed" : ", not yet available"
+            }`}
             aria-current={isActive ? "step" : undefined}
             disabled={!canOpen}
             onClick={() => onStepSelect(index)}
