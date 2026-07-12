@@ -17,6 +17,7 @@
     "dev:web": "npm run build -w @pulse/contracts && npm run dev -w @pulse/web",
     "responsive:check": "npm run responsive:check -w @pulse/web",
     "db:initialize": "npm run db:initialize -w @pulse/api",
+    "db:import:ubiquiti": "npm run db:import:ubiquiti -w @pulse/api",
     "db:setup": "npm run db:setup -w @pulse/api",
     "db:seed": "npm run db:seed -w @pulse/api"
   }

@@ -6,6 +6,7 @@ import {
   type Item,
   type Project
 } from "../src/generated/prisma/client";
+import { ubiquitiCatalogItems } from "./ubiquiti-catalog";
 
 const adapter = new PrismaPg(
   { connectionString: process.env.DATABASE_URL },
@@ -162,6 +163,62 @@ const testUsers = [
     password: "PulseTech123!"
   }
 ];
+
+const seededAccessRoles = [
+  {
+    id: "Admin",
+    name: "Administrator",
+    normalizedName: "administrator",
+    color: "#7C3AED",
+    systemKey: "ADMIN",
+    protected: true,
+    permissions: [
+      "requests:read", "requests:write", "clients:read", "clients:write",
+      "items:read", "items:write", "quotes:read", "quotes:write",
+      "projects:read", "projects:write", "billing:read", "billing:write",
+      "activity:write", "activity:read", "analytics:read", "settings:read",
+      "settings:write", "users:manage", "roles:manage"
+    ]
+  },
+  {
+    id: "Sales",
+    name: "Sales",
+    normalizedName: "sales",
+    color: "#2563EB",
+    systemKey: null,
+    protected: false,
+    permissions: [
+      "requests:read", "requests:write", "clients:read", "clients:write",
+      "items:read", "items:write", "quotes:read", "quotes:write",
+      "projects:read", "projects:write", "billing:read", "billing:write",
+      "activity:write", "activity:read", "analytics:read"
+    ]
+  },
+  {
+    id: "ProjectManager",
+    name: "Project Manager",
+    normalizedName: "project manager",
+    color: "#0F766E",
+    systemKey: null,
+    protected: false,
+    permissions: [
+      "requests:read", "clients:read", "items:read", "quotes:read",
+      "projects:read", "billing:read", "activity:write", "activity:read", "analytics:read"
+    ]
+  },
+  {
+    id: "Technician",
+    name: "Technician",
+    normalizedName: "technician",
+    color: "#C2410C",
+    systemKey: null,
+    protected: false,
+    permissions: [
+      "requests:read", "clients:read", "items:read", "quotes:read",
+      "projects:read", "billing:read", "activity:read", "analytics:read"
+    ]
+  }
+] as const;
 
 const checklistTemplates: ChecklistTemplateSeed[] = [
   {
@@ -994,12 +1051,30 @@ async function main() {
   await prisma.item.deleteMany();
   await prisma.opportunity.deleteMany();
   await prisma.localUser.deleteMany();
+  await prisma.rolePermission.deleteMany();
+  await prisma.accessRole.deleteMany();
 
   await prisma.clientActivity.deleteMany();
   await prisma.clientService.deleteMany();
   await prisma.clientSite.deleteMany();
   await prisma.pointOfContact.deleteMany();
   await prisma.client.deleteMany();
+
+  for (const role of seededAccessRoles) {
+    await prisma.accessRole.create({
+      data: {
+        id: role.id,
+        name: role.name,
+        normalizedName: role.normalizedName,
+        color: role.color,
+        systemKey: role.systemKey,
+        protected: role.protected,
+        permissions: {
+          create: role.permissions.map((permission) => ({ permission }))
+        }
+      }
+    });
+  }
 
   const seededUsers = await Promise.all(
     testUsers.map((user) =>
@@ -1456,6 +1531,20 @@ async function main() {
       cost: 68,
       sellPrice: 135
     }
+  });
+  await prisma.item.createMany({ data: ubiquitiCatalogItems });
+  const pricedItems = await prisma.item.findMany({
+    select: { id: true, cost: true, sellPrice: true, createdAt: true }
+  });
+  await prisma.itemPriceHistory.createMany({
+    data: pricedItems.map((item) => ({
+      itemId: item.id,
+      previousCost: null,
+      newCost: item.cost,
+      previousSellPrice: null,
+      newSellPrice: item.sellPrice,
+      changedAt: item.createdAt
+    }))
   });
   await prisma.itemRelation.createMany({
     data: [

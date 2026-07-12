@@ -200,7 +200,6 @@ async function upsertRuntimeUsers() {
       },
       update: {
         name: user.name,
-        role: user.role,
         active: true,
         deactivatedAt: null,
         authProvider: "LOCAL"
