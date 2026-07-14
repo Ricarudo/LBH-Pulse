@@ -16,6 +16,7 @@ database/local-backups/
 *.backup
 *.bak
 *.dump
+client-list-cleaned.csv
 
 pulse-local-ca.crt
 *.local.crt

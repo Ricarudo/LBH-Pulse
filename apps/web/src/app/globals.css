@@ -11258,12 +11258,52 @@ a {
   }
 
   .client-bulk-diff-table {
-    overflow-x: auto;
+    overflow: hidden;
   }
 
-  .client-bulk-diff-heading,
+  .client-bulk-diff-heading {
+    display: none;
+  }
+
   .client-bulk-diff-line {
-    min-width: 620px;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .client-bulk-diff-line > * {
+    min-width: 0;
+    padding: 9px 11px;
+    border-right: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .client-bulk-diff-line > strong {
+    background: var(--pulse-surface-soft);
+  }
+
+  .client-bulk-current-value,
+  .client-bulk-incoming-value {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 8px;
+    border-top: 1px solid var(--pulse-line);
+  }
+
+  .client-bulk-current-value::before,
+  .client-bulk-incoming-value::before {
+    color: var(--pulse-muted);
+    font-size: 10px;
+    font-weight: 900;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+
+  .client-bulk-current-value::before {
+    content: "Current";
+  }
+
+  .client-bulk-incoming-value::before {
+    content: "Incoming";
   }
 }
 
@@ -17187,7 +17227,8 @@ a {
 .work-queue-search {
   display: flex;
   width: min(560px, 56vw);
-  min-width: 260px;
+  min-width: 0;
+  flex: 1 1 520px;
   min-height: 42px;
   align-items: center;
   gap: 9px;
@@ -17221,6 +17262,7 @@ a {
 
 .work-queue-sort {
   display: flex;
+  flex: 0 0 auto;
   min-height: 40px;
   align-items: center;
   gap: 6px;
@@ -17243,15 +17285,16 @@ a {
 
 .work-queue-meta {
   display: flex;
+  flex: 0 0 auto;
   min-height: 38px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--pulse-line);
+  padding: 0;
   color: var(--pulse-muted);
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .work-queue-meta strong {
@@ -17694,11 +17737,12 @@ a {
 
 @media (max-width: 1279px) {
   .work-queue-toolbar {
-    align-items: stretch;
+    gap: 10px;
   }
 
   .work-queue-search {
     width: 100%;
+    flex-basis: 360px;
   }
 }
 
@@ -17880,6 +17924,7 @@ a {
   }
 
   .work-queue-search {
+    flex: 0 0 auto;
     min-width: 0;
     min-height: 46px;
   }
@@ -17895,6 +17940,11 @@ a {
 
   .work-queue-meta span:last-child {
     display: none;
+  }
+
+  .work-queue-meta {
+    padding-right: 12px;
+    padding-left: 12px;
   }
 
   .work-queue-mobile {

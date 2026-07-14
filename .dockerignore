@@ -16,3 +16,4 @@ pulse-local-ca.crt
 *.backup
 *.bak
 *.dump
+client-list-cleaned.csv

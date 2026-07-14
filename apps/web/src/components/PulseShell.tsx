@@ -326,10 +326,18 @@ function PulseShellFrame({
   const refreshCurrentUser = useCallback(async () => {
     try {
       const response = await fetch("/api/auth/session", { cache: "no-store" });
+      if (response.status === 401) {
+        setCurrentUser(null);
+        return;
+      }
+      if (!response.ok) return;
+
       const data = (await response.json()) as { user: AuthenticatedUser | null };
-      setCurrentUser(response.ok ? data.user : null);
+      setCurrentUser(data.user);
     } catch {
-      setCurrentUser(null);
+      // Mobile file pickers temporarily background the page and can interrupt
+      // the focus-triggered session request. Keep the last authenticated user
+      // until the server explicitly reports that the session is no longer valid.
     } finally {
       setLoaded(true);
     }

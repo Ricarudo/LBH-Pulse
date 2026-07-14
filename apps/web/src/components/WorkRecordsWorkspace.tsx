@@ -649,25 +649,25 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
               {kind !== "quotes" ? <option value="due">Due date</option> : null}
             </select>
           </label>
-        </div>
 
-        <div className="work-queue-meta">
-          <span>
-            <strong>{visibleRecords.length}</strong>{" "}
-            {visibleRecords.length === 1
-              ? copy.singular.toLowerCase()
-              : copy.plural}
-          </span>
-          <span>
-            Sorted by{" "}
-            {sort === "activity"
-              ? "newest activity"
-              : sort === "number"
-                ? `${copy.singular.toLowerCase()} number`
-                : sort === "value"
-                  ? valueLabel.toLowerCase()
-                  : "due date"}
-          </span>
+          <div className="work-queue-meta">
+            <span>
+              <strong>{visibleRecords.length}</strong>{" "}
+              {visibleRecords.length === 1
+                ? copy.singular.toLowerCase()
+                : copy.plural}
+            </span>
+            <span>
+              Sorted by{" "}
+              {sort === "activity"
+                ? "newest activity"
+                : sort === "number"
+                  ? `${copy.singular.toLowerCase()} number`
+                  : sort === "value"
+                    ? valueLabel.toLowerCase()
+                    : "due date"}
+            </span>
+          </div>
         </div>
 
         {loadError ? (
