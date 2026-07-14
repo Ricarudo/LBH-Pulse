@@ -345,9 +345,11 @@ async function loadAnalyticsData(user: AuthenticatedUser, query: AnalyticsQuery 
 
   const quoteRecords: NormalizedRecord[] = quotes.map((quote) => {
     const request = quote.requests[0];
-    const trades = request?.trades.length
-      ? request.trades.map((trade) => trade.serviceCategory)
-      : tradesFromSnapshot(quote.serviceCategorySnapshot || request?.serviceCategory);
+    const trades = quote.serviceCategorySnapshot !== null
+      ? tradesFromSnapshot(quote.serviceCategorySnapshot)
+      : request?.trades.length
+        ? request.trades.map((trade) => trade.serviceCategory)
+        : tradesFromSnapshot(request?.serviceCategory);
     return {
       id: quote.id,
       kind: "Quote" as const,
@@ -377,9 +379,11 @@ async function loadAnalyticsData(user: AuthenticatedUser, query: AnalyticsQuery 
     const request = project.quote?.requests[0];
     const completion = lastEvent(eventsByEntity, LifecycleEntityType.PROJECT, project.id, new Set(["Completed"]));
     const start = project.startDate ?? project.createdAt;
-    const trades = request?.trades.length
-      ? request.trades.map((trade) => trade.serviceCategory)
-      : tradesFromSnapshot(project.quote?.serviceCategorySnapshot || request?.serviceCategory);
+    const trades = project.quote?.serviceCategorySnapshot != null
+      ? tradesFromSnapshot(project.quote.serviceCategorySnapshot)
+      : request?.trades.length
+        ? request.trades.map((trade) => trade.serviceCategory)
+        : tradesFromSnapshot(request?.serviceCategory);
     return {
       id: project.id,
       kind: "Project" as const,
@@ -405,9 +409,11 @@ async function loadAnalyticsData(user: AuthenticatedUser, query: AnalyticsQuery 
   const invoiceRecords: NormalizedRecord[] = invoices.map((invoice) => {
     const request = invoice.project?.quote?.requests[0];
     const paid = lastEvent(eventsByEntity, LifecycleEntityType.INVOICE, invoice.id, new Set(["Paid"]));
-    const trades = request?.trades.length
-      ? request.trades.map((trade) => trade.serviceCategory)
-      : tradesFromSnapshot(invoice.project?.quote?.serviceCategorySnapshot || request?.serviceCategory);
+    const trades = invoice.project?.quote?.serviceCategorySnapshot != null
+      ? tradesFromSnapshot(invoice.project.quote.serviceCategorySnapshot)
+      : request?.trades.length
+        ? request.trades.map((trade) => trade.serviceCategory)
+        : tradesFromSnapshot(request?.serviceCategory);
     return {
       id: invoice.id,
       kind: "Invoice" as const,

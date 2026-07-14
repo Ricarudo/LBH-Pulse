@@ -37,6 +37,11 @@ import {
   type QuoteItemRecord
 } from "@pulse/contracts/items";
 import type { QuoteDetailRecord, QuoteRecord } from "@pulse/contracts/work";
+import {
+  serviceCategories,
+  type ServiceCategory
+} from "@pulse/contracts/requests";
+import { QuoteUpdatesPanel } from "./QuoteUpdatesPanel";
 
 type QuoteWorkspaceProps = {
   quoteId: string;
@@ -80,6 +85,7 @@ function compactDate(value: string) {
 export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
   const { user } = useCurrentUser();
   const canWrite = canUser(user, "quotes:write");
+  const canWriteUpdates = canUser(user, "activity:write");
   const [quote, setQuote] = useState<QuoteDetailRecord | null>(null);
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
@@ -93,6 +99,8 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
   const [addQuantity, setAddQuantity] = useState("1");
   const [adHocDraft, setAdHocDraft] = useState<AdHocDraft>(blankAdHoc);
   const [proposalNotes, setProposalNotes] = useState("");
+  const [tradeEditorOpen, setTradeEditorOpen] = useState(false);
+  const [tradeDraft, setTradeDraft] = useState<ServiceCategory[]>([]);
   const [busy, setBusy] = useState(false);
   const [pendingLineSaves, setPendingLineSaves] = useState<Record<string, number>>({});
   const quoteMutationQueue = useRef<Promise<void>>(Promise.resolve());
@@ -106,6 +114,7 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
         const nextQuote = normalizeQuoteDetailRecord(data.quote);
         setQuote(nextQuote);
         setProposalNotes(nextQuote.proposalNotes);
+        setTradeDraft(nextQuote.trades as ServiceCategory[]);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Unable to load quote.");
       } finally {
@@ -159,9 +168,15 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
   );
 
   function updateQuoteState(nextQuote: QuoteDetailRecord | QuoteRecord) {
-    const normalizedQuote = normalizeQuoteDetailRecord(nextQuote);
-    setQuote(normalizedQuote);
-    setProposalNotes(normalizedQuote.proposalNotes);
+    setQuote((current) => {
+      const normalizedQuote = normalizeQuoteDetailRecord({
+        ...(current ?? nextQuote),
+        ...nextQuote
+      });
+      setProposalNotes(normalizedQuote.proposalNotes);
+      setTradeDraft(normalizedQuote.trades as ServiceCategory[]);
+      return normalizedQuote;
+    });
   }
 
   function enqueueQuoteMutation<T>(mutation: () => Promise<T>) {
@@ -184,15 +199,27 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
   }
 
   async function patchQuote(payload: Parameters<typeof updateQuote>[1]) {
-    if (!quote) return;
+    if (!quote) return false;
     const currentQuoteId = quote.id;
     try {
       const data = await enqueueQuoteMutation(() =>
         updateQuote(currentQuoteId, payload)
       );
-      updateQuoteState(data.quote);
+      updateQuoteState({ ...quote, ...data.quote });
+      return true;
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Unable to update quote.");
+      return false;
+    }
+  }
+
+  async function saveTrades() {
+    setBusy(true);
+    const saved = await patchQuote({ trades: tradeDraft });
+    setBusy(false);
+    if (saved) {
+      setTradeEditorOpen(false);
+      setToast("Quote trades updated.");
     }
   }
 
@@ -341,10 +368,87 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
 
       <section className="quote-context-grid" aria-label="Quote context">
         <article><span>Request</span><strong>{quote.context.requestNumber || "Manual quote"}</strong><p>{quote.context.requestTitle || quote.title}</p></article>
-        <article><span>Client / Site</span><strong>{quote.clientName || "Unlinked"}</strong><p>{[quote.context.siteName, quote.context.city, quote.context.state].filter(Boolean).join(", ") || "No site snapshot"}</p></article>
+        <article className={quote.clientId ? "quote-context-linked" : undefined}>
+          {quote.clientId ? (
+            <Link
+              href={`/clients/${quote.clientId}`}
+              aria-label={`Open client workspace for ${quote.clientName}`}
+            >
+              <span>Client / Site</span>
+              <strong>{quote.clientName || "Unlinked"}</strong>
+              <p>{[quote.context.siteName, quote.context.city, quote.context.state].filter(Boolean).join(", ") || "No site snapshot"}</p>
+            </Link>
+          ) : (
+            <>
+              <span>Client / Site</span>
+              <strong>Unlinked</strong>
+              <p>{[quote.context.siteName, quote.context.city, quote.context.state].filter(Boolean).join(", ") || "No site snapshot"}</p>
+            </>
+          )}
+        </article>
         <article><span>Contact</span><strong>{quote.context.contactName || "Not captured"}</strong><p>{quote.context.contactEmail || quote.context.contactPhone || "No contact method"}</p></article>
-        <article><span>Scope</span><strong>{quote.context.serviceCategory || "No category"}</strong><p>{quote.context.scopeDescription || "No scope snapshot"}</p></article>
+        <article className="quote-trades-card">
+          <div className="quote-trades-heading">
+            <span>{quote.trades.length === 1 ? "Trade" : "Trades"}</span>
+            {canWrite ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setTradeDraft(quote.trades as ServiceCategory[]);
+                  setTradeEditorOpen((current) => !current);
+                }}
+              >
+                {tradeEditorOpen ? "Cancel" : "Manage"}
+              </button>
+            ) : null}
+          </div>
+          {quote.trades.length ? (
+            <div className="quote-trade-tags">
+              {quote.trades.map((trade) => <em key={trade}>{trade}</em>)}
+            </div>
+          ) : (
+            <strong>Unclassified</strong>
+          )}
+          {tradeEditorOpen ? (
+            <div className="quote-trade-editor">
+              {serviceCategories.map((trade) => (
+                <label key={trade} className={tradeDraft.includes(trade) ? "selected" : ""}>
+                  <input
+                    type="checkbox"
+                    checked={tradeDraft.includes(trade)}
+                    onChange={(event) => setTradeDraft((current) =>
+                      event.target.checked
+                        ? [...current, trade]
+                        : current.filter((value) => value !== trade)
+                    )}
+                  />
+                  <span>{trade}</span>
+                </label>
+              ))}
+              <button className="primary-button compact" type="button" disabled={busy} onClick={() => void saveTrades()}>
+                {busy ? "Saving..." : "Save trades"}
+              </button>
+            </div>
+          ) : (
+            <p>{quote.context.scopeDescription || "No scope snapshot"}</p>
+          )}
+        </article>
       </section>
+
+      <QuoteUpdatesPanel
+        quoteId={quote.id}
+        initialUpdates={quote.updates}
+        initialCurrentStep={quote.currentStep}
+        unreadMentionCount={quote.unreadMentionCount}
+        canWrite={canWriteUpdates}
+        onToast={setToast}
+        onChange={(state) => setQuote((current) => current ? {
+          ...current,
+          updates: state.updates,
+          currentStep: state.currentStep,
+          unreadMentionCount: state.unreadMentionCount
+        } : current)}
+      />
 
       <div className="quote-workspace-grid">
         <section className="quote-bom-panel" aria-labelledby="quote-bom-heading">

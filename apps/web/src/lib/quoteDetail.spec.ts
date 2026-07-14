@@ -14,6 +14,7 @@ const legacyQuote: QuoteRecord = {
   total: 100,
   requestId: "request-1",
   requestNumber: "RQ-1001",
+  trades: [],
   projectId: null,
   createdAt: "2026-07-09",
   updatedAt: "2026-07-09T12:00:00.000Z",
@@ -27,12 +28,15 @@ test("quote detail normalization accepts a legacy list-shaped quote", () => {
   assert.equal(quote.context.requestTitle, "Legacy quote");
   assert.equal(quote.context.sourceRequestId, "request-1");
   assert.deepEqual(quote.items, []);
+  assert.deepEqual(quote.updates, []);
+  assert.equal(quote.currentStep, null);
   assert.equal(quote.proposalNotes, "");
 });
 
 test("quote detail normalization preserves snapshot context", () => {
   const quote = normalizeQuoteDetailRecord({
     ...legacyQuote,
+    trades: ["Networking"],
     context: {
       sourceRequestId: "snapshot-request",
       requestNumber: "RQ-SNAPSHOT",
@@ -56,5 +60,6 @@ test("quote detail normalization preserves snapshot context", () => {
 
   assert.equal(quote.context.requestNumber, "RQ-SNAPSHOT");
   assert.equal(quote.context.siteName, "Main site");
+  assert.deepEqual(quote.trades, ["Networking"]);
   assert.equal(quote.proposalNotes, "Prepared");
 });

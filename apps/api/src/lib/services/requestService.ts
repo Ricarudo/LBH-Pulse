@@ -310,6 +310,7 @@ function toRequestUpdateRecord(
   return {
     id: update.id,
     requestId: update.requestId,
+    quoteId: update.quoteId,
     kind: (update.kind === "comment" || update.kind === "step" || update.kind === "system"
       ? update.kind
       : "system") as "comment" | "step" | "system",

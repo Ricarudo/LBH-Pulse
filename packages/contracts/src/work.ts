@@ -1,5 +1,6 @@
 import type { LifecycleDocumentRecord } from "./documents";
 import type { QuoteItemRecord } from "./items";
+import { serviceCategories, type RequestUpdate } from "./requests";
 
 export const quoteStatuses = [
   "Draft",
@@ -46,6 +47,7 @@ export type QuoteRecord = {
   total: number;
   requestId: string | null;
   requestNumber: string;
+  trades: string[];
   projectId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -74,6 +76,9 @@ export type QuoteDetailRecord = QuoteRecord & {
   proposalNotes: string;
   proposalPreparedAt: string;
   items: QuoteItemRecord[];
+  currentStep: RequestUpdate | null;
+  unreadMentionCount: number;
+  updates: RequestUpdate[];
 };
 
 export type ProjectRecord = {
@@ -135,7 +140,12 @@ export const createQuoteSchema = z.object({
   clientId: optionalId,
   owner: z.string().trim().max(120).default("Unassigned"),
   status: z.enum(quoteStatuses).default("Draft"),
-  total: money.default(0)
+  total: money.default(0),
+  trades: z
+    .array(z.enum(serviceCategories))
+    .max(serviceCategories.length)
+    .transform((values) => Array.from(new Set(values)))
+    .optional()
 });
 
 export const updateQuoteSchema = createQuoteSchema.partial();

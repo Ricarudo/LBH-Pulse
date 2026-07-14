@@ -2,7 +2,7 @@
 
 import { FormEvent, Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
@@ -91,14 +91,14 @@ const workspaceCopy: Record<
 
 const workViews: Record<WorkKind, WorkView[]> = {
   quotes: [
-    { key: "all", label: "All quotes" },
-    { key: "open", label: "Open", statuses: ["Draft", "Review", "Sent"] },
-    { key: "approved", label: "Approved", statuses: ["Approved"] },
+    { key: "open", label: "Open", statuses: ["Draft", "Review"] },
+    { key: "sent", label: "Sent", statuses: ["Sent"] },
     {
-      key: "closed",
-      label: "Closed",
-      statuses: ["Rejected", "Expired", "Cancelled"]
-    }
+      key: "completed",
+      label: "Completed",
+      statuses: ["Approved", "Rejected", "Expired", "Cancelled"]
+    },
+    { key: "all", label: "All quotes" }
   ],
   projects: [
     { key: "all", label: "All projects" },
@@ -167,6 +167,10 @@ function recordSource(record: WorkRecord) {
   return "Direct entry";
 }
 
+function recordTrades(record: WorkRecord) {
+  return "trades" in record ? record.trades : [];
+}
+
 function statusTone(status: string) {
   if (["Approved", "Paid", "Completed"].includes(status)) return "success";
   if (["Rejected", "Cancelled", "Expired", "Overdue", "Void"].includes(status)) {
@@ -199,13 +203,16 @@ function displayDate(value: string) {
 }
 
 export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useCurrentUser();
   const [records, setRecords] = useState<WorkRecord[]>([]);
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [invoiceSource, setInvoiceSource] = useState<ProjectRecord | null>(null);
-  const [activeView, setActiveView] = useState("all");
+  const [activeView, setActiveView] = useState(
+    kind === "quotes" ? "open" : "all"
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [sort, setSort] = useState<QueueSort>("activity");
   const [formOpen, setFormOpen] = useState(false);
@@ -337,6 +344,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             record.clientName,
             record.owner,
             record.status,
+            ...recordTrades(record),
             recordSource(record)
           ]
             .join(" ")
@@ -690,14 +698,14 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 <th>Owner</th>
                 <th>Timing</th>
                 <th>{valueLabel}</th>
-                <th>Actions</th>
+                {kind !== "quotes" ? <th>Actions</th> : null}
               </tr>
             </thead>
             <tbody>
               {isLoading
                 ? Array.from({ length: 5 }, (_, rowIndex) => (
                     <tr className="work-queue-skeleton-row" key={rowIndex}>
-                      {Array.from({ length: 7 }, (__, cellIndex) => (
+                      {Array.from({ length: kind === "quotes" ? 6 : 7 }, (__, cellIndex) => (
                         <td key={cellIndex}>
                           <span />
                         </td>
@@ -710,8 +718,18 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                       <Fragment key={record.id}>
                         <tr
                           data-work-record={record.id}
-                          tabIndex={-1}
+                          tabIndex={kind === "quotes" ? 0 : -1}
+                          role={kind === "quotes" ? "link" : undefined}
+                          aria-label={kind === "quotes" ? `Open ${recordNumber(record)}: ${record.title}` : undefined}
+                          onClick={kind === "quotes" ? () => router.push(`/quotes/${record.id}`) : undefined}
+                          onKeyDown={kind === "quotes" ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              router.push(`/quotes/${record.id}`);
+                            }
+                          } : undefined}
                           className={[
+                            kind === "quotes" ? "work-queue-clickable" : "",
                             needsAttention(record) ? "needs-attention" : "",
                             focusedRecordId === record.id
                               ? "work-record-focused"
@@ -721,13 +739,16 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                             .join(" ")}
                         >
                           <td>
-                            {kind === "quotes" ? (
-                              <Link href={`/quotes/${record.id}`}><strong>{record.title}</strong></Link>
-                            ) : (
-                              <strong>{record.title}</strong>
-                            )}
+                            <strong>{record.title}</strong>
                             <span>{recordNumber(record)}</span>
                             <small>{recordSource(record)}</small>
+                            {kind === "quotes" && recordTrades(record).length ? (
+                              <span className="queue-trade-chips">
+                                {recordTrades(record).map((trade) => (
+                                  <span className="queue-category" key={trade}>{trade}</span>
+                                ))}
+                              </span>
+                            ) : null}
                           </td>
                           <td>
                             <strong>{record.clientName || "Unlinked"}</strong>
@@ -755,7 +776,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                           <td>
                             <strong>{formatMoney(recordValue(record))}</strong>
                           </td>
-                          <td>{renderActions(record)}</td>
+                          {kind !== "quotes" ? <td>{renderActions(record)}</td> : null}
                         </tr>
                         {kind !== "invoices" &&
                         documentRecordId === record.id &&
@@ -764,7 +785,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                             className="work-queue-documents-row"
                             key={`${record.id}-documents`}
                           >
-                            <td colSpan={7}>
+                            <td colSpan={kind === "quotes" ? 6 : 7}>
                               <LifecycleDocuments
                                 stage={kind === "quotes" ? "quote" : "project"}
                                 recordId={record.id}
@@ -801,7 +822,16 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   <article
                     className={`work-queue-mobile-card${needsAttention(record) ? " needs-attention" : ""}${focusedRecordId === record.id ? " work-record-focused" : ""}`}
                     data-work-record={record.id}
-                    tabIndex={-1}
+                    tabIndex={kind === "quotes" ? 0 : -1}
+                    role={kind === "quotes" ? "link" : undefined}
+                    aria-label={kind === "quotes" ? `Open ${recordNumber(record)}: ${record.title}` : undefined}
+                    onClick={kind === "quotes" ? () => router.push(`/quotes/${record.id}`) : undefined}
+                    onKeyDown={kind === "quotes" ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        router.push(`/quotes/${record.id}`);
+                      }
+                    } : undefined}
                     key={record.id}
                   >
                     <div className="work-queue-card-body">
@@ -810,16 +840,19 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                         {renderStatus(record, true)}
                       </div>
                       <h3>
-                        {kind === "quotes" ? (
-                          <Link href={`/quotes/${record.id}`}>{record.title}</Link>
-                        ) : (
-                          record.title
-                        )}
+                        {record.title}
                       </h3>
                       <p>{record.clientName || "Unlinked client"}</p>
                       <span className="work-queue-card-source">
                         {recordSource(record)}
                       </span>
+                      {kind === "quotes" && recordTrades(record).length ? (
+                        <span className="queue-trade-chips">
+                          {recordTrades(record).map((trade) => (
+                            <span className="queue-category" key={trade}>{trade}</span>
+                          ))}
+                        </span>
+                      ) : null}
                       <div className="work-queue-card-summary">
                         <div>
                           <span>{valueLabel}</span>
@@ -839,7 +872,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                         <strong>{record.owner || "Unassigned"}</strong>
                       </div>
                     </div>
-                    {renderActions(record, true)}
+                    {kind !== "quotes" ? renderActions(record, true) : null}
                     {kind !== "invoices" &&
                     documentRecordId === record.id &&
                     "documents" in record ? (

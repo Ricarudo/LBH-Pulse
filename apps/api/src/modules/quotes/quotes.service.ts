@@ -24,8 +24,8 @@ export class QuotesService {
     return createQuote(input, user);
   }
 
-  get(id: string) {
-    return getQuoteById(id);
+  get(id: string, viewerId?: string) {
+    return getQuoteById(id, viewerId);
   }
 
   update(id: string, input: UpdateQuoteInput, user: AuthenticatedUser) {

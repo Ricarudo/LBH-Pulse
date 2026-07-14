@@ -3,6 +3,7 @@ import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
 import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService";
+import { listQuoteUpdates } from "@/lib/services/quoteUpdateService";
 import { listProjectDocuments, listQuoteDocuments } from "@/lib/services/documentService";
 import type {
   AddAdHocQuoteItemInput,
@@ -110,7 +111,12 @@ const invoiceInclude = {
 
 type QuoteWithRelations = Prisma.QuoteGetPayload<{ include: typeof quoteInclude }>;
 type QuoteRecordSource = Omit<QuoteWithRelations, "requests"> & {
-  requests: Array<{ id: string; requestNumber: string }>;
+  requests: Array<{
+    id: string;
+    requestNumber: string;
+    serviceCategory?: string | null;
+    trades?: Array<{ serviceCategory: string }>;
+  }>;
 };
 type QuoteDetailWithRelations = Prisma.QuoteGetPayload<{
   include: typeof quoteDetailInclude;
@@ -135,6 +141,13 @@ function empty(value?: string | null) {
   return value ?? "";
 }
 
+function categoriesFromSnapshot(value?: string | null) {
+  return (value ?? "")
+    .split(",")
+    .map((category) => category.trim())
+    .filter(Boolean);
+}
+
 function nullable(value?: string) {
   return value ? value : null;
 }
@@ -150,6 +163,11 @@ export function toQuoteRecord(
   documents: LifecycleDocumentRecord[] = []
 ): QuoteRecord {
   const request = quote.requests[0];
+  const trades = quote.serviceCategorySnapshot !== null
+    ? categoriesFromSnapshot(quote.serviceCategorySnapshot)
+    : request?.trades?.length
+      ? request.trades.map((trade) => trade.serviceCategory)
+      : categoriesFromSnapshot(request?.serviceCategory);
   return {
     id: quote.id,
     quoteNumber: quote.quoteNumber,
@@ -161,6 +179,7 @@ export function toQuoteRecord(
     total: Number(quote.total),
     requestId: request?.id ?? null,
     requestNumber: request?.requestNumber ?? "",
+    trades,
     projectId: quote.project?.id ?? null,
     createdAt: dateOutput(quote.createdAt),
     updatedAt: quote.updatedAt.toISOString(),
@@ -245,14 +264,18 @@ export function toQuoteItemRecord(
 
 export function toQuoteDetailRecord(
   quote: QuoteDetailWithRelations,
-  documents: LifecycleDocumentRecord[] = []
+  documents: LifecycleDocumentRecord[] = [],
+  updateState?: Awaited<ReturnType<typeof listQuoteUpdates>>
 ): QuoteDetailRecord {
   return {
     ...toQuoteRecord(quote, documents),
     context: toQuoteContextSnapshot(quote),
     proposalNotes: empty(quote.proposalNotes),
     proposalPreparedAt: dateTimeOutput(quote.proposalPreparedAt),
-    items: quote.items.map(toQuoteItemRecord)
+    items: quote.items.map(toQuoteItemRecord),
+    currentStep: updateState?.currentStep ?? null,
+    unreadMentionCount: updateState?.unreadMentionCount ?? 0,
+    updates: updateState?.updates ?? []
   };
 }
 
@@ -383,9 +406,13 @@ export async function listQuotes() {
   );
 }
 
-export async function getQuoteById(id: string) {
+export async function getQuoteById(id: string, viewerId?: string) {
   const quote = await quoteDetailOrThrow(id);
-  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+  const [documents, updateState] = await Promise.all([
+    listQuoteDocuments(quote.id),
+    listQuoteUpdates(quote.id, "all", undefined, 25, viewerId)
+  ]);
+  return toQuoteDetailRecord(quote, documents, updateState);
 }
 
 async function nextQuoteItemSortOrder(
@@ -850,7 +877,8 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
         clientName: client?.displayName,
         owner: input.owner || "Unassigned",
         status: input.status,
-        total: input.total
+        total: input.total,
+        serviceCategorySnapshot: input.trades?.join(", ")
       },
       include: quoteInclude
     });
@@ -890,7 +918,10 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
         ...(client ? { clientId: client.id, clientName: client.displayName } : {}),
         ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
-        ...(input.total !== undefined ? { total: input.total } : {})
+        ...(input.total !== undefined ? { total: input.total } : {}),
+        ...(input.trades !== undefined
+          ? { serviceCategorySnapshot: input.trades.join(", ") }
+          : {})
       },
       include: quoteInclude
     });

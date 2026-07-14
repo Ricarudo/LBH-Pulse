@@ -14,11 +14,24 @@ import type {
   QuoteResponse,
   UpdateQuoteInput
 } from "@pulse/contracts/work";
+import type {
+  CreateRequestUpdateInput,
+  RequestAssignee,
+  RequestUpdate,
+  RequestUpdateFilter
+} from "@pulse/contracts/requests";
 import { apiRequest, type ApiRequestOptions } from "@/lib/api/client";
 
 type ReadOptions = Pick<ApiRequestOptions, "cache" | "signal">;
 type QuotePayloadResponse = { quote: QuoteDetailRecord | QuoteRecord };
 type ConvertQuotePayload = Partial<ConvertQuoteInput>;
+export type QuoteUpdatesResponse = {
+  updates: RequestUpdate[];
+  currentStep: RequestUpdate | null;
+  unreadMentionCount: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+};
 
 export type AdHocQuoteItemPayload =
   Pick<AddAdHocQuoteItemInput, "name"> &
@@ -36,6 +49,54 @@ export function fetchQuote(quoteId: string, options: ReadOptions = {}) {
   return apiRequest<QuoteResponse>(quotePath(quoteId), {
     ...options,
     method: "GET"
+  });
+}
+
+export function fetchQuoteUpdateTeamMembers(options: ReadOptions = {}) {
+  return apiRequest<{ teamMembers: RequestAssignee[] }>("/api/quotes/team-members", {
+    ...options,
+    method: "GET"
+  });
+}
+
+export function fetchQuoteUpdates(
+  quoteId: string,
+  filter: RequestUpdateFilter,
+  cursor?: string | null,
+  options: ReadOptions = {}
+) {
+  const params = new URLSearchParams({ kind: filter, take: "25" });
+  if (cursor) params.set("cursor", cursor);
+  return apiRequest<QuoteUpdatesResponse>(
+    `${quotePath(quoteId, "/updates")}?${params.toString()}`,
+    { ...options, method: "GET" }
+  );
+}
+
+export function postQuoteUpdate(quoteId: string, input: CreateRequestUpdateInput) {
+  return apiRequest<QuoteUpdatesResponse>(quotePath(quoteId, "/updates"), {
+    method: "POST",
+    json: input
+  });
+}
+
+export function completeQuoteUpdate(quoteId: string, updateId: string) {
+  return apiRequest<QuoteUpdatesResponse>(
+    quotePath(quoteId, `/updates/${encodeURIComponent(updateId)}/complete`),
+    { method: "POST", json: { completed: true } }
+  );
+}
+
+export function undoQuoteUpdate(quoteId: string, updateId: string) {
+  return apiRequest<QuoteUpdatesResponse>(
+    quotePath(quoteId, `/updates/${encodeURIComponent(updateId)}/undo`),
+    { method: "POST" }
+  );
+}
+
+export function markQuoteMentionsRead(quoteId: string) {
+  return apiRequest<{ marked: number }>(quotePath(quoteId, "/mentions/read"), {
+    method: "POST"
   });
 }
 

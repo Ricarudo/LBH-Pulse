@@ -152,7 +152,8 @@ export type RequestUpdateAuthor = {
 
 export type RequestUpdate = {
   id: string;
-  requestId: string;
+  requestId: string | null;
+  quoteId: string | null;
   kind: RequestUpdateKind;
   title: string;
   body: string;

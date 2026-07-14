@@ -17352,6 +17352,11 @@ a {
   background: color-mix(in srgb, var(--pulse-row-hover) 72%, var(--pulse-surface));
 }
 
+.work-queue-clickable,
+.work-queue-mobile-card[role="link"] {
+  cursor: pointer;
+}
+
 .work-queue-table tr.needs-attention td:first-child {
   box-shadow: inset 3px 0 0 var(--pulse-amber);
 }
@@ -17710,6 +17715,7 @@ a {
 .work-queue button:focus-visible,
 .work-queue select:focus-visible,
 .work-queue input:focus-visible,
+.work-queue [role="link"]:focus-visible,
 .work-queue [tabindex="-1"]:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--pulse-blue) 35%, transparent);
   outline-offset: 2px;
@@ -18753,6 +18759,100 @@ a {
   background: var(--pulse-surface);
 }
 
+.quote-context-grid article.quote-context-linked {
+  padding: 0;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.quote-context-linked > a {
+  display: block;
+  height: 100%;
+  padding: 14px;
+  border-radius: inherit;
+  color: inherit;
+  text-decoration: none;
+}
+
+.quote-context-linked:hover {
+  border-color: color-mix(in srgb, var(--pulse-blue) 45%, var(--pulse-line));
+  background: var(--pulse-row-hover);
+}
+
+.quote-context-linked > a:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--pulse-blue) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.quote-trades-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.quote-trades-heading > button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pulse-blue);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.quote-trade-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quote-trade-tags em {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pulse-purple-soft) 68%, var(--pulse-surface));
+  color: var(--pulse-purple);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.quote-trade-editor {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.quote-trade-editor label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.quote-trade-editor label.selected {
+  border-color: color-mix(in srgb, var(--pulse-blue) 45%, var(--pulse-line));
+  background: var(--pulse-blue-soft);
+}
+
+.quote-context-grid .quote-trade-editor label > span {
+  color: var(--pulse-text);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.quote-trade-editor .primary-button {
+  width: 100%;
+  margin-top: 4px;
+}
+
 .quote-context-grid span,
 .quote-total-card span,
 .quote-proposal-panel dt {
@@ -18776,6 +18876,58 @@ a {
   color: var(--pulse-muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.quote-updates-workspace {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--pulse-line);
+  border-radius: 8px;
+  background: var(--pulse-surface);
+  box-shadow: var(--pulse-shadow-soft);
+}
+
+.quote-updates-workspace > .panel-header {
+  border-bottom: 1px solid var(--pulse-line);
+}
+
+.quote-update-unread {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--pulse-blue-soft);
+  color: var(--pulse-blue);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.quote-updates-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
+  gap: 16px;
+  align-items: start;
+  padding: 16px;
+}
+
+.quote-updates-compose-column {
+  display: grid;
+  gap: 12px;
+}
+
+.quote-updates-feed {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.quote-update-stage {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--pulse-purple-soft);
+  color: var(--pulse-purple);
+  font-weight: 850;
 }
 
 .quote-workspace-grid {
@@ -19048,6 +19200,7 @@ a {
 
   .quote-context-grid,
   .quote-workspace-grid,
+  .quote-updates-layout,
   .quote-add-layout {
     grid-template-columns: 1fr;
   }

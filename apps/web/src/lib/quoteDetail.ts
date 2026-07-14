@@ -4,8 +4,7 @@ import type {
   QuoteRecord
 } from "@pulse/contracts/work";
 
-type QuoteDetailPayload = QuoteRecord &
-  Partial<Pick<QuoteDetailRecord, "context" | "proposalNotes" | "proposalPreparedAt" | "items">>;
+type QuoteDetailPayload = QuoteRecord & Partial<Omit<QuoteDetailRecord, keyof QuoteRecord>>;
 
 function fallbackContext(quote: QuoteRecord): QuoteContextSnapshot {
   return {
@@ -31,12 +30,23 @@ export function normalizeQuoteDetailRecord(
 ): QuoteDetailRecord {
   return {
     ...quote,
+    trades: quote.trades ?? categoriesFromContext(quote.context?.serviceCategory),
     context: {
       ...fallbackContext(quote),
       ...(quote.context ?? {})
     },
     proposalNotes: quote.proposalNotes ?? "",
     proposalPreparedAt: quote.proposalPreparedAt ?? "",
-    items: quote.items ?? []
+    items: quote.items ?? [],
+    currentStep: quote.currentStep ?? null,
+    unreadMentionCount: quote.unreadMentionCount ?? 0,
+    updates: quote.updates ?? []
   };
+}
+
+function categoriesFromContext(value?: string) {
+  return (value ?? "")
+    .split(",")
+    .map((category) => category.trim())
+    .filter(Boolean);
 }

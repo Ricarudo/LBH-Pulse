@@ -203,6 +203,22 @@ const errorMap: Record<string, ErrorPayload> = {
     }
   },
   QUOTE_NOT_FOUND: { status: 404, body: { error: "Quote not found." } },
+  QUOTE_UPDATE_ASSIGNEE_REQUIRED: {
+    status: 400,
+    body: { error: "Choose a responsible assignee for the current step." }
+  },
+  QUOTE_UPDATE_ASSIGNEE_INVALID: {
+    status: 400,
+    body: { error: "The current-step assignee must be an active Pulse user with quote access." }
+  },
+  QUOTE_MENTION_USER_INVALID: {
+    status: 400,
+    body: { error: "One or more mentioned users do not have access to quotes." }
+  },
+  QUOTE_UPDATE_NOT_FOUND: { status: 404, body: { error: "Quote update not found." } },
+  QUOTE_UPDATE_NOT_OPEN: { status: 409, body: { error: "Only an open current step can be completed." } },
+  QUOTE_UPDATE_NOT_UNDOABLE: { status: 409, body: { error: "This update is no longer undoable." } },
+  QUOTE_UPDATE_UNDO_CONFLICT: { status: 409, body: { error: "The quote changed before this update could be undone." } },
   QUOTE_ITEM_NOT_FOUND: { status: 404, body: { error: "Quote item not found." } },
   QUOTE_ITEM_REORDER_STALE: {
     status: 409,
