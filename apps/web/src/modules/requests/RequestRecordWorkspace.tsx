@@ -162,6 +162,7 @@ export function RequestRecordWorkspace({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [isPostingUpdate, setIsPostingUpdate] = useState(false);
+  const [supersessionConfirmationOpen, setSupersessionConfirmationOpen] = useState(false);
   const [undoAction, setUndoAction] = useState<{ updateId: string; label: string } | null>(null);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
@@ -274,13 +275,14 @@ export function RequestRecordWorkspace({
   useEffect(() => {
     function closeOnEscape(event: globalThis.KeyboardEvent) {
       if (event.key !== "Escape") return;
-      if (conversionOpen) setConversionOpen(false);
+      if (supersessionConfirmationOpen) setSupersessionConfirmationOpen(false);
+      else if (conversionOpen) setConversionOpen(false);
       else if (closeStatus) setCloseStatus(null);
       else setMoreOpen(false);
     }
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [closeStatus, conversionOpen]);
+  }, [closeStatus, conversionOpen, supersessionConfirmationOpen]);
 
   const checklistState = useMemo(() => {
     const sourceItems = request?.checklistInstances.length
@@ -437,13 +439,18 @@ export function RequestRecordWorkspace({
     }
   }
 
-  async function postUpdate() {
+  async function postUpdate(supersessionConfirmed = false) {
     if (!request || !canWriteActivity || !updateBody.trim() || isPostingUpdate) return;
     if (isCurrentStepDraft && !stepAssigneeId) {
       setError("Choose a responsible assignee for the current step.");
       return;
     }
+    if (isCurrentStepDraft && request.currentStep && !supersessionConfirmed) {
+      setSupersessionConfirmationOpen(true);
+      return;
+    }
     try {
+      setSupersessionConfirmationOpen(false);
       setIsPostingUpdate(true);
       const data = await requestJson<RequestResponse>(`/api/requests/${request.id}/updates`, {
         method: "POST",
@@ -1275,7 +1282,7 @@ export function RequestRecordWorkspace({
                         key={update.id}
                         id={`request-update-${update.id}`}
                         ref={(element) => { updateRefs.current[update.id] = element; }}
-                        className={`request-update-item kind-${update.kind}`}
+                        className={`request-update-item kind-${update.kind}${update.stepStatus ? ` status-${update.stepStatus}` : ""}`}
                         tabIndex={-1}
                         data-update-id={update.id}
                       >
@@ -1345,6 +1352,41 @@ export function RequestRecordWorkspace({
         <div className="request-undo-snackbar" role="status" aria-live="polite">
           <span>{undoAction.label}</span>
           <button type="button" onClick={() => void undoUpdate()}>Undo</button>
+        </div>
+      ) : null}
+
+      {supersessionConfirmationOpen && request.currentStep ? (
+        <div className="record-dialog-backdrop">
+          <section className="record-dialog" role="alertdialog" aria-modal="true" aria-labelledby="replace-current-step-title" aria-describedby="replace-current-step-description">
+            <div className="record-dialog-heading">
+              <span><AlertTriangle size={19} /></span>
+              <div>
+                <h2 id="replace-current-step-title">Replace the current step?</h2>
+                <p id="replace-current-step-description">This update will supersede the open step below. It will not be posted as a comment.</p>
+              </div>
+              <button type="button" aria-label="Close dialog" onClick={() => setSupersessionConfirmationOpen(false)}>
+                <X size={19} />
+              </button>
+            </div>
+            <div className="record-conversion-summary request-supersession-summary">
+              <strong>{request.currentStep.title || request.currentStep.body || "Current step"}</strong>
+              <span>
+                Assigned to {request.currentStep.assignee?.name || "Unassigned"}
+                {request.currentStep.targetDate ? ` · Target ${formatDate(request.currentStep.targetDate)}` : ""}
+              </span>
+            </div>
+            <div className="record-dialog-actions">
+              <button autoFocus type="button" onClick={() => setSupersessionConfirmationOpen(false)}>Keep current step</button>
+              <button
+                className="danger"
+                type="button"
+                onClick={() => void postUpdate(true)}
+                disabled={isPostingUpdate}
+              >
+                {isPostingUpdate ? "Replacing..." : "Replace current step"}
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
 
