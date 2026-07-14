@@ -4,7 +4,12 @@ import type { Express, Request } from "express";
 import { mkdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { diskStorage } from "multer";
-import { convertQuoteSchema, createQuoteSchema, updateQuoteSchema } from "@pulse/contracts/work";
+import {
+  convertQuoteSchema,
+  createQuoteRevisionSchema,
+  createQuoteSchema,
+  updateQuoteSchema
+} from "@pulse/contracts/work";
 import {
   createRequestUpdateSchema,
   requestUpdateCompleteSchema,
@@ -39,6 +44,15 @@ export class QuotesController {
   @Get("team-members") async teamMembers(@Req() request: Request) {
     await this.auth.requireUser(request, "quotes:read");
     return { teamMembers: await listQuoteUpdateTeamMembers() };
+  }
+  @Get(":id/revisions/:version")
+  async getRevision(
+    @Req() request: Request,
+    @Param("id") id: string,
+    @Param("version") version: string
+  ) {
+    await this.auth.requireUser(request, "quotes:read");
+    return { revision: await this.quotes.getRevision(id, version) };
   }
   @Get(":id") async get(@Req() request: Request, @Param("id") id: string) {
     const user = await this.auth.requireUser(request, "quotes:read");
@@ -98,6 +112,11 @@ export class QuotesController {
   async convert(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, { allOf: ["quotes:write", "projects:write"] });
     return { project: await this.quotes.convert(id, convertQuoteSchema.parse(body), user) };
+  }
+  @Post(":id/revisions")
+  async createRevision(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, "quotes:write");
+    return { quote: await this.quotes.createRevision(id, createQuoteRevisionSchema.parse(body), user) };
   }
   @Post(":id/documents")
   @UseInterceptors(FileInterceptor("file", {

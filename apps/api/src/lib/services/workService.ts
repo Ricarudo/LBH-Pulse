@@ -3,7 +3,10 @@ import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
 import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService";
-import { listQuoteUpdates } from "@/lib/services/quoteUpdateService";
+import {
+  createQuoteSystemUpdate,
+  listQuoteUpdates
+} from "@/lib/services/quoteUpdateService";
 import { listProjectDocuments, listQuoteDocuments } from "@/lib/services/documentService";
 import type {
   AddAdHocQuoteItemInput,
@@ -19,6 +22,7 @@ import type {
 import type { LifecycleDocumentRecord } from "@pulse/contracts/documents";
 import type {
   ConvertQuoteInput,
+  CreateQuoteRevisionInput,
   CreateInvoiceInput,
   CreateProjectInput,
   CreateProjectInvoiceInput,
@@ -30,6 +34,7 @@ import type {
   ProjectRecord,
   QuoteContextSnapshot,
   QuoteDetailRecord,
+  QuoteRevisionDetailRecord,
   QuoteRecord
 } from "@pulse/contracts/work";
 import {
@@ -84,7 +89,8 @@ const quoteItemsOrderBy = [
 
 const quoteDetailInclude = {
   ...quoteInclude,
-  items: { orderBy: quoteItemsOrderBy }
+  items: { orderBy: quoteItemsOrderBy },
+  revisions: { orderBy: { revisionNumber: "asc" } }
 } satisfies Prisma.QuoteInclude;
 
 const itemForQuoteInclude = {
@@ -152,6 +158,64 @@ function nullable(value?: string) {
   return value ? value : null;
 }
 
+export function parseQuoteVersionNumber(quoteNumber: string) {
+  const trimmed = quoteNumber.trim();
+  const match = /R(\d+)$/i.exec(trimmed);
+  if (!match) return { baseQuoteNumber: trimmed, revisionNumber: 0 };
+  return {
+    baseQuoteNumber: trimmed.slice(0, match.index),
+    revisionNumber: Number(match[1])
+  };
+}
+
+function quoteVersionFields(quote: {
+  quoteNumber: string;
+  baseQuoteNumber: string | null;
+  revisionNumber: number;
+  versionCreatedAt: Date | null;
+  createdAt: Date;
+  sentAt: Date | null;
+  sentAtPrecision: "EXACT" | "ESTIMATED" | null;
+}) {
+  const parsed = parseQuoteVersionNumber(quote.quoteNumber);
+  return {
+    baseQuoteNumber: quote.baseQuoteNumber || parsed.baseQuoteNumber,
+    revisionNumber: quote.revisionNumber || parsed.revisionNumber,
+    versionCreatedAt: quote.versionCreatedAt ?? quote.createdAt,
+    sentAt: quote.sentAt,
+    sentAtPrecision: quote.sentAtPrecision
+  };
+}
+
+function revisionSnapshotObject(snapshot: Prisma.JsonValue) {
+  return snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+    ? snapshot as Record<string, Prisma.JsonValue>
+    : {};
+}
+
+function revisionSnapshotAvailable(snapshot: Prisma.JsonValue) {
+  return revisionSnapshotObject(snapshot).dataAvailable !== false;
+}
+
+function emptyQuoteContext(): QuoteContextSnapshot {
+  return {
+    sourceRequestId: null,
+    requestNumber: "",
+    requestTitle: "",
+    requestType: "",
+    serviceCategory: "",
+    contactName: "",
+    contactEmail: "",
+    contactPhone: "",
+    siteName: "",
+    siteAddress: "",
+    city: "",
+    state: "",
+    scopeDescription: "",
+    internalNotes: ""
+  };
+}
+
 function quoteItemSection(itemType: ItemType): QuoteBomSection {
   if (itemType === "LABOR") return "Labor";
   if (itemType === "SERVICE") return "Services";
@@ -163,6 +227,7 @@ export function toQuoteRecord(
   documents: LifecycleDocumentRecord[] = []
 ): QuoteRecord {
   const request = quote.requests[0];
+  const version = quoteVersionFields(quote);
   const trades = quote.serviceCategorySnapshot !== null
     ? categoriesFromSnapshot(quote.serviceCategorySnapshot)
     : request?.trades?.length
@@ -171,6 +236,11 @@ export function toQuoteRecord(
   return {
     id: quote.id,
     quoteNumber: quote.quoteNumber,
+    baseQuoteNumber: version.baseQuoteNumber,
+    revisionNumber: version.revisionNumber,
+    versionCreatedAt: dateTimeOutput(version.versionCreatedAt),
+    sentAt: dateTimeOutput(version.sentAt),
+    sentAtPrecision: version.sentAtPrecision,
     title: quote.title,
     clientId: quote.clientId,
     clientName: quote.client?.displayName ?? quote.clientName ?? "",
@@ -267,6 +337,7 @@ export function toQuoteDetailRecord(
   documents: LifecycleDocumentRecord[] = [],
   updateState?: Awaited<ReturnType<typeof listQuoteUpdates>>
 ): QuoteDetailRecord {
+  const version = quoteVersionFields(quote);
   return {
     ...toQuoteRecord(quote, documents),
     context: toQuoteContextSnapshot(quote),
@@ -275,7 +346,82 @@ export function toQuoteDetailRecord(
     items: quote.items.map(toQuoteItemRecord),
     currentStep: updateState?.currentStep ?? null,
     unreadMentionCount: updateState?.unreadMentionCount ?? 0,
-    updates: updateState?.updates ?? []
+    updates: updateState?.updates ?? [],
+    versions: [
+      ...quote.revisions.map((revision) => ({
+        id: revision.id,
+        revisionNumber: revision.revisionNumber,
+        quoteNumber: revision.quoteNumber,
+        outcome: "Revision Requested" as const,
+        priorStatus: revision.priorStatus as QuoteRecord["status"],
+        title: revision.titleSnapshot,
+        owner: revision.ownerSnapshot,
+        total: Number(revision.totalSnapshot),
+        versionCreatedAt: dateTimeOutput(revision.versionCreatedAt),
+        sentAt: dateTimeOutput(revision.sentAt),
+        requestedAt: dateTimeOutput(revision.requestedAt),
+        reason: revision.reason,
+        precision: revision.precision,
+        isCurrent: false,
+        dataAvailable: revisionSnapshotAvailable(revision.snapshot)
+      })),
+      {
+        id: quote.id,
+        revisionNumber: version.revisionNumber,
+        quoteNumber: quote.quoteNumber,
+        outcome: quote.status as QuoteRecord["status"],
+        priorStatus: "" as const,
+        title: quote.title,
+        owner: quote.owner,
+        total: Number(quote.total),
+        versionCreatedAt: dateTimeOutput(version.versionCreatedAt),
+        sentAt: dateTimeOutput(version.sentAt),
+        requestedAt: "",
+        reason: "",
+        precision: version.sentAtPrecision ?? "EXACT",
+        isCurrent: true,
+        dataAvailable: true
+      }
+    ]
+  };
+}
+
+function toQuoteRevisionDetailRecord(
+  revision: Prisma.QuoteRevisionGetPayload<{}>
+): QuoteRevisionDetailRecord {
+  const snapshot = revisionSnapshotObject(revision.snapshot);
+  const context = snapshot.context && typeof snapshot.context === "object" && !Array.isArray(snapshot.context)
+    ? snapshot.context as unknown as QuoteContextSnapshot
+    : emptyQuoteContext();
+  const items = Array.isArray(snapshot.items)
+    ? snapshot.items as unknown as QuoteItemRecord[]
+    : [];
+  return {
+    quoteId: revision.quoteId,
+    baseQuoteNumber: typeof snapshot.baseQuoteNumber === "string"
+      ? snapshot.baseQuoteNumber
+      : parseQuoteVersionNumber(revision.quoteNumber).baseQuoteNumber,
+    revision: {
+      id: revision.id,
+      revisionNumber: revision.revisionNumber,
+      quoteNumber: revision.quoteNumber,
+      outcome: "Revision Requested",
+      priorStatus: revision.priorStatus as QuoteRecord["status"],
+      title: revision.titleSnapshot,
+      owner: revision.ownerSnapshot,
+      total: Number(revision.totalSnapshot),
+      versionCreatedAt: dateTimeOutput(revision.versionCreatedAt),
+      sentAt: dateTimeOutput(revision.sentAt),
+      requestedAt: dateTimeOutput(revision.requestedAt),
+      reason: revision.reason,
+      precision: revision.precision,
+      isCurrent: false,
+      dataAvailable: revisionSnapshotAvailable(revision.snapshot)
+    },
+    context,
+    proposalNotes: typeof snapshot.proposalNotes === "string" ? snapshot.proposalNotes : "",
+    proposalPreparedAt: typeof snapshot.proposalPreparedAt === "string" ? snapshot.proposalPreparedAt : "",
+    items
   };
 }
 
@@ -349,7 +495,7 @@ async function nextNumber(
 
 async function quoteOrThrow(id: string) {
   const quote = await prisma.quote.findFirst({
-    where: { archivedAt: null, OR: [{ id }, { quoteNumber: id }] },
+    where: { archivedAt: null, OR: [{ id }, { quoteNumber: id }, { baseQuoteNumber: id }] },
     include: quoteInclude
   });
   if (!quote) throw new Error("QUOTE_NOT_FOUND");
@@ -357,10 +503,22 @@ async function quoteOrThrow(id: string) {
 }
 
 async function quoteDetailOrThrow(id: string) {
-  const quote = await prisma.quote.findFirst({
-    where: { archivedAt: null, OR: [{ id }, { quoteNumber: id }] },
+  let quote = await prisma.quote.findFirst({
+    where: { archivedAt: null, OR: [{ id }, { quoteNumber: id }, { baseQuoteNumber: id }] },
     include: quoteDetailInclude
   });
+  if (!quote) {
+    const alias = await prisma.quoteRevision.findFirst({
+      where: { OR: [{ id }, { quoteNumber: id }, { legacyQuoteId: id }] },
+      select: { quoteId: true }
+    });
+    if (alias) {
+      quote = await prisma.quote.findFirst({
+        where: { id: alias.quoteId, archivedAt: null },
+        include: quoteDetailInclude
+      });
+    }
+  }
   if (!quote) throw new Error("QUOTE_NOT_FOUND");
   return quote;
 }
@@ -413,6 +571,27 @@ export async function getQuoteById(id: string, viewerId?: string) {
     listQuoteUpdates(quote.id, "all", undefined, 25, viewerId)
   ]);
   return toQuoteDetailRecord(quote, documents, updateState);
+}
+
+export async function getQuoteRevision(id: string, version: string) {
+  const quote = await quoteOrThrow(id);
+  const parsedVersion = /^\d+$/.test(version) ? Number(version) : null;
+  if (parsedVersion === quoteVersionFields(quote).revisionNumber) {
+    throw new Error("QUOTE_REVISION_IS_CURRENT");
+  }
+  const revision = await prisma.quoteRevision.findFirst({
+    where: {
+      quoteId: quote.id,
+      OR: [
+        { id: version },
+        { quoteNumber: version },
+        { legacyQuoteId: version },
+        ...(parsedVersion === null ? [] : [{ revisionNumber: parsedVersion }])
+      ]
+    }
+  });
+  if (!revision) throw new Error("QUOTE_REVISION_NOT_FOUND");
+  return toQuoteRevisionDetailRecord(revision);
 }
 
 async function nextQuoteItemSortOrder(
@@ -865,13 +1044,42 @@ export async function updateQuoteProposal(
   return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
 }
 
+function quoteRevisionSnapshot(quote: QuoteDetailWithRelations): Prisma.InputJsonObject {
+  const version = quoteVersionFields(quote);
+  return JSON.parse(JSON.stringify({
+    dataAvailable: true,
+    baseQuoteNumber: version.baseQuoteNumber,
+    context: toQuoteContextSnapshot(quote),
+    proposalNotes: empty(quote.proposalNotes),
+    proposalPreparedAt: dateTimeOutput(quote.proposalPreparedAt),
+    items: quote.items.map(toQuoteItemRecord),
+    legacyCreatedAt: dateTimeOutput(quote.createdAt),
+    legacyUpdatedAt: dateTimeOutput(quote.updatedAt)
+  })) as Prisma.InputJsonObject;
+}
+
+function mergedEventMetadata(
+  current: Prisma.JsonValue | null,
+  additions: Prisma.InputJsonObject
+) {
+  const base = current && typeof current === "object" && !Array.isArray(current)
+    ? current as Prisma.InputJsonObject
+    : {};
+  return { ...base, ...additions } satisfies Prisma.InputJsonObject;
+}
+
 
 export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedUser) {
   const client = input.clientId ? await clientOrThrow(input.clientId) : null;
   const quote = await prisma.$transaction(async (tx) => {
+    const quoteNumber = await nextNumber(tx, "quote");
+    const versionCreatedAt = new Date();
     const created = await tx.quote.create({
       data: {
-        quoteNumber: await nextNumber(tx, "quote"),
+        quoteNumber,
+        baseQuoteNumber: quoteNumber,
+        revisionNumber: 0,
+        versionCreatedAt,
         title: input.title,
         clientId: client?.id,
         clientName: client?.displayName,
@@ -905,6 +1113,8 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
 
 export async function updateQuote(id: string, input: UpdateQuoteInput, user?: AuthenticatedUser) {
   const existing = await quoteOrThrow(id);
+  const statusChanged = input.status !== undefined && input.status !== existing.status;
+  const statusChangedAt = new Date();
   const client = input.clientId ? await clientOrThrow(input.clientId) : null;
   if (client && existing.project?.id) {
     const project = await prisma.project.findUnique({ where: { id: existing.project.id }, select: { clientId: true } });
@@ -918,6 +1128,9 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
         ...(client ? { clientId: client.id, clientName: client.displayName } : {}),
         ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(statusChanged && input.status === "Sent"
+          ? { sentAt: statusChangedAt, sentAtPrecision: "EXACT" as const }
+          : {}),
         ...(input.total !== undefined ? { total: input.total } : {}),
         ...(input.trades !== undefined
           ? { serviceCategorySnapshot: input.trades.join(", ") }
@@ -930,9 +1143,27 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
       entityId: updated.id,
       fromStatus: existing.status,
       toStatus: updated.status,
+      changedAt: statusChanged ? statusChangedAt : undefined,
       valueSnapshot: Number(updated.total),
       user
     });
+    if (statusChanged) {
+      await createQuoteSystemUpdate(tx, {
+        quoteId: updated.id,
+        title: `${updated.quoteNumber} moved to ${updated.status}`,
+        body: `Status changed from ${existing.status} to ${updated.status}.`,
+        user,
+        createdAt: statusChangedAt,
+        metadata: {
+          eventType: "quote_status_changed",
+          precision: "EXACT",
+          quoteNumber: updated.quoteNumber,
+          revisionNumber: quoteVersionFields(updated).revisionNumber,
+          fromStatus: existing.status,
+          toStatus: updated.status
+        }
+      });
+    }
     return updated;
   });
   await recordActivity({
@@ -944,6 +1175,161 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
     metadata: { status: quote.status, total: Number(quote.total) }
   });
   return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+const revisionEligibleStatuses = new Set(["Sent", "Approved", "Rejected", "Cancelled"]);
+
+export async function createQuoteRevision(
+  id: string,
+  input: CreateQuoteRevisionInput,
+  user?: AuthenticatedUser
+) {
+  const requestedAt = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    const locked = await lockQuoteOrThrow(tx, id);
+    const quote = await tx.quote.findUniqueOrThrow({
+      where: { id: locked.id },
+      include: quoteDetailInclude
+    });
+    if (!revisionEligibleStatuses.has(quote.status)) {
+      throw new Error("QUOTE_REVISION_STATUS_INVALID");
+    }
+    if (quote.project) throw new Error("QUOTE_REVISION_PROJECT_EXISTS");
+
+    const version = quoteVersionFields(quote);
+    const nextRevisionNumber = version.revisionNumber + 1;
+    const nextQuoteNumber = `${version.baseQuoteNumber}R${nextRevisionNumber}`;
+    const snapshot = quoteRevisionSnapshot(quote);
+
+    const revision = await tx.quoteRevision.create({
+      data: {
+        quoteId: quote.id,
+        revisionNumber: version.revisionNumber,
+        quoteNumber: quote.quoteNumber,
+        titleSnapshot: quote.title,
+        clientIdSnapshot: quote.clientId,
+        clientNameSnapshot: quote.client?.displayName ?? quote.clientName,
+        ownerSnapshot: quote.owner,
+        totalSnapshot: quote.total,
+        priorStatus: quote.status,
+        outcome: "Revision Requested",
+        versionCreatedAt: version.versionCreatedAt,
+        sentAt: version.sentAt,
+        requestedAt,
+        reason: input.reason,
+        snapshot,
+        source: "APPLICATION",
+        precision: "EXACT",
+        requestedById: user?.id,
+        requestedByName: user?.name ?? "Pulse System"
+      }
+    });
+
+    if (["Approved", "Rejected", "Cancelled"].includes(quote.status)) {
+      const decision = await tx.lifecycleStatusEvent.findFirst({
+        where: {
+          entityType: LifecycleEntityType.QUOTE,
+          entityId: quote.id,
+          toStatus: quote.status
+        },
+        orderBy: [{ changedAt: "desc" }, { id: "desc" }]
+      });
+      if (decision) {
+        await tx.lifecycleStatusEvent.update({
+          where: { id: decision.id },
+          data: {
+            metadata: mergedEventMetadata(decision.metadata, {
+              supersededByRevisionId: revision.id,
+              supersededByRevisionNumber: nextRevisionNumber
+            })
+          }
+        });
+      }
+    }
+
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.QUOTE,
+      entityId: quote.id,
+      fromStatus: quote.status,
+      toStatus: "Revision Requested",
+      changedAt: requestedAt,
+      valueSnapshot: Number(quote.total),
+      metadata: {
+        eventType: "quote_revision_requested",
+        quoteNumber: quote.quoteNumber,
+        revisionNumber: version.revisionNumber,
+        nextQuoteNumber,
+        nextRevisionNumber,
+        reason: input.reason,
+        precision: "EXACT"
+      },
+      user
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.QUOTE,
+      entityId: quote.id,
+      fromStatus: "Revision Requested",
+      toStatus: "Draft",
+      changedAt: requestedAt,
+      valueSnapshot: Number(quote.total),
+      metadata: {
+        eventType: "quote_revision_opened",
+        quoteNumber: nextQuoteNumber,
+        revisionNumber: nextRevisionNumber,
+        precision: "EXACT"
+      },
+      user
+    });
+    await createQuoteSystemUpdate(tx, {
+      quoteId: quote.id,
+      title: `Client requested ${nextQuoteNumber}`,
+      body: input.reason,
+      user,
+      createdAt: requestedAt,
+      metadata: {
+        eventType: "quote_revision_requested",
+        precision: "EXACT",
+        quoteNumber: quote.quoteNumber,
+        revisionNumber: nextRevisionNumber,
+        fromStatus: quote.status,
+        toStatus: "Revision Requested"
+      }
+    });
+
+    await tx.quote.update({
+      where: { id: quote.id },
+      data: {
+        quoteNumber: nextQuoteNumber,
+        baseQuoteNumber: version.baseQuoteNumber,
+        revisionNumber: nextRevisionNumber,
+        versionCreatedAt: requestedAt,
+        sentAt: null,
+        sentAtPrecision: null,
+        status: "Draft"
+      }
+    });
+    return {
+      quoteId: quote.id,
+      previousQuoteNumber: quote.quoteNumber,
+      nextQuoteNumber,
+      revisionId: revision.id
+    };
+  });
+
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: result.quoteId,
+    type: "Revision Requested",
+    title: `${result.previousQuoteNumber} returned as ${result.nextQuoteNumber}`,
+    detail: input.reason,
+    metadata: {
+      revisionId: result.revisionId,
+      previousQuoteNumber: result.previousQuoteNumber,
+      nextQuoteNumber: result.nextQuoteNumber
+    }
+  });
+  return getQuoteById(result.quoteId, user?.id);
 }
 
 export async function archiveQuote(id: string, user?: AuthenticatedUser) {

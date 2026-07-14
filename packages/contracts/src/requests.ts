@@ -162,6 +162,15 @@ export type RequestUpdate = {
   targetDate: string;
   stepStatus: RequestStepStatus | null;
   supersedesId: string | null;
+  metadata: {
+    eventType?: string;
+    precision?: "EXACT" | "ESTIMATED";
+    quoteNumber?: string;
+    revisionNumber?: number;
+    fromStatus?: string;
+    toStatus?: string;
+    legacyStatus?: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
   mentions: Array<{

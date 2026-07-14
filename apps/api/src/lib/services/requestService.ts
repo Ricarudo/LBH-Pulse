@@ -321,6 +321,9 @@ function toRequestUpdateRecord(
     targetDate: formatDateInput(update.targetDate),
     stepStatus,
     supersedesId: update.supersedesId,
+    metadata: update.metadata && typeof update.metadata === "object" && !Array.isArray(update.metadata)
+      ? update.metadata as RequestUpdate["metadata"]
+      : null,
     createdAt: formatDateTime(update.createdAt),
     updatedAt: formatDateTime(update.updatedAt),
     mentions: update.mentions.map((mention) => ({
@@ -1120,7 +1123,8 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
           take: 1,
           select: { id: true, requestNumber: true }
         },
-        project: { select: { id: true } }
+        project: { select: { id: true } },
+        revisions: { select: { sentAt: true } }
       },
       orderBy: { updatedAt: "desc" }
     }),
@@ -1151,6 +1155,23 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
     ? projects.map((project) => toProjectRecord(project))
     : [];
   const invoiceRecords = canUser(user, "billing:read") ? invoices.map(toInvoiceRecord) : [];
+  const revisionRequests = quoteRecords.reduce((total, quote) => total + quote.revisionNumber, 0);
+  const revisedQuotes = quoteRecords.filter((quote) => quote.revisionNumber > 0).length;
+  const sentVersions = canUser(user, "quotes:read")
+    ? quotes.reduce(
+        (total, quote) =>
+          total +
+          quote.revisions.filter((revision) => Boolean(revision.sentAt)).length +
+          (quote.sentAt ? 1 : 0),
+        0
+      )
+    : 0;
+  const returnedSentVersions = canUser(user, "quotes:read")
+    ? quotes.reduce(
+        (total, quote) => total + quote.revisions.filter((revision) => Boolean(revision.sentAt)).length,
+        0
+      )
+    : 0;
 
   return {
     requests: requestRecords,
@@ -1169,7 +1190,11 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
       ).length,
       outstandingInvoiceBalance: invoiceRecords
         .filter((invoice) => !["Paid", "Void"].includes(invoice.status))
-        .reduce((total, invoice) => total + invoice.amount, 0)
+        .reduce((total, invoice) => total + invoice.amount, 0),
+      revisionRequests,
+      revisedQuotes,
+      revisionRate: sentVersions ? returnedSentVersions / sentVersions : null,
+      averageRevisions: revisedQuotes ? revisionRequests / revisedQuotes : null
     }
   };
 }
@@ -1866,10 +1891,14 @@ export async function convertRequest(
       throw new Error("REQUEST_NOT_READY_FOR_QUOTE");
     }
 
+    const quoteNumber = input.createQuote ? await generateQuoteNumber(tx) : null;
     const quote = input.createQuote
       ? await tx.quote.create({
           data: {
-            quoteNumber: await generateQuoteNumber(tx),
+            quoteNumber: quoteNumber!,
+            baseQuoteNumber: quoteNumber!,
+            revisionNumber: 0,
+            versionCreatedAt: now,
             title: existingRequest.title,
             clientId: existingRequest.clientId,
             clientName: existingRequest.companyName || existingRequest.client?.displayName || null,

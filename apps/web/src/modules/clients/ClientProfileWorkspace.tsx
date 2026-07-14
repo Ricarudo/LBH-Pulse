@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   CalendarClock,
+  ChartNoAxesColumnIncreasing,
   CreditCard,
   Edit3,
   FileText,
@@ -11,6 +12,7 @@ import {
   MoreHorizontal,
   Plus,
   ReceiptText,
+  RotateCcw,
   Save,
   Search,
   SlidersHorizontal,
@@ -125,6 +127,15 @@ function compactValue(value: string | number | null | undefined) {
 
 function displayDate(value: string) {
   return formatWorkspaceDate(value) || "No activity";
+}
+
+function displayRate(value: number | null) {
+  return value === null
+    ? "—"
+    : new Intl.NumberFormat("en-US", {
+        style: "percent",
+        maximumFractionDigits: 1
+      }).format(value);
 }
 
 function websiteHref(website: string) {
@@ -497,7 +508,11 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     activeRequests: 0,
     activeQuotes: 0,
     activeProjects: 0,
-    outstandingInvoiceBalance: 0
+    outstandingInvoiceBalance: 0,
+    revisionRequests: 0,
+    revisedQuotes: 0,
+    revisionRate: null,
+    averageRevisions: null
   });
   const [activeTab, setActiveTab] = useState<ClientProfileTab>("Overview");
   const [isLoading, setIsLoading] = useState(true);
@@ -974,6 +989,26 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               label="Outstanding Balance"
               value={formatMoney(workSummary.outstandingInvoiceBalance)}
               icon={<CreditCard size={18} />}
+            />
+            <ClientMetricCard
+              label="Revision Requests"
+              value={workSummary.revisionRequests}
+              icon={<RotateCcw size={18} />}
+            />
+            <ClientMetricCard
+              label="Quotes Revised"
+              value={workSummary.revisedQuotes}
+              icon={<ReceiptText size={18} />}
+            />
+            <ClientMetricCard
+              label="Revision Rate"
+              value={displayRate(workSummary.revisionRate)}
+              icon={<ChartNoAxesColumnIncreasing size={18} />}
+            />
+            <ClientMetricCard
+              label="Avg. Revisions"
+              value={workSummary.averageRevisions === null ? "—" : workSummary.averageRevisions.toFixed(1)}
+              icon={<CalendarClock size={18} />}
             />
           </section>
 

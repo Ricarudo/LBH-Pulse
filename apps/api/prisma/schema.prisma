@@ -40,60 +40,60 @@ enum LifecycleEventPrecision {
 }
 
 model Request {
-  id              String              @id @default(cuid())
-  requestNumber   String              @unique
-  title           String
-  requestType     String
-  source          String
-  serviceCategory String
-  status          String              @default("New")
-  priority        String              @default("Normal")
-  companyName     String?
-  contactName     String?
-  contactEmail    String?
-  contactPhone    String?
-  siteName        String?
-  siteAddress     String?
-  city            String?
-  state           String?
-  clientId        String?
-  contactId       String?
-  siteId          String?
-  assignedToId    String?
-  currentStepId   String?
-  receivedDate    DateTime            @default(now())
-  dueDate         DateTime?
-  nextAction      String?
-  nextFollowUpAt  DateTime?
-  lastActivityAt  DateTime?
-  missingInfo     String?
-  siteVisitNeeded Boolean             @default(false)
-  siteVisitCompleted Boolean          @default(false)
-  description     String?
-  internalNotes   String?
-  relatedQuoteId  String?
-  checklistTemplateId String?
+  id                            String                     @id @default(cuid())
+  requestNumber                 String                     @unique
+  title                         String
+  requestType                   String
+  source                        String
+  serviceCategory               String
+  status                        String                     @default("New")
+  priority                      String                     @default("Normal")
+  companyName                   String?
+  contactName                   String?
+  contactEmail                  String?
+  contactPhone                  String?
+  siteName                      String?
+  siteAddress                   String?
+  city                          String?
+  state                         String?
+  clientId                      String?
+  contactId                     String?
+  siteId                        String?
+  assignedToId                  String?
+  currentStepId                 String?
+  receivedDate                  DateTime                   @default(now())
+  dueDate                       DateTime?
+  nextAction                    String?
+  nextFollowUpAt                DateTime?
+  lastActivityAt                DateTime?
+  missingInfo                   String?
+  siteVisitNeeded               Boolean                    @default(false)
+  siteVisitCompleted            Boolean                    @default(false)
+  description                   String?
+  internalNotes                 String?
+  relatedQuoteId                String?
+  checklistTemplateId           String?
   checklistTemplateNameSnapshot String?
-  createdById     String?
-  archivedAt      DateTime?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  assignedTo      LocalUser?          @relation("AssignedRequests", fields: [assignedToId], references: [id], onDelete: SetNull)
-  createdBy       LocalUser?          @relation("CreatedRequests", fields: [createdById], references: [id], onDelete: SetNull)
-  client          Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  contact         PointOfContact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  site            ClientSite?         @relation(fields: [siteId], references: [id], onDelete: SetNull)
-  relatedQuote    Quote?              @relation(fields: [relatedQuoteId], references: [id], onDelete: SetNull)
-  checklistTemplate RequestChecklistTemplate? @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
-  activities      RequestActivity[]
-  tasks           RequestTask[]
-  notesList       RequestNote[]
-  updates         RequestUpdate[]     @relation("RequestUpdates")
-  collaborators   RequestCollaborator[]
-  documents       LifecycleDocument[]
-  checklistItems  RequestChecklistItem[]
-  trades          RequestTrade[]
-  checklistInstances RequestChecklistInstance[]
+  createdById                   String?
+  archivedAt                    DateTime?
+  createdAt                     DateTime                   @default(now())
+  updatedAt                     DateTime                   @updatedAt
+  assignedTo                    LocalUser?                 @relation("AssignedRequests", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy                     LocalUser?                 @relation("CreatedRequests", fields: [createdById], references: [id], onDelete: SetNull)
+  client                        Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contact                       PointOfContact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  site                          ClientSite?                @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  relatedQuote                  Quote?                     @relation(fields: [relatedQuoteId], references: [id], onDelete: SetNull)
+  checklistTemplate             RequestChecklistTemplate?  @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
+  activities                    RequestActivity[]
+  tasks                         RequestTask[]
+  notesList                     RequestNote[]
+  updates                       RequestUpdate[]            @relation("RequestUpdates")
+  collaborators                 RequestCollaborator[]
+  documents                     LifecycleDocument[]
+  checklistItems                RequestChecklistItem[]
+  trades                        RequestTrade[]
+  checklistInstances            RequestChecklistInstance[]
 
   @@index([status])
   @@index([priority])
@@ -111,14 +111,14 @@ model Request {
 }
 
 model RequestUpdate {
-  id                    String           @id @default(cuid())
+  id                    String                 @id @default(cuid())
   requestId             String?
   quoteId               String?
   kind                  String
   title                 String?
   body                  String?
   authorId              String?
-  authorNameSnapshot    String           @default("Pulse System")
+  authorNameSnapshot    String                 @default("Pulse System")
   authorEmailSnapshot   String?
   authorRoleSnapshot    String?
   assigneeId            String?
@@ -127,15 +127,16 @@ model RequestUpdate {
   targetDate            DateTime?
   stepStatus            String?
   supersedesId          String?
-  legacyTaskId          String?          @unique
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
-  request               Request?         @relation("RequestUpdates", fields: [requestId], references: [id], onDelete: Cascade)
-  quote                 Quote?           @relation("QuoteUpdates", fields: [quoteId], references: [id], onDelete: Cascade)
-  author                LocalUser?       @relation("RequestUpdateAuthors", fields: [authorId], references: [id], onDelete: SetNull)
-  assignee              LocalUser?       @relation("RequestUpdateAssignees", fields: [assigneeId], references: [id], onDelete: SetNull)
-  supersedes            RequestUpdate?   @relation("RequestUpdateSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
-  supersededBy          RequestUpdate[]  @relation("RequestUpdateSupersession")
+  legacyTaskId          String?                @unique
+  metadata              Json?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  request               Request?               @relation("RequestUpdates", fields: [requestId], references: [id], onDelete: Cascade)
+  quote                 Quote?                 @relation("QuoteUpdates", fields: [quoteId], references: [id], onDelete: Cascade)
+  author                LocalUser?             @relation("RequestUpdateAuthors", fields: [authorId], references: [id], onDelete: SetNull)
+  assignee              LocalUser?             @relation("RequestUpdateAssignees", fields: [assigneeId], references: [id], onDelete: SetNull)
+  supersedes            RequestUpdate?         @relation("RequestUpdateSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy          RequestUpdate[]        @relation("RequestUpdateSupersession")
   mentions              RequestUpdateMention[]
 
   @@index([requestId, createdAt])
@@ -146,13 +147,13 @@ model RequestUpdate {
 }
 
 model RequestCollaborator {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   requestId String
   userId    String
   addedById String?
-  createdAt DateTime @default(now())
-  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  user      LocalUser @relation("RequestCollaboratorUsers", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  request   Request    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user      LocalUser  @relation("RequestCollaboratorUsers", fields: [userId], references: [id], onDelete: Cascade)
   addedBy   LocalUser? @relation("RequestCollaboratorAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
 
   @@unique([requestId, userId])
@@ -173,17 +174,17 @@ model RequestUpdateMention {
 }
 
 model RequestChecklistTemplate {
-  id              String                         @id @default(cuid())
-  key             String                         @unique
-  name            String
-  requestType     String?
-  serviceCategory String?
-  active          Boolean                        @default(true)
-  archivedAt      DateTime?
-  createdAt       DateTime                       @default(now())
-  updatedAt       DateTime                       @updatedAt
-  items           RequestChecklistTemplateItem[]
-  requests        Request[]
+  id               String                         @id @default(cuid())
+  key              String                         @unique
+  name             String
+  requestType      String?
+  serviceCategory  String?
+  active           Boolean                        @default(true)
+  archivedAt       DateTime?
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+  items            RequestChecklistTemplateItem[]
+  requests         Request[]
   requestInstances RequestChecklistInstance[]
 
   @@index([requestType])
@@ -193,16 +194,16 @@ model RequestChecklistTemplate {
 }
 
 model RequestChecklistTemplateItem {
-  id          String                   @id @default(cuid())
-  templateId  String
-  label       String
-  description String?
-  required    Boolean                  @default(true)
-  appliesWhen String?
-  sortOrder   Int                      @default(0)
-  group       String?
-  active      Boolean                  @default(true)
-  template    RequestChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  id           String                   @id @default(cuid())
+  templateId   String
+  label        String
+  description  String?
+  required     Boolean                  @default(true)
+  appliesWhen  String?
+  sortOrder    Int                      @default(0)
+  group        String?
+  active       Boolean                  @default(true)
+  template     RequestChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   requestItems RequestChecklistItem[]
 
   @@index([templateId])
@@ -211,27 +212,27 @@ model RequestChecklistTemplateItem {
 }
 
 model RequestChecklistItem {
-  id             String                        @id @default(cuid())
-  requestId      String
-  templateItemId String?
-  checklistInstanceId String?
-  label          String
-  description    String?
-  required       Boolean                       @default(true)
-  appliesWhen    String?
-  sortOrder      Int                           @default(0)
-  group          String?
-  completed      Boolean                       @default(false)
-  completedAt    DateTime?
-  completedById  String?
+  id                      String                        @id @default(cuid())
+  requestId               String
+  templateItemId          String?
+  checklistInstanceId     String?
+  label                   String
+  description             String?
+  required                Boolean                       @default(true)
+  appliesWhen             String?
+  sortOrder               Int                           @default(0)
+  group                   String?
+  completed               Boolean                       @default(false)
+  completedAt             DateTime?
+  completedById           String?
   completedByNameSnapshot String?
-  notes          String?
-  createdAt      DateTime                      @default(now())
-  updatedAt      DateTime                      @updatedAt
-  request        Request                       @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  templateItem   RequestChecklistTemplateItem? @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
-  checklistInstance RequestChecklistInstance?  @relation(fields: [checklistInstanceId], references: [id], onDelete: Cascade)
-  completedBy    LocalUser?                    @relation(fields: [completedById], references: [id], onDelete: SetNull)
+  notes                   String?
+  createdAt               DateTime                      @default(now())
+  updatedAt               DateTime                      @updatedAt
+  request                 Request                       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  templateItem            RequestChecklistTemplateItem? @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  checklistInstance       RequestChecklistInstance?     @relation(fields: [checklistInstanceId], references: [id], onDelete: Cascade)
+  completedBy             LocalUser?                    @relation(fields: [completedById], references: [id], onDelete: SetNull)
 
   @@index([requestId])
   @@index([templateItemId])
@@ -315,35 +316,36 @@ model RequestNote {
 }
 
 model LocalUser {
-  id           String     @id @default(cuid())
-  name         String
-  email        String     @unique
-  role         String
-  passwordHash String
-  active       Boolean    @default(true)
-  mustChangePassword Boolean @default(false)
-  authProvider String     @default("LOCAL")
-  themeMode    String     @default("system")
-  accentTheme  String     @default("blue")
-  motionMode   String     @default("luxurious")
-  dashboardPreferences Json?
-  entraObjectId String?
-  lastLoginAt  DateTime?
-  deactivatedAt DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  activities   Activity[]
-  assignedRequests Request[] @relation("AssignedRequests")
-  createdRequests  Request[] @relation("CreatedRequests")
-  authoredRequestUpdates RequestUpdate[] @relation("RequestUpdateAuthors")
-  assignedRequestUpdates RequestUpdate[] @relation("RequestUpdateAssignees")
-  requestCollaborations RequestCollaborator[] @relation("RequestCollaboratorUsers")
-  addedRequestCollaborators RequestCollaborator[] @relation("RequestCollaboratorAddedBy")
-  requestUpdateMentions RequestUpdateMention[] @relation("RequestUpdateMentions")
+  id                             String                 @id @default(cuid())
+  name                           String
+  email                          String                 @unique
+  role                           String
+  passwordHash                   String
+  active                         Boolean                @default(true)
+  mustChangePassword             Boolean                @default(false)
+  authProvider                   String                 @default("LOCAL")
+  themeMode                      String                 @default("system")
+  accentTheme                    String                 @default("blue")
+  motionMode                     String                 @default("luxurious")
+  dashboardPreferences           Json?
+  entraObjectId                  String?
+  lastLoginAt                    DateTime?
+  deactivatedAt                  DateTime?
+  createdAt                      DateTime               @default(now())
+  updatedAt                      DateTime               @updatedAt
+  activities                     Activity[]
+  assignedRequests               Request[]              @relation("AssignedRequests")
+  createdRequests                Request[]              @relation("CreatedRequests")
+  authoredRequestUpdates         RequestUpdate[]        @relation("RequestUpdateAuthors")
+  assignedRequestUpdates         RequestUpdate[]        @relation("RequestUpdateAssignees")
+  requestCollaborations          RequestCollaborator[]  @relation("RequestCollaboratorUsers")
+  addedRequestCollaborators      RequestCollaborator[]  @relation("RequestCollaboratorAddedBy")
+  requestUpdateMentions          RequestUpdateMention[] @relation("RequestUpdateMentions")
   completedRequestChecklistItems RequestChecklistItem[]
-  uploadedDocuments LifecycleDocument[] @relation("UploadedDocuments")
-  lifecycleEvents LifecycleStatusEvent[] @relation("LifecycleEventActors")
-  accessRole   AccessRole @relation(fields: [role], references: [id], onDelete: Restrict)
+  uploadedDocuments              LifecycleDocument[]    @relation("UploadedDocuments")
+  lifecycleEvents                LifecycleStatusEvent[] @relation("LifecycleEventActors")
+  requestedQuoteRevisions        QuoteRevision[]        @relation("QuoteRevisionActors")
+  accessRole                     AccessRole             @relation(fields: [role], references: [id], onDelete: Restrict)
 
   @@index([role])
   @@index([active])
@@ -392,7 +394,7 @@ model WorkspaceSettings {
 }
 
 model Activity {
-  id                String    @id @default(cuid())
+  id                String     @id @default(cuid())
   relatedEntityType String
   relatedEntityId   String
   actorUserId       String?
@@ -402,7 +404,7 @@ model Activity {
   title             String
   detail            String?
   metadata          Json?
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime   @default(now())
   actor             LocalUser? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([relatedEntityType, relatedEntityId])
@@ -436,16 +438,16 @@ model LifecycleStatusEvent {
 }
 
 model Opportunity {
-  id          String    @id @default(cuid())
-  number      String    @unique
-  name        String
-  clientName  String?
-  status      String    @default("Open")
-  owner       String    @default("Unassigned")
-  value       Decimal   @default(0) @db.Decimal(12, 2)
-  archivedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id @default(cuid())
+  number     String    @unique
+  name       String
+  clientName String?
+  status     String    @default("Open")
+  owner      String    @default("Unassigned")
+  value      Decimal   @default(0) @db.Decimal(12, 2)
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([status])
   @@index([owner])
@@ -453,47 +455,88 @@ model Opportunity {
 }
 
 model Quote {
-  id          String    @id @default(cuid())
-  quoteNumber String    @unique
-  title       String
-  clientId    String?
-  clientName  String?
-  status      String    @default("Draft")
-  owner       String    @default("Unassigned")
-  total       Decimal   @default(0) @db.Decimal(12, 2)
-  sourceRequestIdSnapshot String?
-  requestNumberSnapshot String?
-  requestTitleSnapshot String?
-  requestTypeSnapshot String?
-  serviceCategorySnapshot String?
-  contactNameSnapshot String?
-  contactEmailSnapshot String?
-  contactPhoneSnapshot String?
-  siteNameSnapshot String?
-  siteAddressSnapshot String?
-  citySnapshot String?
-  stateSnapshot String?
+  id                       String                   @id @default(cuid())
+  quoteNumber              String                   @unique
+  baseQuoteNumber          String?
+  revisionNumber           Int                      @default(0)
+  versionCreatedAt         DateTime?
+  sentAt                   DateTime?
+  sentAtPrecision          LifecycleEventPrecision?
+  title                    String
+  clientId                 String?
+  clientName               String?
+  status                   String                   @default("Draft")
+  owner                    String                   @default("Unassigned")
+  total                    Decimal                  @default(0) @db.Decimal(12, 2)
+  sourceRequestIdSnapshot  String?
+  requestNumberSnapshot    String?
+  requestTitleSnapshot     String?
+  requestTypeSnapshot      String?
+  serviceCategorySnapshot  String?
+  contactNameSnapshot      String?
+  contactEmailSnapshot     String?
+  contactPhoneSnapshot     String?
+  siteNameSnapshot         String?
+  siteAddressSnapshot      String?
+  citySnapshot             String?
+  stateSnapshot            String?
   scopeDescriptionSnapshot String?
-  internalNotesSnapshot String?
-  proposalNotes String?
-  proposalPreparedAt DateTime?
-  currentStepId String?
-  archivedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  client      Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  requests    Request[]
-  project     Project?
-  documents   LifecycleDocument[]
-  items        QuoteItem[]
-  updates      RequestUpdate[] @relation("QuoteUpdates")
+  internalNotesSnapshot    String?
+  proposalNotes            String?
+  proposalPreparedAt       DateTime?
+  currentStepId            String?
+  archivedAt               DateTime?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  client                   Client?                  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  requests                 Request[]
+  project                  Project?
+  documents                LifecycleDocument[]
+  items                    QuoteItem[]
+  updates                  RequestUpdate[]          @relation("QuoteUpdates")
+  revisions                QuoteRevision[]
 
   @@index([status])
+  @@index([baseQuoteNumber])
+  @@index([revisionNumber])
   @@index([owner])
   @@index([clientId])
   @@index([sourceRequestIdSnapshot])
   @@index([currentStepId])
   @@index([archivedAt])
+}
+
+model QuoteRevision {
+  id                 String                  @id @default(cuid())
+  quoteId            String
+  revisionNumber     Int
+  quoteNumber        String
+  titleSnapshot      String
+  clientIdSnapshot   String?
+  clientNameSnapshot String?
+  ownerSnapshot      String
+  totalSnapshot      Decimal                 @db.Decimal(12, 2)
+  priorStatus        String
+  outcome            String                  @default("Revision Requested")
+  versionCreatedAt   DateTime
+  sentAt             DateTime?
+  requestedAt        DateTime
+  reason             String
+  snapshot           Json
+  legacyQuoteId      String?                 @unique
+  source             String                  @default("APPLICATION")
+  precision          LifecycleEventPrecision @default(EXACT)
+  requestedById      String?
+  requestedByName    String                  @default("Pulse System")
+  createdAt          DateTime                @default(now())
+  quote              Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  requestedBy        LocalUser?              @relation("QuoteRevisionActors", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@unique([quoteId, revisionNumber])
+  @@index([quoteId, requestedAt])
+  @@index([clientIdSnapshot, requestedAt])
+  @@index([requestedById])
+  @@index([precision])
 }
 
 model Item {
@@ -539,23 +582,23 @@ model Item {
 }
 
 model ItemPriceHistory {
-  id                    String   @id @default(cuid())
-  itemId                String
-  previousCost          Decimal? @db.Decimal(12, 2)
-  newCost               Decimal  @db.Decimal(12, 2)
-  previousSellPrice     Decimal? @db.Decimal(12, 2)
-  newSellPrice          Decimal  @db.Decimal(12, 2)
-  changedAt             DateTime @default(now())
-  item                  Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  itemId            String
+  previousCost      Decimal? @db.Decimal(12, 2)
+  newCost           Decimal  @db.Decimal(12, 2)
+  previousSellPrice Decimal? @db.Decimal(12, 2)
+  newSellPrice      Decimal  @db.Decimal(12, 2)
+  changedAt         DateTime @default(now())
+  item              Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([itemId, changedAt])
 }
 
 model QuoteItem {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   quoteId         String
   sourceItemId    String?
-  section         String    @default("Materials")
+  section         String   @default("Materials")
   name            String
   description     String?
   itemType        ItemType
@@ -563,23 +606,23 @@ model QuoteItem {
   partNumber      String?
   manufacturer    String?
   brand           String?
-  quantity        Decimal   @default(1) @db.Decimal(12, 3)
+  quantity        Decimal  @default(1) @db.Decimal(12, 3)
   unitOfMeasure   String?
-  unitCost        Decimal   @default(0) @db.Decimal(12, 2)
-  unitPrice       Decimal   @default(0) @db.Decimal(12, 2)
-  markupPercent   Decimal   @default(0) @db.Decimal(8, 2)
-  discountPercent Decimal   @default(0) @db.Decimal(5, 2)
-  taxable         Boolean   @default(true)
+  unitCost        Decimal  @default(0) @db.Decimal(12, 2)
+  unitPrice       Decimal  @default(0) @db.Decimal(12, 2)
+  markupPercent   Decimal  @default(0) @db.Decimal(8, 2)
+  discountPercent Decimal  @default(0) @db.Decimal(5, 2)
+  taxable         Boolean  @default(true)
   imageUrl        String?
   productUrl      String?
-  lineSubtotal    Decimal   @default(0) @db.Decimal(12, 2)
-  lineTax         Decimal   @default(0) @db.Decimal(12, 2)
-  lineTotal       Decimal   @default(0) @db.Decimal(12, 2)
-  sortOrder       Int       @default(0)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  quote           Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  sourceItem      Item?     @relation(fields: [sourceItemId], references: [id], onDelete: SetNull)
+  lineSubtotal    Decimal  @default(0) @db.Decimal(12, 2)
+  lineTax         Decimal  @default(0) @db.Decimal(12, 2)
+  lineTotal       Decimal  @default(0) @db.Decimal(12, 2)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  quote           Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  sourceItem      Item?    @relation(fields: [sourceItemId], references: [id], onDelete: SetNull)
 
   @@index([quoteId])
   @@index([sourceItemId])
@@ -606,21 +649,21 @@ model ItemRelation {
 }
 
 model Project {
-  id            String    @id @default(cuid())
-  projectNumber String    @unique
+  id            String              @id @default(cuid())
+  projectNumber String              @unique
   title         String
   clientId      String
-  quoteId       String?   @unique
-  owner         String    @default("Unassigned")
-  status        String    @default("Ready")
-  budget        Decimal   @default(0) @db.Decimal(12, 2)
+  quoteId       String?             @unique
+  owner         String              @default("Unassigned")
+  status        String              @default("Ready")
+  budget        Decimal             @default(0) @db.Decimal(12, 2)
   startDate     DateTime?
   dueDate       DateTime?
   archivedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  quote         Quote?    @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  quote         Quote?              @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   invoices      Invoice[]
   documents     LifecycleDocument[]
 
@@ -631,31 +674,31 @@ model Project {
 }
 
 model LifecycleDocument {
-  id                 String    @id @default(cuid())
-  requestId          String?
-  quoteId            String?
-  projectId          String?
-  objectKey          String?   @unique
-  originalFileName   String
-  mediaType          String?
-  byteSize           BigInt    @default(0)
-  sha256             String?
-  category           String    @default("Other")
-  tags               String[]  @default([])
-  scanStatus         String    @default("Clean")
-  scanMessage        String?
-  scannedAt          DateTime?
-  uploadedById       String?
-  uploadedByName     String    @default("Pulse System")
-  deletedAt          DateTime?
-  deletedById        String?
-  deletedByName      String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  request            Request?  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  quote              Quote?    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  project            Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  uploadedBy         LocalUser? @relation("UploadedDocuments", fields: [uploadedById], references: [id], onDelete: SetNull)
+  id               String     @id @default(cuid())
+  requestId        String?
+  quoteId          String?
+  projectId        String?
+  objectKey        String?    @unique
+  originalFileName String
+  mediaType        String?
+  byteSize         BigInt     @default(0)
+  sha256           String?
+  category         String     @default("Other")
+  tags             String[]   @default([])
+  scanStatus       String     @default("Clean")
+  scanMessage      String?
+  scannedAt        DateTime?
+  uploadedById     String?
+  uploadedByName   String     @default("Pulse System")
+  deletedAt        DateTime?
+  deletedById      String?
+  deletedByName    String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  request          Request?   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  quote            Quote?     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  project          Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy       LocalUser? @relation("UploadedDocuments", fields: [uploadedById], references: [id], onDelete: SetNull)
 
   @@index([requestId, deletedAt])
   @@index([quoteId, deletedAt])
@@ -691,50 +734,50 @@ model Invoice {
 }
 
 model Client {
-  id                 String           @id @default(cuid())
-  clientNumber       String           @unique
-  companyName        String?
-  legalName          String?
-  displayName        String           @default("Unnamed Client")
-  industry           String?
-  website            String?
-  status             String           @default("Active")
-  accountOwner       String           @default("Unassigned")
-  taxId              String?
-  paymentTerms       String?
-  preferredCurrency  String           @default("USD")
-  preferredLanguage  String           @default("English")
-  brandPreferences   String?
-  technologyPreferences String?
-  generalNotes       String?
-  importantNotes     String?
-  preferredVendors   String?
-  preferredCameraBrand String?
+  id                          String           @id @default(cuid())
+  clientNumber                String           @unique
+  companyName                 String?
+  legalName                   String?
+  displayName                 String           @default("Unnamed Client")
+  industry                    String?
+  website                     String?
+  status                      String           @default("Active")
+  accountOwner                String           @default("Unassigned")
+  taxId                       String?
+  paymentTerms                String?
+  preferredCurrency           String           @default("USD")
+  preferredLanguage           String           @default("English")
+  brandPreferences            String?
+  technologyPreferences       String?
+  generalNotes                String?
+  importantNotes              String?
+  preferredVendors            String?
+  preferredCameraBrand        String?
   preferredAccessControlBrand String?
-  preferredNetworkBrand String?
-  preferredCablingBrand String?
-  standardTechnologies String?
-  documentationRequirements String?
-  invoiceRequirements String?
-  insuranceRequirements String?
-  purchaseOrderRequired Boolean       @default(false)
-  source             String?
-  openOpportunities  Int              @default(0)
-  activeProjects     Int              @default(0)
-  lifetimeValue      Decimal          @default(0) @db.Decimal(12, 2)
-  outstandingBalance Decimal          @default(0) @db.Decimal(12, 2)
-  archivedAt         DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  lastActivityAt     DateTime?
-  contacts           PointOfContact[]
-  sites              ClientSite[]
-  services           ClientService[]
-  activities         ClientActivity[]
-  requests           Request[]
-  quotes             Quote[]
-  projects           Project[]
-  invoices           Invoice[]
+  preferredNetworkBrand       String?
+  preferredCablingBrand       String?
+  standardTechnologies        String?
+  documentationRequirements   String?
+  invoiceRequirements         String?
+  insuranceRequirements       String?
+  purchaseOrderRequired       Boolean          @default(false)
+  source                      String?
+  openOpportunities           Int              @default(0)
+  activeProjects              Int              @default(0)
+  lifetimeValue               Decimal          @default(0) @db.Decimal(12, 2)
+  outstandingBalance          Decimal          @default(0) @db.Decimal(12, 2)
+  archivedAt                  DateTime?
+  createdAt                   DateTime         @default(now())
+  updatedAt                   DateTime         @updatedAt
+  lastActivityAt              DateTime?
+  contacts                    PointOfContact[]
+  sites                       ClientSite[]
+  services                    ClientService[]
+  activities                  ClientActivity[]
+  requests                    Request[]
+  quotes                      Quote[]
+  projects                    Project[]
+  invoices                    Invoice[]
 
   @@index([status])
   @@index([accountOwner])
@@ -777,31 +820,31 @@ model PointOfContact {
 }
 
 model ClientSite {
-  id                   String          @id @default(cuid())
+  id                   String           @id @default(cuid())
   clientId             String
   name                 String?
-  siteName             String          @default("Unnamed Site")
-  siteType             String          @default("Main Office")
+  siteName             String           @default("Unnamed Site")
+  siteType             String           @default("Main Office")
   address              String?
   addressLine1         String?
   addressLine2         String?
   city                 String?
   state                String?
   postalCode           String?
-  country              String          @default("Puerto Rico")
+  country              String           @default("Puerto Rico")
   googleMapsUrl        String?
-  latitude             Decimal?        @db.Decimal(10, 7)
-  longitude            Decimal?        @db.Decimal(10, 7)
+  latitude             Decimal?         @db.Decimal(10, 7)
+  longitude            Decimal?         @db.Decimal(10, 7)
   operationalHours     String?
   accessInstructions   String?
   parkingInstructions  String?
   securityRequirements String?
   siteNotes            String?
-  status               String?         @default("Active")
-  isPrimarySite        Boolean         @default(false)
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-  client               Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status               String?          @default("Active")
+  isPrimarySite        Boolean          @default(false)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  client               Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   contacts             PointOfContact[]
   requests             Request[]
 

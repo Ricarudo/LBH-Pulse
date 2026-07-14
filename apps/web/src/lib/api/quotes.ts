@@ -8,9 +8,11 @@ import type {
 } from "@pulse/contracts/items";
 import type {
   ConvertQuoteInput,
+  CreateQuoteRevisionInput,
   ProjectResponse,
   QuoteDetailRecord,
   QuoteRecord,
+  QuoteRevisionResponse,
   QuoteResponse,
   UpdateQuoteInput
 } from "@pulse/contracts/work";
@@ -49,6 +51,24 @@ export function fetchQuote(quoteId: string, options: ReadOptions = {}) {
   return apiRequest<QuoteResponse>(quotePath(quoteId), {
     ...options,
     method: "GET"
+  });
+}
+
+export function fetchQuoteRevision(
+  quoteId: string,
+  revision: number | string,
+  options: ReadOptions = {}
+) {
+  return apiRequest<QuoteRevisionResponse>(
+    quotePath(quoteId, `/revisions/${encodeURIComponent(String(revision))}`),
+    { ...options, method: "GET" }
+  );
+}
+
+export function createQuoteRevision(quoteId: string, input: CreateQuoteRevisionInput) {
+  return apiRequest<QuoteResponse>(quotePath(quoteId, "/revisions"), {
+    method: "POST",
+    json: input
   });
 }
 

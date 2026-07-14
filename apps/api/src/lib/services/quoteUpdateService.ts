@@ -25,6 +25,22 @@ type QuoteUpdateWithRelations = Prisma.RequestUpdateGetPayload<{
 }>;
 type UpdateDb = typeof prisma | Prisma.TransactionClient;
 
+function updateMetadata(value: Prisma.JsonValue | null): RequestUpdate["metadata"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const metadata = value as Record<string, Prisma.JsonValue>;
+  return {
+    ...(typeof metadata.eventType === "string" ? { eventType: metadata.eventType } : {}),
+    ...(metadata.precision === "EXACT" || metadata.precision === "ESTIMATED"
+      ? { precision: metadata.precision }
+      : {}),
+    ...(typeof metadata.quoteNumber === "string" ? { quoteNumber: metadata.quoteNumber } : {}),
+    ...(typeof metadata.revisionNumber === "number" ? { revisionNumber: metadata.revisionNumber } : {}),
+    ...(typeof metadata.fromStatus === "string" ? { fromStatus: metadata.fromStatus } : {}),
+    ...(typeof metadata.toStatus === "string" ? { toStatus: metadata.toStatus } : {}),
+    ...(typeof metadata.legacyStatus === "string" ? { legacyStatus: metadata.legacyStatus } : {})
+  };
+}
+
 function dateInput(value?: string) {
   if (!value) return null;
   const date = new Date(`${value}T12:00:00.000Z`);
@@ -99,6 +115,7 @@ export function toQuoteUpdateRecord(update: QuoteUpdateWithRelations): RequestUp
     targetDate: dateOutput(update.targetDate),
     stepStatus,
     supersedesId: update.supersedesId,
+    metadata: updateMetadata(update.metadata),
     createdAt: dateTimeOutput(update.createdAt),
     updatedAt: dateTimeOutput(update.updatedAt),
     mentions: update.mentions.map((mention) => ({
@@ -175,7 +192,8 @@ async function createSystemUpdate(
   title: string,
   body: string | null,
   user?: AuthenticatedUser,
-  createdAt = new Date()
+  createdAt = new Date(),
+  metadata?: Prisma.InputJsonObject
 ) {
   return db.requestUpdate.create({
     data: {
@@ -183,11 +201,34 @@ async function createSystemUpdate(
       kind: "system",
       title,
       body,
+      metadata,
       ...actorFields(user),
       createdAt,
       updatedAt: createdAt
     }
   });
+}
+
+export function createQuoteSystemUpdate(
+  db: UpdateDb,
+  input: {
+    quoteId: string;
+    title: string;
+    body?: string | null;
+    user?: AuthenticatedUser;
+    createdAt?: Date;
+    metadata?: Prisma.InputJsonObject;
+  }
+) {
+  return createSystemUpdate(
+    db,
+    input.quoteId,
+    input.title,
+    input.body ?? null,
+    input.user,
+    input.createdAt ?? new Date(),
+    input.metadata
+  );
 }
 
 export async function listQuoteUpdates(

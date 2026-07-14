@@ -6,6 +6,11 @@ import type { QuoteRecord } from "@pulse/contracts/work";
 const legacyQuote: QuoteRecord = {
   id: "quote-1",
   quoteNumber: "QT-1001",
+  baseQuoteNumber: "QT-1001",
+  revisionNumber: 0,
+  versionCreatedAt: "2026-07-09T12:00:00.000Z",
+  sentAt: "",
+  sentAtPrecision: null,
   title: "Legacy quote",
   clientId: null,
   clientName: "Example client",
@@ -29,6 +34,7 @@ test("quote detail normalization accepts a legacy list-shaped quote", () => {
   assert.equal(quote.context.sourceRequestId, "request-1");
   assert.deepEqual(quote.items, []);
   assert.deepEqual(quote.updates, []);
+  assert.deepEqual(quote.versions, []);
   assert.equal(quote.currentStep, null);
   assert.equal(quote.proposalNotes, "");
 });

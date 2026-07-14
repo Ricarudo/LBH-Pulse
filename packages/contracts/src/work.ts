@@ -13,6 +13,25 @@ export const quoteStatuses = [
 ] as const;
 
 export type QuoteStatus = (typeof quoteStatuses)[number];
+export type LifecyclePrecision = "EXACT" | "ESTIMATED";
+
+export type QuoteVersionSummary = {
+  id: string;
+  revisionNumber: number;
+  quoteNumber: string;
+  outcome: QuoteStatus | "Revision Requested";
+  priorStatus: QuoteStatus | "";
+  title: string;
+  owner: string;
+  total: number;
+  versionCreatedAt: string;
+  sentAt: string;
+  requestedAt: string;
+  reason: string;
+  precision: LifecyclePrecision;
+  isCurrent: boolean;
+  dataAvailable: boolean;
+};
 
 export const projectStatuses = [
   "Ready",
@@ -39,6 +58,11 @@ export type InvoiceStatus = (typeof invoiceStatuses)[number];
 export type QuoteRecord = {
   id: string;
   quoteNumber: string;
+  baseQuoteNumber: string;
+  revisionNumber: number;
+  versionCreatedAt: string;
+  sentAt: string;
+  sentAtPrecision: LifecyclePrecision | null;
   title: string;
   clientId: string | null;
   clientName: string;
@@ -79,6 +103,17 @@ export type QuoteDetailRecord = QuoteRecord & {
   currentStep: RequestUpdate | null;
   unreadMentionCount: number;
   updates: RequestUpdate[];
+  versions: QuoteVersionSummary[];
+};
+
+export type QuoteRevisionDetailRecord = {
+  quoteId: string;
+  baseQuoteNumber: string;
+  revision: QuoteVersionSummary;
+  context: QuoteContextSnapshot;
+  proposalNotes: string;
+  proposalPreparedAt: string;
+  items: QuoteItemRecord[];
 };
 
 export type ProjectRecord = {
@@ -122,11 +157,16 @@ export type ClientWorkSummary = {
   activeQuotes: number;
   activeProjects: number;
   outstandingInvoiceBalance: number;
+  revisionRequests: number;
+  revisedQuotes: number;
+  revisionRate: number | null;
+  averageRevisions: number | null;
 };
 
 export type QuoteResponse = { quote: QuoteDetailRecord };
 export type QuotesResponse = { quotes: QuoteRecord[] };
 export type ProjectResponse = { project: ProjectRecord };
+export type QuoteRevisionResponse = { revision: QuoteRevisionDetailRecord };
 
 import { z } from "zod";
 
@@ -149,6 +189,14 @@ export const createQuoteSchema = z.object({
 });
 
 export const updateQuoteSchema = createQuoteSchema.partial();
+
+export const createQuoteRevisionSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(1, "Describe the changes requested by the client.")
+    .max(2000, "Revision notes may contain up to 2,000 characters.")
+});
 
 export const createProjectSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -191,6 +239,7 @@ export const createProjectInvoiceSchema = z.object({
 
 export type CreateQuoteInput = z.infer<typeof createQuoteSchema>;
 export type UpdateQuoteInput = z.infer<typeof updateQuoteSchema>;
+export type CreateQuoteRevisionInput = z.infer<typeof createQuoteRevisionSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;

@@ -203,6 +203,16 @@ const errorMap: Record<string, ErrorPayload> = {
     }
   },
   QUOTE_NOT_FOUND: { status: 404, body: { error: "Quote not found." } },
+  QUOTE_REVISION_NOT_FOUND: { status: 404, body: { error: "Quote revision not found." } },
+  QUOTE_REVISION_IS_CURRENT: { status: 409, body: { error: "This is the current editable quote version." } },
+  QUOTE_REVISION_STATUS_INVALID: {
+    status: 409,
+    body: { error: "Create a revision only from a sent, approved, rejected, or cancelled quote." }
+  },
+  QUOTE_REVISION_PROJECT_EXISTS: {
+    status: 409,
+    body: { error: "Quotes already converted to projects cannot be returned for revision." }
+  },
   QUOTE_UPDATE_ASSIGNEE_REQUIRED: {
     status: 400,
     body: { error: "Choose a responsible assignee for the current step." }

@@ -109,7 +109,23 @@ type EventRecord = {
   changedAt: Date;
   precision: LifecycleEventPrecision;
   valueSnapshot: { toNumber(): number } | null;
+  metadata: unknown;
 };
+
+function metadataObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+export function isSupersededLifecycleDecision(value: unknown) {
+  const metadata = metadataObject(value);
+  return Boolean(metadata.supersededByRevisionId || metadata.supersededVersion);
+}
+
+function isSupersededDecision(event: EventRecord) {
+  return isSupersededLifecycleDecision(event.metadata);
+}
 
 function eventMap(events: EventRecord[]) {
   const map = new Map<string, EventRecord[]>();
@@ -148,6 +164,20 @@ type NormalizedRecord = AnalyticsDetailRow & {
   requestReceivedAt?: Date;
   quoteCreatedAt?: Date;
   projectStartAt?: Date;
+  sentAt?: Date;
+  precision?: LifecycleEventPrecision;
+  quoteId?: string;
+};
+
+type SentVersionRecord = {
+  quoteId: string;
+  client: string;
+  clientId: string | null;
+  owner: string;
+  trades: string[];
+  sentAt: Date;
+  returnedAt: Date | null;
+  precision: LifecycleEventPrecision;
 };
 
 function matchesFilters(record: NormalizedRecord, query: AnalyticsQuery | AnalyticsDetailsQuery) {
@@ -160,6 +190,24 @@ function matchesFilters(record: NormalizedRecord, query: AnalyticsQuery | Analyt
 function tradesFromSnapshot(value: string | null | undefined) {
   const trades = (value ?? "").split(",").map((trade) => trade.trim()).filter(Boolean);
   return trades.length ? trades : ["Unclassified"];
+}
+
+function revisionTrades(snapshot: unknown, fallback: string[]) {
+  const context = metadataObject(metadataObject(snapshot).context);
+  const serviceCategory = context.serviceCategory;
+  return typeof serviceCategory === "string" && serviceCategory.trim()
+    ? tradesFromSnapshot(serviceCategory)
+    : fallback;
+}
+
+function matchesSentVersionFilters(
+  record: SentVersionRecord,
+  query: AnalyticsQuery | AnalyticsDetailsQuery
+) {
+  if (query.trade && !record.trades.includes(query.trade)) return false;
+  if (query.owner && record.owner !== query.owner) return false;
+  if (query.clientId && record.clientId !== query.clientId) return false;
+  return true;
 }
 
 function valueOf(value: { toNumber(): number } | number) {
@@ -176,6 +224,18 @@ function average(values: number[]) {
 
 function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
+}
+
+export function calculateAverageRevisions(quoteIds: Array<string | undefined>) {
+  const revisions = quoteIds.filter((quoteId): quoteId is string => Boolean(quoteId));
+  const affectedQuotes = new Set(revisions);
+  return affectedQuotes.size ? revisions.length / affectedQuotes.size : null;
+}
+
+export function calculateRevisionReturnRate(records: Array<{ returnedAt: Date | null }>) {
+  return records.length
+    ? records.filter((record) => Boolean(record.returnedAt)).length / records.length
+    : null;
 }
 
 function kpi(input: AnalyticsKpi): AnalyticsKpi {
@@ -280,7 +340,8 @@ async function loadAnalyticsData(user: AuthenticatedUser, query: AnalyticsQuery 
           take: 1,
           include: { trades: { select: { serviceCategory: true } } }
         },
-        project: { select: { id: true } }
+        project: { select: { id: true } },
+        revisions: { orderBy: { revisionNumber: "asc" } }
       }
     }) : [],
     canUser(user, "projects:read") ? prisma.project.findMany({
@@ -375,6 +436,64 @@ async function loadAnalyticsData(user: AuthenticatedUser, query: AnalyticsQuery 
     };
   }).filter((record) => matchesFilters(record, query));
 
+  const revisionRecords: NormalizedRecord[] = quotes.flatMap((quote) => {
+    const request = quote.requests[0];
+    const fallbackTrades = quote.serviceCategorySnapshot !== null
+      ? tradesFromSnapshot(quote.serviceCategorySnapshot)
+      : request?.trades.length
+        ? request.trades.map((trade) => trade.serviceCategory)
+        : tradesFromSnapshot(request?.serviceCategory);
+    return quote.revisions.map((revision) => ({
+      id: revision.id,
+      kind: "Quote" as const,
+      reference: revision.quoteNumber,
+      title: revision.titleSnapshot,
+      client: revision.clientNameSnapshot ?? quote.client?.displayName ?? quote.clientName ?? "Unclassified",
+      clientId: revision.clientIdSnapshot ?? quote.clientId,
+      trades: revisionTrades(revision.snapshot, fallbackTrades),
+      status: "Revision Requested",
+      owner: revision.ownerSnapshot,
+      date: revision.requestedAt.toISOString(),
+      createdAt: revision.requestedAt,
+      dueDate: null,
+      value: valueOf(revision.totalSnapshot),
+      sentAt: revision.sentAt ?? undefined,
+      precision: revision.precision,
+      quoteId: quote.id,
+      href: `/quotes/${encodeURIComponent(quote.id)}`
+    }));
+  }).filter((record) => matchesFilters(record, query));
+
+  const sentVersionRecords: SentVersionRecord[] = quotes.flatMap((quote) => {
+    const request = quote.requests[0];
+    const fallbackTrades = quote.serviceCategorySnapshot !== null
+      ? tradesFromSnapshot(quote.serviceCategorySnapshot)
+      : request?.trades.length
+        ? request.trades.map((trade) => trade.serviceCategory)
+        : tradesFromSnapshot(request?.serviceCategory);
+    const historical = quote.revisions.flatMap((revision) => revision.sentAt ? [{
+      quoteId: quote.id,
+      client: revision.clientNameSnapshot ?? quote.client?.displayName ?? quote.clientName ?? "Unclassified",
+      clientId: revision.clientIdSnapshot ?? quote.clientId,
+      owner: revision.ownerSnapshot,
+      trades: revisionTrades(revision.snapshot, fallbackTrades),
+      sentAt: revision.sentAt,
+      returnedAt: revision.requestedAt,
+      precision: revision.precision
+    }] : []);
+    const current = quote.sentAt ? [{
+      quoteId: quote.id,
+      client: quote.client?.displayName ?? quote.clientName ?? "Unclassified",
+      clientId: quote.clientId,
+      owner: quote.owner,
+      trades: fallbackTrades,
+      sentAt: quote.sentAt,
+      returnedAt: null,
+      precision: quote.sentAtPrecision ?? ("EXACT" as const)
+    }] : [];
+    return [...historical, ...current];
+  }).filter((record) => matchesSentVersionFilters(record, query));
+
   const projectRecords: NormalizedRecord[] = projects.map((project) => {
     const request = project.quote?.requests[0];
     const completion = lastEvent(eventsByEntity, LifecycleEntityType.PROJECT, project.id, new Set(["Completed"]));
@@ -434,12 +553,30 @@ async function loadAnalyticsData(user: AuthenticatedUser, query: AnalyticsQuery 
     };
   }).filter((record) => matchesFilters(record, query));
 
-  return { range, timeZone, events, eventsByEntity, clients, requestRecords, quoteRecords, projectRecords, invoiceRecords };
+  return {
+    range,
+    timeZone,
+    events,
+    eventsByEntity,
+    clients,
+    requestRecords,
+    quoteRecords,
+    revisionRecords,
+    sentVersionRecords,
+    projectRecords,
+    invoiceRecords
+  };
 }
 
 function decisionEvents(records: NormalizedRecord[], events: Map<string, EventRecord[]>, range: Pick<AnalyticsRange, "from" | "to">, timeZone: string) {
   return records.flatMap((record) => {
-    const event = lastEvent(events, LifecycleEntityType.QUOTE, record.id, decisionStatuses, range, timeZone);
+    const event = (events.get(`${LifecycleEntityType.QUOTE}:${record.id}`) ?? [])
+      .filter((candidate) =>
+        decisionStatuses.has(candidate.toStatus) &&
+        inRange(candidate.changedAt, range, timeZone) &&
+        !isSupersededDecision(candidate)
+      )
+      .at(-1);
     return event ? [{ record, event }] : [];
   });
 }
@@ -499,7 +636,17 @@ function availableViews(user: AuthenticatedUser): AnalyticsView[] {
 
 export async function getAnalytics(user: AuthenticatedUser, query: AnalyticsQuery): Promise<AnalyticsResponse> {
   const data = await loadAnalyticsData(user, query);
-  const { range, timeZone, eventsByEntity, requestRecords, quoteRecords, projectRecords, invoiceRecords } = data;
+  const {
+    range,
+    timeZone,
+    eventsByEntity,
+    requestRecords,
+    quoteRecords,
+    revisionRecords,
+    sentVersionRecords,
+    projectRecords,
+    invoiceRecords
+  } = data;
   const comparison = previousRange(range);
   const currentDecisions = decisionEvents(quoteRecords, eventsByEntity, range, timeZone);
   const comparisonDecisions = decisionEvents(quoteRecords, eventsByEntity, comparison, timeZone);
@@ -513,6 +660,14 @@ export async function getAnalytics(user: AuthenticatedUser, query: AnalyticsQuer
   const comparisonRequests = requestRecords.filter((record) => inRange(record.createdAt, comparison, timeZone));
   const createdQuotes = quoteRecords.filter((record) => inRange(record.createdAt, range, timeZone));
   const comparisonQuotes = quoteRecords.filter((record) => inRange(record.createdAt, comparison, timeZone));
+  const currentRevisions = revisionRecords.filter((record) => inRange(record.createdAt, range, timeZone));
+  const comparisonRevisions = revisionRecords.filter((record) => inRange(record.createdAt, comparison, timeZone));
+  const currentSentVersions = sentVersionRecords.filter((record) => inRange(record.sentAt, range, timeZone));
+  const comparisonSentVersions = sentVersionRecords.filter((record) => inRange(record.sentAt, comparison, timeZone));
+  const currentRevisionRate = calculateRevisionReturnRate(currentSentVersions);
+  const comparisonRevisionRate = calculateRevisionReturnRate(comparisonSentVersions);
+  const currentRevisionAverage = calculateAverageRevisions(currentRevisions.map((record) => record.quoteId));
+  const comparisonRevisionAverage = calculateAverageRevisions(comparisonRevisions.map((record) => record.quoteId));
   const currentWinRate = calculateWinRate(currentDecisions.map(({ event }) => event.toStatus));
   const comparisonWinRate = calculateWinRate(comparisonDecisions.map(({ event }) => event.toStatus));
   const currentOnTime = onTimeRate(currentCompleted);
@@ -580,13 +735,28 @@ export async function getAnalytics(user: AuthenticatedUser, query: AnalyticsQuer
     const quoteTurnaroundComparison = comparisonQuotes.flatMap((record) => record.requestReceivedAt ? [daysBetween(record.requestReceivedAt, record.createdAt)] : []);
     const approvedQuotes = currentDecisions.filter(({ event }) => event.toStatus === "Approved").map(({ record }) => record);
     const comparisonApproved = comparisonDecisions.filter(({ event }) => event.toStatus === "Approved").map(({ record }) => record);
+    const revisionClients = new Map<string, { count: number; sent: number; returned: number }>();
+    for (const record of currentRevisions) {
+      const group = revisionClients.get(record.client) ?? { count: 0, sent: 0, returned: 0 };
+      group.count += 1;
+      revisionClients.set(record.client, group);
+    }
+    for (const version of currentSentVersions) {
+      const group = revisionClients.get(version.client);
+      if (!group) continue;
+      group.sent += 1;
+      if (version.returnedAt) group.returned += 1;
+    }
     kpis = [
       kpi({ id: "new-requests", label: "New requests", description: "Requests received in this period", value: newRequests.length, format: "number", deltaPercent: analyticsDelta(newRequests.length, comparisonRequests.length), metric: "new-requests" }),
       kpi({ id: "active-quote-value", label: "Active quote value", description: "Current draft, review, and sent quotes", value: sum(quoteRecords.filter((record) => activeQuoteStatuses.has(record.status)).map((record) => record.value ?? 0)), format: "currency", snapshot: true, metric: "open-pipeline" }),
       kpi({ id: "sales-win-rate", label: "Win rate", description: "Approved versus decided quotes", value: currentWinRate, format: "percent", deltaPercent: percentDelta(currentWinRate, comparisonWinRate), metric: "win-rate" }),
       kpi({ id: "request-to-quote", label: "Request to quote", description: "Average intake-to-quote time", value: average(quoteTurnaroundCurrent), format: "duration", deltaPercent: percentDelta(average(quoteTurnaroundCurrent), average(quoteTurnaroundComparison)), exactSampleCount: quoteTurnaroundCurrent.length, metric: "quote-turnaround" }),
       kpi({ id: "average-approved", label: "Average approved quote", description: "Average value of approved decisions", value: average(approvedQuotes.map((record) => record.value ?? 0)), format: "currency", deltaPercent: percentDelta(average(approvedQuotes.map((record) => record.value ?? 0)), average(comparisonApproved.map((record) => record.value ?? 0))), metric: "approved-quotes" }),
-      kpi({ id: "quoted-margin", label: "Estimated quoted margin", description: "Pre-tax margin from quoted line costs", value: average(approvedQuotes.flatMap((record) => record.margin === null || record.margin === undefined ? [] : [record.margin])), format: "percent", deltaPercent: percentDelta(average(approvedQuotes.flatMap((record) => record.margin === null || record.margin === undefined ? [] : [record.margin])), average(comparisonApproved.flatMap((record) => record.margin === null || record.margin === undefined ? [] : [record.margin]))), metric: "quote-margin" })
+      kpi({ id: "quoted-margin", label: "Estimated quoted margin", description: "Pre-tax margin from quoted line costs", value: average(approvedQuotes.flatMap((record) => record.margin === null || record.margin === undefined ? [] : [record.margin])), format: "percent", deltaPercent: percentDelta(average(approvedQuotes.flatMap((record) => record.margin === null || record.margin === undefined ? [] : [record.margin])), average(comparisonApproved.flatMap((record) => record.margin === null || record.margin === undefined ? [] : [record.margin]))), metric: "quote-margin" }),
+      kpi({ id: "revision-requests", label: "Revision requests", description: "Client-requested quote returns in this period", value: currentRevisions.length, format: "number", deltaPercent: analyticsDelta(currentRevisions.length, comparisonRevisions.length), estimated: currentRevisions.length > 0 && currentRevisions.every((record) => record.precision === "ESTIMATED"), exactSampleCount: currentRevisions.filter((record) => record.precision === "EXACT").length, estimatedSampleCount: currentRevisions.filter((record) => record.precision === "ESTIMATED").length, metric: "revision-requests" }),
+      kpi({ id: "revision-rate", label: "Revision return rate", description: "Versions sent in this period that were later returned", value: currentRevisionRate, format: "percent", deltaPercent: percentDelta(currentRevisionRate, comparisonRevisionRate), estimated: currentSentVersions.length > 0 && currentSentVersions.every((record) => record.precision === "ESTIMATED"), exactSampleCount: currentSentVersions.filter((record) => record.precision === "EXACT").length, estimatedSampleCount: currentSentVersions.filter((record) => record.precision === "ESTIMATED").length, metric: "revision-rate" }),
+      kpi({ id: "revision-average", label: "Revisions per affected quote", description: "Average returns for quote families revised in this period", value: currentRevisionAverage, format: "number", deltaPercent: percentDelta(currentRevisionAverage, comparisonRevisionAverage), estimated: currentRevisions.length > 0 && currentRevisions.every((record) => record.precision === "ESTIMATED"), exactSampleCount: currentRevisions.filter((record) => record.precision === "EXACT").length, estimatedSampleCount: currentRevisions.filter((record) => record.precision === "ESTIMATED").length, metric: "revision-average" })
     ];
     const sourceGroups = new Map<string, { requests: number; converted: number }>();
     for (const record of newRequests) {
@@ -602,6 +772,10 @@ export async function getAnalytics(user: AuthenticatedUser, query: AnalyticsQuer
       {
         id: "source-conversion", title: "Request sources", description: "Volume and converted requests by source.", type: "bar", format: "number", valueLabel: "Requests", secondaryLabel: "Converted", metric: "request-source",
         points: Array.from(sourceGroups, ([key, group]) => ({ key, label: key, value: group.requests, secondaryValue: group.converted, segment: key })).sort((a, b) => b.value - a.value)
+      },
+      {
+        id: "client-revisions", title: "Client revision behavior", description: "Revision requests and sent-version return rate by client.", type: "bar", format: "number", secondaryFormat: "percent", valueLabel: "Revision requests", secondaryLabel: "Return rate", metric: "revision-requests",
+        points: Array.from(revisionClients, ([key, group]) => ({ key, label: key, value: group.count, secondaryValue: group.sent ? group.returned / group.sent : 0, segment: key })).sort((a, b) => b.value - a.value).slice(0, 8)
       },
       tradeChart(requestRecords, quoteRecords, currentCompleted)
     ];
@@ -657,12 +831,12 @@ export async function getAnalytics(user: AuthenticatedUser, query: AnalyticsQuer
     ];
   }
 
-  const records = [...requestRecords, ...quoteRecords, ...projectRecords, ...invoiceRecords];
+  const records = [...requestRecords, ...quoteRecords, ...revisionRecords, ...projectRecords, ...invoiceRecords];
   const dataQuality: AnalyticsDataQuality = {
     exactLifecycleEvents: data.events.filter((event) => event.precision === "EXACT").length,
     estimatedLifecycleEvents: data.events.filter((event) => event.precision === "ESTIMATED").length,
-    message: data.events.some((event) => event.precision === "ESTIMATED")
-      ? "Historical lifecycle timing includes estimated baseline events; new transitions are exact."
+    message: data.events.some((event) => event.precision === "ESTIMATED") || revisionRecords.some((record) => record.precision === "ESTIMATED")
+      ? "Historical lifecycle and revision dates may be estimated from the import; new transitions are exact."
       : undefined
   };
 
@@ -709,7 +883,14 @@ function tradeChart(requests: NormalizedRecord[], quotes: NormalizedRecord[], co
 export async function getAnalyticsDetails(user: AuthenticatedUser, query: AnalyticsDetailsQuery): Promise<AnalyticsDetailsResponse> {
   const data = await loadAnalyticsData(user, query);
   let records: NormalizedRecord[];
-  if (/invoice|billing|paid|ar-aging|outstanding|billed/i.test(query.metric)) records = data.invoiceRecords;
+  if (/revision/i.test(query.metric)) {
+    records = data.revisionRecords.filter((record) =>
+      /revision-rate/i.test(query.metric)
+        ? inRange(record.sentAt, data.range, data.timeZone)
+        : inRange(record.createdAt, data.range, data.timeZone)
+    );
+  }
+  else if (/invoice|billing|paid|ar-aging|outstanding|billed/i.test(query.metric)) records = data.invoiceRecords;
   else if (/project|completion|active-project|end-to-end|overdue-project|trade-completion/i.test(query.metric)) records = data.projectRecords;
   else if (/request|source/i.test(query.metric)) records = data.requestRecords;
   else if (/quote|pipeline|win-rate|margin|approved/i.test(query.metric)) records = data.quoteRecords;
@@ -743,7 +924,7 @@ export async function getAnalyticsDetails(user: AuthenticatedUser, query: Analyt
     metric: query.metric,
     segment: query.segment,
     summary: `${records.length} ${records.length === 1 ? "record" : "records"} match this selection`,
-    rows: page.map(({ clientId: _clientId, createdAt: _createdAt, dueDate: _dueDate, source: _source, margin: _margin, completion: _completion, paid: _paid, requestReceivedAt: _requestReceivedAt, quoteCreatedAt: _quoteCreatedAt, projectStartAt: _projectStartAt, ...record }) => record),
+    rows: page.map(({ clientId: _clientId, createdAt: _createdAt, dueDate: _dueDate, source: _source, margin: _margin, completion: _completion, paid: _paid, requestReceivedAt: _requestReceivedAt, quoteCreatedAt: _quoteCreatedAt, projectStartAt: _projectStartAt, sentAt: _sentAt, precision: _precision, quoteId: _quoteId, ...record }) => record),
     nextCursor: offset + query.take < records.length ? String(offset + query.take) : undefined
   };
 }

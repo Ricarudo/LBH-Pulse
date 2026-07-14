@@ -5,9 +5,13 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Boxes,
+  Clock3,
+  Eye,
   FileText,
+  History,
   PackagePlus,
   Plus,
+  RotateCcw,
   Save,
   Search,
   Trash2,
@@ -19,7 +23,9 @@ import {
   addAdHocQuoteItem,
   addCatalogQuoteItem,
   addQuoteKit,
+  createQuoteRevision,
   fetchQuote,
+  fetchQuoteRevision,
   removeQuoteItem,
   updateQuote,
   updateQuoteItem,
@@ -36,7 +42,12 @@ import {
   type QuoteBomSection,
   type QuoteItemRecord
 } from "@pulse/contracts/items";
-import type { QuoteDetailRecord, QuoteRecord } from "@pulse/contracts/work";
+import type {
+  QuoteDetailRecord,
+  QuoteRecord,
+  QuoteRevisionDetailRecord,
+  QuoteVersionSummary
+} from "@pulse/contracts/work";
 import {
   serviceCategories,
   type ServiceCategory
@@ -73,6 +84,13 @@ const blankAdHoc: AdHocDraft = {
   taxable: true
 };
 
+const revisionEligibleStatuses = new Set<QuoteRecord["status"]>([
+  "Sent",
+  "Approved",
+  "Rejected",
+  "Cancelled"
+]);
+
 function lineMargin(item: QuoteItemRecord) {
   if (item.unitPrice <= 0) return 0;
   return ((item.unitPrice - item.unitCost) / item.unitPrice) * 100;
@@ -101,6 +119,11 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
   const [proposalNotes, setProposalNotes] = useState("");
   const [tradeEditorOpen, setTradeEditorOpen] = useState(false);
   const [tradeDraft, setTradeDraft] = useState<ServiceCategory[]>([]);
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
+  const [revisionBusy, setRevisionBusy] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<QuoteRevisionDetailRecord | null>(null);
+  const [historyLoadingVersion, setHistoryLoadingVersion] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingLineSaves, setPendingLineSaves] = useState<Record<string, number>>({});
   const quoteMutationQueue = useRef<Promise<void>>(Promise.resolve());
@@ -330,6 +353,38 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     }
   }
 
+  async function requestRevision(event: FormEvent) {
+    event.preventDefault();
+    if (!quote || !revisionReason.trim() || revisionBusy) return;
+    try {
+      setRevisionBusy(true);
+      const data = await createQuoteRevision(quote.id, { reason: revisionReason.trim() });
+      updateQuoteState(data.quote);
+      setRevisionDialogOpen(false);
+      setRevisionReason("");
+      setToast(`${data.quote.quoteNumber} opened as a draft revision.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to create the quote revision.");
+    } finally {
+      setRevisionBusy(false);
+    }
+  }
+
+  async function openHistoricalVersion(version: QuoteVersionSummary) {
+    if (!quote || version.isCurrent || historyLoadingVersion !== null) return;
+    try {
+      setHistoryLoadingVersion(version.revisionNumber);
+      const data = await fetchQuoteRevision(quote.id, version.revisionNumber, {
+        cache: "no-store"
+      });
+      setSelectedVersion(data.revision);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to load this quote version.");
+    } finally {
+      setHistoryLoadingVersion(null);
+    }
+  }
+
   if (loading) {
     return <section className="quote-workspace"><div className="work-queue-state">Loading quote...</div></section>;
   }
@@ -361,6 +416,17 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
           >
             <option>Draft</option><option>Review</option><option>Sent</option><option>Approved</option><option>Rejected</option><option>Expired</option><option>Cancelled</option>
           </select>
+          {revisionEligibleStatuses.has(quote.status) ? (
+            <button
+              className="toolbar-button compact quote-revision-action"
+              type="button"
+              disabled={!canWrite || Boolean(quote.projectId)}
+              title={quote.projectId ? "This approved quote is already linked to a project." : undefined}
+              onClick={() => setRevisionDialogOpen(true)}
+            >
+              <RotateCcw size={16} />Request revision
+            </button>
+          ) : null}
           <button className="toolbar-button compact" type="button" onClick={() => setAdHocOpen(true)} disabled={!canWrite}><Plus size={16} />Ad hoc line</button>
           <button className="primary-button compact" type="button" onClick={() => setAddOpen(true)} disabled={!canWrite}><PackagePlus size={16} />Add Item</button>
         </div>
@@ -433,6 +499,51 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
             <p>{quote.context.scopeDescription || "No scope snapshot"}</p>
           )}
         </article>
+      </section>
+
+      <section className="quote-version-history" aria-labelledby="quote-version-history-heading">
+        <div className="panel-header">
+          <div>
+            <h2 id="quote-version-history-heading">Version history</h2>
+            <p className="panel-note">One quote lifecycle, including every client-requested revision.</p>
+          </div>
+          <span className="quote-version-count"><History size={15} />{quote.revisionNumber} revision{quote.revisionNumber === 1 ? "" : "s"}</span>
+        </div>
+        <ol className="quote-version-list">
+          {[...quote.versions].sort((left, right) => right.revisionNumber - left.revisionNumber).map((version) => (
+            <li key={version.id} className={version.isCurrent ? "is-current" : ""}>
+              <span className="quote-version-marker" aria-hidden="true"><i /></span>
+              <div className="quote-version-copy">
+                <div className="quote-version-heading">
+                  <div>
+                    <strong>{version.quoteNumber}</strong>
+                    <span>{version.isCurrent ? "Current version" : `${version.priorStatus || "Sent"} → Revision Requested`}</span>
+                  </div>
+                  <div className="quote-version-badges">
+                    {version.precision === "ESTIMATED" ? <em>Estimated history</em> : null}
+                    <b>{version.outcome}</b>
+                  </div>
+                </div>
+                <div className="quote-version-dates">
+                  <span><Clock3 size={13} />Opened {compactDate(version.versionCreatedAt)}</span>
+                  {version.sentAt ? <span>Sent {compactDate(version.sentAt)}</span> : null}
+                  {version.requestedAt ? <span>Returned {compactDate(version.requestedAt)}</span> : null}
+                </div>
+                {!version.isCurrent ? <p>{version.reason || "No revision reason was captured."}</p> : null}
+              </div>
+              {!version.isCurrent ? (
+                <button
+                  className="toolbar-button compact"
+                  type="button"
+                  disabled={historyLoadingVersion !== null}
+                  onClick={() => void openHistoricalVersion(version)}
+                >
+                  <Eye size={15} />{historyLoadingVersion === version.revisionNumber ? "Loading…" : "View"}
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ol>
       </section>
 
       <QuoteUpdatesPanel
@@ -522,6 +633,90 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
           </section>
         </aside>
       </div>
+
+      {revisionDialogOpen ? (
+        <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !revisionBusy) setRevisionDialogOpen(false); }}>
+          <form className="client-create-dialog quote-revision-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-revision-dialog-title" onSubmit={requestRevision}>
+            <div className="client-create-dialog-header">
+              <div><span className="dashboard-eyebrow">Client lifecycle</span><h3 id="quote-revision-dialog-title">Open {quote.baseQuoteNumber}R{quote.revisionNumber + 1}</h3><p>Preserve {quote.quoteNumber} as read-only history and continue this same quote as a new draft.</p></div>
+              <button className="icon-button" type="button" aria-label="Close" disabled={revisionBusy} onClick={() => setRevisionDialogOpen(false)}><X size={18} /></button>
+            </div>
+            <div className="quote-revision-summary">
+              <RotateCcw size={20} />
+              <div><strong>{quote.status} → Revision Requested → Draft</strong><span>The prior client outcome will be superseded for lifecycle analysis, while remaining visible in the audit history.</span></div>
+            </div>
+            <label className="material-field">
+              <span>Changes requested by the client</span>
+              <textarea
+                autoFocus
+                required
+                maxLength={2000}
+                value={revisionReason}
+                onChange={(event) => setRevisionReason(event.target.value)}
+                placeholder="Describe what the client asked to change…"
+              />
+              <small>{revisionReason.trim().length}/2,000 · Required</small>
+            </label>
+            <div className="client-create-dialog-actions">
+              <button className="toolbar-button compact" type="button" disabled={revisionBusy} onClick={() => setRevisionDialogOpen(false)}>Cancel</button>
+              <button className="primary-button compact" type="submit" disabled={revisionBusy || !revisionReason.trim()}><RotateCcw size={15} />{revisionBusy ? "Opening revision…" : "Open revision"}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {selectedVersion ? (
+        <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedVersion(null); }}>
+          <section className="client-create-dialog quote-version-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-version-dialog-title">
+            <div className="client-create-dialog-header">
+              <div><span className="dashboard-eyebrow">Read-only quote version</span><h3 id="quote-version-dialog-title">{selectedVersion.revision.quoteNumber}</h3><p>{selectedVersion.revision.title}</p></div>
+              <button className="icon-button" type="button" aria-label="Close" onClick={() => setSelectedVersion(null)}><X size={18} /></button>
+            </div>
+            <div className="quote-version-readonly-banner">
+              <History size={18} />
+              <div><strong>{selectedVersion.revision.priorStatus || "Sent"} → Revision Requested</strong><span>This snapshot cannot be edited. {selectedVersion.revision.precision === "ESTIMATED" ? "Dates were reconstructed from the legacy import." : "Dates were captured by Pulse."}</span></div>
+            </div>
+            <dl className="quote-version-facts">
+              <div><dt>Owner</dt><dd>{selectedVersion.revision.owner}</dd></div>
+              <div><dt>Total</dt><dd>{formatMoney(selectedVersion.revision.total)}</dd></div>
+              <div><dt>Sent</dt><dd>{selectedVersion.revision.sentAt ? compactDate(selectedVersion.revision.sentAt) : "Not available"}</dd></div>
+              <div><dt>Returned</dt><dd>{compactDate(selectedVersion.revision.requestedAt)}</dd></div>
+            </dl>
+            <section className="quote-version-reason">
+              <span>Client revision request</span>
+              <p>{selectedVersion.revision.reason || "No revision reason was captured."}</p>
+            </section>
+            {!selectedVersion.revision.dataAvailable ? (
+              <div className="work-queue-state">The original quote content was not included in the legacy import. Its lifecycle placeholder is retained for accurate revision counts.</div>
+            ) : (
+              <>
+                <section className="quote-version-context">
+                  <article><span>Request</span><strong>{selectedVersion.context.requestNumber || "Manual quote"}</strong><p>{selectedVersion.context.requestTitle || selectedVersion.revision.title}</p></article>
+                  <article><span>Contact</span><strong>{selectedVersion.context.contactName || "Not captured"}</strong><p>{selectedVersion.context.contactEmail || selectedVersion.context.contactPhone || "No contact method"}</p></article>
+                  <article><span>Site</span><strong>{selectedVersion.context.siteName || "Not captured"}</strong><p>{[selectedVersion.context.siteAddress, selectedVersion.context.city, selectedVersion.context.state].filter(Boolean).join(", ") || "No site snapshot"}</p></article>
+                </section>
+                <section className="quote-version-notes-grid">
+                  <article><span>Scope snapshot</span><p>{selectedVersion.context.scopeDescription || "No scope was captured."}</p></article>
+                  <article><span>Proposal notes</span><p>{selectedVersion.proposalNotes || "No proposal notes were captured."}</p></article>
+                </section>
+                <section className="quote-version-bom">
+                  <div className="panel-header"><div><h2>Bill of Materials</h2><p className="panel-note">Snapshot at the time the client returned this version.</p></div><strong>{formatMoney(selectedVersion.revision.total)}</strong></div>
+                  <div className="quote-version-table-frame">
+                    <table className="data-table">
+                      <thead><tr><th>Item</th><th>Section</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead>
+                      <tbody>
+                        {selectedVersion.items.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><br /><span className="table-muted">{item.sku || item.partNumber || item.description || item.itemType}</span></td><td>{item.section}</td><td>{item.quantity} {item.unitOfMeasure}</td><td>{formatMoney(item.unitPrice)}</td><td><strong>{formatMoney(item.lineTotal)}</strong></td></tr>)}
+                        {!selectedVersion.items.length ? <tr><td colSpan={5}><div className="quote-empty-section"><Boxes size={18} />No BOM lines were captured for this version.</div></td></tr> : null}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
+            )}
+            <div className="client-create-dialog-actions"><button className="primary-button compact" type="button" onClick={() => setSelectedVersion(null)}>Close history</button></div>
+          </section>
+        </div>
+      ) : null}
 
       {addOpen ? (
         <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddOpen(false); }}>

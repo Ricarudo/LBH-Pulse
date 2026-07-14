@@ -4,8 +4,11 @@ import {
   agingBucket,
   analyticsDelta,
   analyticsLocalDate,
+  calculateAverageRevisions,
   calculateQuotedMargin,
+  calculateRevisionReturnRate,
   calculateWinRate,
+  isSupersededLifecycleDecision,
   resolveAnalyticsRange
 } from "@/lib/services/analyticsService";
 
@@ -56,5 +59,22 @@ describe("analytics metric definitions", () => {
     assert.equal(agingBucket(new Date("2026-07-20T12:00:00Z"), asOf), "Current");
     assert.equal(agingBucket(new Date("2026-06-30T12:00:00Z"), asOf), "1–30");
     assert.equal(agingBucket(new Date("2026-04-01T12:00:00Z"), asOf), "90+");
+  });
+
+  it("measures revisions against sent-version cohorts", () => {
+    assert.equal(calculateRevisionReturnRate([]), null);
+    assert.equal(calculateRevisionReturnRate([
+      { returnedAt: new Date("2026-07-10T12:00:00Z") },
+      { returnedAt: null },
+      { returnedAt: new Date("2026-07-12T12:00:00Z") }
+    ]), 2 / 3);
+    assert.equal(calculateAverageRevisions(["quote-1", "quote-1", "quote-2"]), 1.5);
+    assert.equal(calculateAverageRevisions([]), null);
+  });
+
+  it("recognizes final decisions superseded by a later revision", () => {
+    assert.equal(isSupersededLifecycleDecision({ supersededByRevisionId: "revision-1" }), true);
+    assert.equal(isSupersededLifecycleDecision({ supersededVersion: true }), true);
+    assert.equal(isSupersededLifecycleDecision({ eventType: "quote_status_changed" }), false);
   });
 });

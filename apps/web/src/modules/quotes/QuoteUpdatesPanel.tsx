@@ -328,6 +328,7 @@ export function QuoteUpdatesPanel({
                       <span className="quote-update-stage">{update.quoteId ? "Quote" : "Request"}</span>
                       <span>{update.author.name}</span>
                       <time dateTime={update.createdAt}>{formatWorkspaceDate(update.createdAt, true)}</time>
+                      {update.metadata?.precision === "ESTIMATED" ? <span className="quote-update-estimated">Estimated date</span> : null}
                       {update.kind === "step" && update.assignee ? <span>Assigned to {update.assignee.name}</span> : null}
                       {update.kind === "step" && update.targetDate ? <span>Target {formatDate(update.targetDate)}</span> : null}
                     </div>

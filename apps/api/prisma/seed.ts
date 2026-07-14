@@ -1580,6 +1580,9 @@ async function main() {
   const quote = await prisma.quote.create({
     data: {
       quoteNumber: "QT-2026-1001",
+      baseQuoteNumber: "QT-2026-1001",
+      revisionNumber: 0,
+      versionCreatedAt: new Date("2026-05-09T18:30:00.000Z"),
       title: "Coastal Hospitality network refresh",
       clientId: clientsByName.get("Coastal Hospitality Group")?.id,
       clientName: "Coastal Hospitality Group",

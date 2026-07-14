@@ -40,7 +40,8 @@ export function normalizeQuoteDetailRecord(
     items: quote.items ?? [],
     currentStep: quote.currentStep ?? null,
     unreadMentionCount: quote.unreadMentionCount ?? 0,
-    updates: quote.updates ?? []
+    updates: quote.updates ?? [],
+    versions: quote.versions ?? []
   };
 }
 

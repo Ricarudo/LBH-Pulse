@@ -18878,6 +18878,302 @@ a {
   line-height: 1.35;
 }
 
+.quote-version-history {
+  overflow: hidden;
+  border: 1px solid var(--pulse-line);
+  border-radius: 8px;
+  background: var(--pulse-surface);
+  box-shadow: var(--pulse-shadow-soft);
+}
+
+.quote-version-history > .panel-header {
+  border-bottom: 1px solid var(--pulse-line);
+}
+
+.quote-version-count {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--pulse-blue-soft);
+  color: var(--pulse-blue);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.quote-version-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quote-version-list > li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 18px;
+}
+
+.quote-version-list > li + li {
+  border-top: 1px solid var(--pulse-line);
+}
+
+.quote-version-list > li.is-current {
+  background: color-mix(in srgb, var(--pulse-blue-soft) 42%, var(--pulse-surface));
+}
+
+.quote-version-marker {
+  position: relative;
+  display: grid;
+  align-self: stretch;
+  place-items: center;
+}
+
+.quote-version-marker::after {
+  position: absolute;
+  top: calc(50% + 7px);
+  bottom: -21px;
+  width: 2px;
+  background: var(--pulse-line-strong);
+  content: "";
+}
+
+.quote-version-list > li:last-child .quote-version-marker::after {
+  display: none;
+}
+
+.quote-version-marker i {
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  border: 3px solid var(--pulse-surface);
+  border-radius: 999px;
+  background: var(--pulse-muted);
+  box-shadow: 0 0 0 2px var(--pulse-line-strong);
+}
+
+.quote-version-list > li.is-current .quote-version-marker i {
+  background: var(--pulse-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pulse-blue) 50%, var(--pulse-line));
+}
+
+.quote-version-copy,
+.quote-version-heading > div:first-child {
+  min-width: 0;
+}
+
+.quote-version-heading,
+.quote-version-dates,
+.quote-version-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 12px;
+}
+
+.quote-version-heading {
+  justify-content: space-between;
+}
+
+.quote-version-heading strong,
+.quote-version-heading span {
+  display: block;
+}
+
+.quote-version-heading strong {
+  color: var(--pulse-text);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.quote-version-heading span,
+.quote-version-dates,
+.quote-version-copy > p {
+  color: var(--pulse-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.quote-version-badges em,
+.quote-version-badges b,
+.quote-update-estimated {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.quote-version-badges em,
+.quote-update-estimated {
+  background: var(--pulse-amber-soft);
+  color: var(--pulse-amber);
+}
+
+.quote-version-badges b {
+  background: var(--pulse-purple-soft);
+  color: var(--pulse-purple);
+}
+
+.quote-version-dates {
+  margin-top: 7px;
+}
+
+.quote-version-dates span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quote-version-copy > p {
+  margin: 7px 0 0;
+  line-height: 1.45;
+}
+
+.quote-revision-action {
+  color: var(--pulse-purple);
+}
+
+.quote-revision-dialog {
+  width: min(660px, 100%);
+}
+
+.quote-revision-summary,
+.quote-version-readonly-banner {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--pulse-purple) 24%, var(--pulse-line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pulse-purple-soft) 56%, var(--pulse-surface));
+  color: var(--pulse-purple);
+}
+
+.quote-revision-summary div,
+.quote-version-readonly-banner div {
+  display: grid;
+  gap: 3px;
+}
+
+.quote-revision-summary strong,
+.quote-version-readonly-banner strong {
+  color: var(--pulse-text);
+  font-size: 12px;
+}
+
+.quote-revision-summary span,
+.quote-version-readonly-banner span {
+  color: var(--pulse-muted);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.quote-revision-dialog textarea {
+  min-height: 132px;
+}
+
+.quote-revision-dialog .material-field > small {
+  color: var(--pulse-muted);
+  text-align: right;
+}
+
+.quote-version-dialog {
+  width: min(1080px, 100%);
+}
+
+.quote-version-facts,
+.quote-version-context,
+.quote-version-notes-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.quote-version-facts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.quote-version-facts div,
+.quote-version-context article,
+.quote-version-notes-grid article,
+.quote-version-reason {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 9px;
+  background: var(--pulse-muted-surface);
+}
+
+.quote-version-facts dt,
+.quote-version-context span,
+.quote-version-notes-grid span,
+.quote-version-reason > span {
+  color: var(--pulse-muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.quote-version-facts dd {
+  margin: 5px 0 0;
+  color: var(--pulse-text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.quote-version-reason p,
+.quote-version-context p,
+.quote-version-notes-grid p {
+  margin: 5px 0 0;
+  color: var(--pulse-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.quote-version-context {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.quote-version-context strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--pulse-text);
+  font-size: 12px;
+}
+
+.quote-version-notes-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.quote-version-bom {
+  overflow: hidden;
+  border: 1px solid var(--pulse-line);
+  border-radius: 9px;
+}
+
+.quote-version-bom > .panel-header {
+  border-bottom: 1px solid var(--pulse-line);
+}
+
+.quote-version-bom > .panel-header > strong {
+  color: var(--pulse-blue);
+  font-size: 17px;
+}
+
+.quote-version-table-frame {
+  overflow-x: auto;
+}
+
 .quote-updates-workspace {
   position: relative;
   overflow: hidden;
@@ -19201,8 +19497,14 @@ a {
   .quote-context-grid,
   .quote-workspace-grid,
   .quote-updates-layout,
-  .quote-add-layout {
+  .quote-add-layout,
+  .quote-version-context {
     grid-template-columns: 1fr;
+  }
+
+  .quote-version-facts,
+  .quote-version-notes-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .quote-summary-rail {
@@ -19215,6 +19517,26 @@ a {
 }
 
 @media (max-width: 639px) {
+  .quote-version-list > li {
+    grid-template-columns: 20px minmax(0, 1fr);
+    padding: 13px;
+  }
+
+  .quote-version-list > li > button {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .quote-version-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .quote-version-facts,
+  .quote-version-notes-grid {
+    grid-template-columns: 1fr;
+  }
+
   .items-module .items-command-bar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

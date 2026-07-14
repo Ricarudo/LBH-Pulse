@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import type {
   ConvertQuoteInput,
+  CreateQuoteRevisionInput,
   CreateQuoteInput,
   UpdateQuoteInput
 } from "@pulse/contracts/work";
@@ -9,6 +10,8 @@ import {
   archiveQuote,
   convertQuoteToProject,
   createQuote,
+  createQuoteRevision,
+  getQuoteRevision,
   getQuoteById,
   listQuotes,
   updateQuote
@@ -28,6 +31,10 @@ export class QuotesService {
     return getQuoteById(id, viewerId);
   }
 
+  getRevision(id: string, version: string) {
+    return getQuoteRevision(id, version);
+  }
+
   update(id: string, input: UpdateQuoteInput, user: AuthenticatedUser) {
     return updateQuote(id, input, user);
   }
@@ -38,5 +45,10 @@ export class QuotesService {
 
   convert(id: string, input: ConvertQuoteInput, user: AuthenticatedUser) {
     return convertQuoteToProject(id, input, user);
+  }
+
+
+  createRevision(id: string, input: CreateQuoteRevisionInput, user: AuthenticatedUser) {
+    return createQuoteRevision(id, input, user);
   }
 }

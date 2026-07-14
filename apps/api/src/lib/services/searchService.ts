@@ -125,6 +125,8 @@ export async function searchPulse(
         archivedAt: null,
         OR: [
           { quoteNumber: contains },
+          { baseQuoteNumber: contains },
+          { revisions: { some: { quoteNumber: contains } } },
           { title: contains },
           { clientName: contains },
           { client: { displayName: contains } }
@@ -135,6 +137,8 @@ export async function searchPulse(
       select: {
         id: true,
         quoteNumber: true,
+        baseQuoteNumber: true,
+        revisions: { select: { quoteNumber: true } },
         title: true,
         clientName: true,
         client: { select: { displayName: true } },
@@ -249,7 +253,8 @@ export async function searchPulse(
       quotes.map((record) =>
         toCandidate("quote", {
           id: record.id,
-          number: record.quoteNumber,
+          number: [record.quoteNumber, record.baseQuoteNumber, ...record.revisions.map((revision) => revision.quoteNumber)]
+            .find((number) => number && normalize(number).includes(normalizedQuery)) ?? record.quoteNumber,
           title: record.title,
           context:
             record.client?.displayName ||
