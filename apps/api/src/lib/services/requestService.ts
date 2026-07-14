@@ -433,6 +433,7 @@ function toRequestRecord(request: RequestWithRelations, viewerId?: string): Requ
         mediaType: document.mediaType ?? "",
         byteSize: Number(document.byteSize),
         category: document.category,
+        tags: document.tags,
         scanStatus: document.scanStatus,
         available,
         uploadedByName: document.uploadedByName,

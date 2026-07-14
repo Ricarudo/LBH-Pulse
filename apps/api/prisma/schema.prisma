@@ -394,6 +394,7 @@ model Activity {
   @@index([actorRole])
   @@index([type])
   @@index([createdAt])
+  @@index([relatedEntityType, createdAt])
 }
 
 model Opportunity {
@@ -599,6 +600,7 @@ model LifecycleDocument {
   byteSize           BigInt    @default(0)
   sha256             String?
   category           String    @default("Other")
+  tags               String[]  @default([])
   scanStatus         String    @default("Clean")
   scanMessage        String?
   scannedAt          DateTime?
@@ -619,6 +621,7 @@ model LifecycleDocument {
   @@index([projectId, deletedAt])
   @@index([uploadedById])
   @@index([sha256])
+  @@index([tags], type: Gin)
   @@index([createdAt])
 }
 

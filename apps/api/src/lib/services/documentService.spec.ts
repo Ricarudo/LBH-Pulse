@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Express } from "express";
 import {
+  parseDocumentTags,
   parseDocumentRange,
   validateDocumentUpload,
   validDocumentSignature
@@ -62,6 +63,22 @@ describe("document upload validation", () => {
     );
     assert.equal(validDocumentSignature("image/jpeg", Buffer.from([0xff, 0xd8, 0xff])), true);
     assert.equal(validDocumentSignature("application/pdf", Buffer.from("not a pdf")), false);
+  });
+});
+
+describe("document purpose tags", () => {
+  it("normalizes JSON tags, canonicalizes suggestions, and removes duplicates", () => {
+    assert.deepEqual(
+      parseDocumentTags('[" work   in progress ", "WORK IN PROGRESS", "Panel A"]'),
+      ["Work in Progress", "Panel A"]
+    );
+  });
+
+  it("accepts comma-separated multipart values and rejects unsafe or excessive tags", () => {
+    assert.deepEqual(parseDocumentTags("Reference, Approval"), ["Reference", "Approval"]);
+    assert.throws(() => parseDocumentTags("Reference,tag,with,too,many,values,for,this,upload"), /DOCUMENT_TAGS_INVALID/);
+    assert.throws(() => parseDocumentTags('["bad,tag"]'), /DOCUMENT_TAGS_INVALID/);
+    assert.throws(() => parseDocumentTags("[not-json"), /DOCUMENT_TAGS_INVALID/);
   });
 });
 

@@ -273,6 +273,7 @@ const errorMap: Record<string, ErrorPayload> = {
   DOCUMENT_TOO_LARGE: { status: 413, body: { error: "PDF files may be up to 100 MB; images may be up to 10 MB." } },
   DOCUMENT_LINEAGE_LIMIT: { status: 413, body: { error: "This Request–Quote–Project lifecycle has reached its 500 MB document limit." } },
   DOCUMENT_CATEGORY_INVALID: { status: 400, body: { error: "Select a valid document category for this lifecycle stage." } },
+  DOCUMENT_TAGS_INVALID: { status: 400, body: { error: "Add up to 8 purpose tags, using no more than 32 characters per tag." } },
   DOCUMENT_MALWARE_DETECTED: { status: 422, body: { error: "The file failed malware inspection and was rejected." } },
   DOCUMENT_SCANNER_UNAVAILABLE: { status: 503, body: { error: "Document malware inspection is temporarily unavailable. Nothing was stored." } },
   DOCUMENT_STORAGE_UNAVAILABLE: { status: 503, body: { error: "Private document storage is unavailable. Nothing was stored." } },

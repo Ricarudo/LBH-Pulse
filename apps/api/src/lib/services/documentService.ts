@@ -10,9 +10,11 @@ import { canUser, type AuthenticatedUser } from "@pulse/contracts/auth";
 import type { Permission } from "@pulse/contracts/access-control";
 import { recordActivity } from "@/lib/services/activityService";
 import {
+  documentTagLimits,
   projectDocumentCategories,
   quoteDocumentCategories,
   requestDocumentCategories,
+  suggestedDocumentPurposeTags,
   type DocumentSourceType,
   type LifecycleDocumentRecord
 } from "@pulse/contracts/documents";
@@ -227,6 +229,7 @@ async function listForStage(stage: Stage, id: string): Promise<LifecycleDocument
       mediaType: document.mediaType ?? "",
       byteSize: Number(document.byteSize),
       category: document.category,
+      tags: document.tags,
       scanStatus: document.scanStatus,
       available,
       uploadedByName: document.uploadedByName,
@@ -331,14 +334,57 @@ function categoriesFor(stage: Stage): readonly string[] {
   return projectDocumentCategories;
 }
 
+export function parseDocumentTags(value: string | string[] | undefined): string[] {
+  if (value === undefined || value === "") return [];
+
+  let candidates: unknown = value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith("[")) {
+      try {
+        candidates = JSON.parse(trimmed);
+      } catch {
+        throw new Error("DOCUMENT_TAGS_INVALID");
+      }
+    } else {
+      candidates = trimmed.split(",");
+    }
+  }
+
+  if (!Array.isArray(candidates) || candidates.length > documentTagLimits.count) {
+    throw new Error("DOCUMENT_TAGS_INVALID");
+  }
+
+  const canonicalTags = new Map(
+    suggestedDocumentPurposeTags.map((tag) => [tag.toLocaleLowerCase("en-US"), tag])
+  );
+  const unique = new Map<string, string>();
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") throw new Error("DOCUMENT_TAGS_INVALID");
+    const tag = candidate.normalize("NFKC").replace(/\s+/g, " ").trim();
+    if (
+      !tag ||
+      tag.length > documentTagLimits.length ||
+      /[,\u0000-\u001f\u007f]/.test(tag)
+    ) {
+      throw new Error("DOCUMENT_TAGS_INVALID");
+    }
+    const key = tag.toLocaleLowerCase("en-US");
+    unique.set(key, canonicalTags.get(key) ?? tag);
+  }
+  return [...unique.values()];
+}
+
 export async function uploadDocument(
   stage: Stage,
   id: string,
   file: Express.Multer.File | undefined,
   category: string,
-  user: AuthenticatedUser
+  user: AuthenticatedUser,
+  rawTags?: string | string[]
 ) {
-    const lineage = await lineageFor(stage, id);
+  const lineage = await lineageFor(stage, id);
   if (!file) throw new Error("DOCUMENT_FILE_REQUIRED");
   const activityBase = {
     user,
@@ -347,6 +393,7 @@ export async function uploadDocument(
   };
   try {
     if (!categoriesFor(stage).includes(category)) throw new Error("DOCUMENT_CATEGORY_INVALID");
+    const tags = parseDocumentTags(rawTags);
     const { original, expectedMedia, extension } = validateDocumentUpload(file);
     const signature = await readSignature(file.path);
     if (!validDocumentSignature(expectedMedia, signature)) throw new Error("DOCUMENT_SIGNATURE_INVALID");
@@ -408,6 +455,7 @@ export async function uploadDocument(
             byteSize: BigInt(file.size),
             sha256: digest,
             category,
+            tags,
             scanStatus: "Clean",
             scanMessage: "ClamAV scan passed.",
             scannedAt: new Date(),
@@ -424,7 +472,7 @@ export async function uploadDocument(
       ...activityBase,
       type: "Document Uploaded",
       title: `${original} uploaded`,
-      metadata: { documentId: document.id, category, byteSize: file.size, sha256: digest }
+      metadata: { documentId: document.id, category, tags, byteSize: file.size, sha256: digest }
     });
     return (await listForStage(stage, id)).find((item) => item.id === document.id)!;
   } catch (error) {

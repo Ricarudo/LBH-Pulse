@@ -1,14 +1,17 @@
 "use client";
 
-import { Download, Eye, FileText, Maximize2, Trash2, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Download, Eye, FileText, Maximize2, Plus, Search, Tag, Trash2, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  documentTagLimits,
   projectDocumentCategories,
   quoteDocumentCategories,
   requestDocumentCategories,
+  suggestedDocumentPurposeTags,
   type LifecycleDocumentRecord
 } from "@pulse/contracts/documents";
+import { filterLifecycleDocuments } from "@/lib/documents";
 import { formatWorkspaceDate } from "@/lib/formatting";
 
 type Stage = "request" | "quote" | "project";
@@ -111,6 +114,7 @@ function DocumentPreviewModal({
             <h2 id="document-preview-title">{fileDocument.originalFileName}</h2>
             <p>
               {fileDocument.category} · {formatBytes(fileDocument.byteSize)} · {fileDocument.sourceNumber} · {fileDocument.uploadedByName}
+              {fileDocument.tags.length ? ` · ${fileDocument.tags.join(" · ")}` : ""}
             </p>
           </div>
           <div className="document-preview-actions">
@@ -210,28 +214,71 @@ export function LifecycleDocuments({
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState("Other");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [previewDocument, setPreviewDocument] = useState<LifecycleDocumentRecord | null>(null);
+  const visibleDocuments = useMemo(
+    () => filterLifecycleDocuments(documents, searchQuery),
+    [documents, searchQuery]
+  );
   const groups = useMemo(
     () => [
-      { label: "Added here", items: documents.filter((document) => !document.inherited) },
+      { label: "Added here", items: visibleDocuments.filter((document) => !document.inherited) },
       {
         label: "From Request",
-        items: documents.filter((document) => document.inherited && document.sourceType === "Request")
+        items: visibleDocuments.filter((document) => document.inherited && document.sourceType === "Request")
       },
       {
         label: "From Quote",
-        items: documents.filter((document) => document.inherited && document.sourceType === "Quote")
+        items: visibleDocuments.filter((document) => document.inherited && document.sourceType === "Quote")
       }
     ].filter((group) => group.items.length),
-    [documents]
+    [visibleDocuments]
   );
+
+  function toggleSuggestedTag(tag: string) {
+    setTags((current) => {
+      if (current.includes(tag)) return current.filter((item) => item !== tag);
+      if (current.length >= documentTagLimits.count) {
+        setMessage(`You can add up to ${documentTagLimits.count} purpose tags.`);
+        return current;
+      }
+      return [...current, tag];
+    });
+  }
+
+  function addCustomTag() {
+    const normalized = tagDraft.normalize("NFKC").replace(/\s+/g, " ").trim();
+    if (!normalized) return;
+    if (normalized.length > documentTagLimits.length || /[,\u0000-\u001f\u007f]/.test(normalized)) {
+      setMessage(`Purpose tags cannot contain commas and may be up to ${documentTagLimits.length} characters.`);
+      return;
+    }
+    const suggested = suggestedDocumentPurposeTags.find(
+      (tag) => tag.toLocaleLowerCase("en-US") === normalized.toLocaleLowerCase("en-US")
+    );
+    const tag = suggested ?? normalized;
+    if (tags.some((item) => item.toLocaleLowerCase("en-US") === tag.toLocaleLowerCase("en-US"))) {
+      setTagDraft("");
+      return;
+    }
+    if (tags.length >= documentTagLimits.count) {
+      setMessage(`You can add up to ${documentTagLimits.count} purpose tags.`);
+      return;
+    }
+    setTags((current) => [...current, tag]);
+    setTagDraft("");
+    setMessage("");
+  }
 
   function upload(file: File) {
     const form = new FormData();
     form.set("file", file);
     form.set("category", category);
+    form.set("tags", JSON.stringify(tags));
     const xhr = new XMLHttpRequest();
     xhr.open("POST", endpoint(stage, recordId));
     xhr.withCredentials = true;
@@ -276,9 +323,65 @@ export function LifecycleDocuments({
     <div className="lifecycle-documents">
       {canWrite ? (
         <div className="document-uploader">
-          <select value={category} onChange={(event) => setCategory(event.target.value)}>
-            {categories(stage).map((item) => <option key={item}>{item}</option>)}
-          </select>
+          <label className="document-category-field">
+            <span>File category</span>
+            <select value={category} onChange={(event) => setCategory(event.target.value)}>
+              {categories(stage).map((item) => <option key={item}>{item}</option>)}
+            </select>
+          </label>
+          <fieldset className="document-purpose-picker">
+            <legend>Purpose tags <small>Optional · choose up to {documentTagLimits.count}</small></legend>
+            <div className="document-purpose-options">
+              {suggestedDocumentPurposeTags.map((tag) => {
+                const selected = tags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    className={selected ? "document-purpose-option selected" : "document-purpose-option"}
+                    aria-pressed={selected}
+                    onClick={() => toggleSuggestedTag(tag)}
+                  >
+                    <Tag size={13} /> {tag}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="document-custom-tag">
+              <input
+                value={tagDraft}
+                maxLength={documentTagLimits.length}
+                placeholder="Add a custom purpose"
+                aria-label="Custom purpose tag"
+                onChange={(event) => setTagDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addCustomTag();
+                  }
+                }}
+              />
+              <button type="button" onClick={addCustomTag} disabled={!tagDraft.trim()}>
+                <Plus size={14} /> Add tag
+              </button>
+            </div>
+            {tags.length ? (
+              <div className="document-selected-tags" aria-label="Selected purpose tags">
+                {tags.map((tag) => (
+                  <span key={tag}>
+                    {tag}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${tag} tag`}
+                      onClick={() => setTags((current) => current.filter((item) => item !== tag))}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </fieldset>
           <input
             ref={inputRef}
             type="file"
@@ -294,6 +397,19 @@ export function LifecycleDocuments({
         </div>
       ) : null}
       {message ? <p className="document-message">{message}</p> : null}
+      {documents.length ? (
+        <label className="document-search">
+          <Search size={16} />
+          <input
+            type="search"
+            aria-label="Search documents"
+            value={searchQuery}
+            placeholder="Search by filename, category, or purpose tag"
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+          <span>{visibleDocuments.length} of {documents.length}</span>
+        </label>
+      ) : null}
       {groups.length ? groups.map((group) => (
         <div className="document-group" key={group.label}>
           <h4>{group.label}</h4>
@@ -310,6 +426,15 @@ export function LifecycleDocuments({
                   {fileDocument.category} · {formatBytes(fileDocument.byteSize)} · {fileDocument.uploadedByName} · {formatWorkspaceDate(fileDocument.createdAt)}
                   {fileDocument.inherited ? ` · ${fileDocument.sourceNumber}` : ""}
                 </small>
+                {fileDocument.tags.length ? (
+                  <span className="document-row-tags">
+                    {fileDocument.tags.map((tag) => (
+                      <button key={tag} type="button" onClick={() => setSearchQuery(tag)}>
+                        <Tag size={11} /> {tag}
+                      </button>
+                    ))}
+                  </span>
+                ) : null}
                 {!fileDocument.available ? <em>{fileDocument.scanStatus} — unavailable for preview or download</em> : null}
               </span>
               {fileDocument.previewUrl ? (
@@ -331,7 +456,11 @@ export function LifecycleDocuments({
           ))}
         </div>
       )) : (
-        <p className="lead-notes">No documents have been added at this stage or inherited from upstream work.</p>
+        <p className="lead-notes">
+          {searchQuery.trim()
+            ? "No documents match that filename, category, or purpose tag."
+            : "No documents have been added at this stage or inherited from upstream work."}
+        </p>
       )}
       <p className="document-policy">PDF up to 100 MB; JPEG, PNG, or WebP up to 10 MB. The full lifecycle is limited to 500 MB.</p>
       {previewDocument ? (

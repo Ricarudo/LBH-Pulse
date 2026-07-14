@@ -144,13 +144,14 @@ export class RequestsController {
     @Req() request: Request,
     @Param("id") id: string,
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Body("category") category = "Other"
+    @Body("category") category = "Other",
+    @Body("tags") tags?: string
   ) {
     const user = await this.auth.requireUser(request, "requests:write").catch(async (error) => {
       if (file) await unlink(file.path).catch(() => undefined);
       throw error;
     });
-    return { document: await uploadDocument("request", id, file, category, user) };
+    return { document: await uploadDocument("request", id, file, category, user, tags) };
   }
 
   @Post(":id/activities")

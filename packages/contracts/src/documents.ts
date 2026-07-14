@@ -11,6 +11,7 @@ export type LifecycleDocumentRecord = {
   mediaType: string;
   byteSize: number;
   category: string;
+  tags: string[];
   scanStatus: string;
   available: boolean;
   uploadedByName: string;
@@ -18,6 +19,22 @@ export type LifecycleDocumentRecord = {
   downloadUrl: string | null;
   previewUrl: string | null;
 };
+
+export const suggestedDocumentPurposeTags = [
+  "Reference",
+  "Existing Condition",
+  "Installation",
+  "Work in Progress",
+  "Issue",
+  "Damage",
+  "Completed Work",
+  "Approval"
+] as const;
+
+export const documentTagLimits = {
+  count: 8,
+  length: 32
+} as const;
 
 export const requestDocumentCategories = [
   "Drawing",
