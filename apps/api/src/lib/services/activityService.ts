@@ -1,7 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { canUser, type AuthenticatedUser } from "@pulse/contracts/auth";
-import type { ActivityRecord } from "@pulse/contracts/activity";
 
 type RecordActivityInput = {
   user?: AuthenticatedUser | null;
@@ -12,41 +11,6 @@ type RecordActivityInput = {
   detail?: string;
   metadata?: Prisma.InputJsonValue;
 };
-
-function formatDateTime(date: Date) {
-  return date.toISOString();
-}
-
-function toActivityRecord(activity: {
-  id: string;
-  relatedEntityType: string;
-  relatedEntityId: string;
-  actorUserId: string | null;
-  actorName: string;
-  actorRole: string;
-  type: string;
-  title: string;
-  detail: string | null;
-  metadata: Prisma.JsonValue | null;
-  createdAt: Date;
-}): ActivityRecord {
-  return {
-    id: activity.id,
-    relatedEntityType: activity.relatedEntityType,
-    relatedEntityId: activity.relatedEntityId,
-    actorUserId: activity.actorUserId ?? undefined,
-    actorName: activity.actorName,
-    actorRole: activity.actorRole,
-    type: activity.type,
-    title: activity.title,
-    detail: activity.detail ?? "",
-    createdAt: formatDateTime(activity.createdAt),
-    metadata:
-      activity.metadata && typeof activity.metadata === "object" && !Array.isArray(activity.metadata)
-        ? (activity.metadata as Record<string, unknown>)
-        : undefined
-  };
-}
 
 export async function recordActivity(input: RecordActivityInput) {
   return prisma.activity.create({
@@ -86,26 +50,4 @@ export function canAccessActivity(
     return activity.actorUserId === user.id || canUser(user, "users:manage");
   }
   return false;
-}
-
-export async function listActivities(
-  user: AuthenticatedUser,
-  filters: {
-    relatedEntityType?: string;
-    relatedEntityId?: string;
-    take?: number;
-  } = {}
-) {
-  const activities = await prisma.activity.findMany({
-    where: {
-      ...(filters.relatedEntityType ? { relatedEntityType: filters.relatedEntityType } : {}),
-      ...(filters.relatedEntityId ? { relatedEntityId: filters.relatedEntityId } : {})
-    },
-    orderBy: {
-      createdAt: "desc"
-    },
-    take: filters.take ?? 50
-  });
-
-  return activities.filter((activity) => canAccessActivity(user, activity)).map(toActivityRecord);
 }

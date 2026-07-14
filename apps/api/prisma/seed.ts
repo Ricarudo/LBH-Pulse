@@ -176,7 +176,7 @@ const seededAccessRoles = [
       "requests:read", "requests:write", "clients:read", "clients:write",
       "items:read", "items:write", "quotes:read", "quotes:write",
       "projects:read", "projects:write", "billing:read", "billing:write",
-      "activity:write", "activity:read", "analytics:read", "settings:read",
+      "activity:write", "activity:read", "analytics:read", "audit:read", "settings:read",
       "settings:write", "users:manage", "roles:manage"
     ]
   },

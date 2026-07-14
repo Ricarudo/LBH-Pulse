@@ -69,7 +69,7 @@ async function main() {
     `);
 
     const roleSeeds = [
-      { id: "Admin", name: "Administrator", normalizedName: "administrator", color: "#7C3AED", systemKey: "ADMIN", protected: true, permissions: [...allWorkPermissions, "settings:read", "settings:write", "users:manage", "roles:manage"] },
+      { id: "Admin", name: "Administrator", normalizedName: "administrator", color: "#7C3AED", systemKey: "ADMIN", protected: true, permissions: [...allWorkPermissions, "audit:read", "settings:read", "settings:write", "users:manage", "roles:manage"] },
       { id: "Sales", name: "Sales", normalizedName: "sales", color: "#2563EB", systemKey: null, protected: false, permissions: allWorkPermissions },
       { id: "ProjectManager", name: "Project Manager", normalizedName: "project manager", color: "#0F766E", systemKey: null, protected: false, permissions: projectManagerPermissions },
       { id: "Technician", name: "Technician", normalizedName: "technician", color: "#C2410C", systemKey: null, protected: false, permissions: technicianPermissions }
@@ -77,8 +77,8 @@ async function main() {
 
     for (const role of roleSeeds) {
       const inserted = await client.query<{ id: string }>(`
-        INSERT INTO "AccessRole" ("id", "name", "normalizedName", "color", "systemKey", "protected")
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO "AccessRole" ("id", "name", "normalizedName", "color", "systemKey", "protected", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
         ON CONFLICT ("id") DO NOTHING
         RETURNING "id"
       `, [role.id, role.name, role.normalizedName, role.color, role.systemKey, role.protected]);
@@ -91,13 +91,21 @@ async function main() {
       }
     }
 
+    await client.query(`
+      INSERT INTO "RolePermission" ("roleId", "permission")
+      SELECT "id", 'audit:read'
+      FROM "AccessRole"
+      WHERE "protected" = true AND "systemKey" = 'ADMIN'
+      ON CONFLICT DO NOTHING
+    `);
+
     const localUsersExist = await client.query<{ exists: boolean }>(
       `SELECT to_regclass('pulse."LocalUser"') IS NOT NULL AS exists`
     );
     if (localUsersExist.rows[0]?.exists) {
       const legacyRoles = await client.query<{ id: string }>(`
-        INSERT INTO "AccessRole" ("id", "name", "normalizedName", "color", "protected")
-        SELECT DISTINCT "role", "role", 'legacy-' || md5("role"), '#64748B', false
+        INSERT INTO "AccessRole" ("id", "name", "normalizedName", "color", "protected", "updatedAt")
+        SELECT DISTINCT "role", "role", 'legacy-' || md5("role"), '#64748B', false, CURRENT_TIMESTAMP
         FROM "LocalUser"
         WHERE "role" NOT IN ('Admin', 'Sales', 'ProjectManager', 'Technician')
         ON CONFLICT ("id") DO NOTHING

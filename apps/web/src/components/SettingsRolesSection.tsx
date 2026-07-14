@@ -31,8 +31,9 @@ const resourceLabels: Record<string, string> = {
   projects: "Projects",
   billing: "Billing",
   collaboration: "Collaboration",
-  activity: "Global activity",
+  activity: "Recent changes",
   analytics: "Analytics",
+  audit: "Security audit",
   settings: "Workspace administration",
   users: "User administration",
   roles: "Role administration"
@@ -70,37 +71,65 @@ function requiredBy(permissions: Permission[], dependency: Permission) {
 function PermissionToggle({
   role,
   permission,
-  onToggle
+  onToggle,
+  showState = false
 }: {
   role: AccessRoleRecord;
   permission: Permission;
   onToggle: (roleId: string, permission: Permission) => void;
+  showState?: boolean;
 }) {
   const definition = permissionDefinitions.find((item) => item.key === permission)!;
   const checked = role.protected || role.permissions.includes(permission);
   const dependency = requiredBy(role.permissions, permission);
+  const dependencyLabel = permissionDefinitions.find((item) => item.key === dependency)?.label ?? dependency;
   const disabled = role.protected || Boolean(definition.protected) || Boolean(dependency);
   const title = role.protected
     ? "Administrator always has full access."
     : definition.protected
-      ? "Role administration is reserved for Administrator."
+      ? "This permission is reserved for Administrator."
       : dependency
-        ? `Required by ${permissionDefinitions.find((item) => item.key === dependency)?.label ?? dependency}.`
+        ? `Required by ${dependencyLabel}.`
         : undefined;
+  const stateLabel = role.protected
+    ? "Locked on"
+    : definition.protected
+      ? "Administrator only"
+      : dependency
+        ? `Required by ${dependencyLabel}`
+        : checked
+          ? "On"
+          : "Off";
+  const stateId = `permission-state-${role.id}-${permission.replace(":", "-")}`;
 
-  return (
+  const toggle = (
     <button
       className={checked ? "toggle on access-toggle" : "toggle access-toggle"}
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={`${role.name}: ${definition.label} ${resourceLabels[definition.resource]}`}
+      aria-describedby={showState ? stateId : undefined}
       disabled={disabled}
       title={title}
       onClick={() => onToggle(role.id, permission)}
     >
       <span className="sr-only">{checked ? "Enabled" : "Disabled"}</span>
     </button>
+  );
+
+  if (!showState) return toggle;
+
+  return (
+    <div className="settings-role-toggle-control">
+      {toggle}
+      <span
+        id={stateId}
+        className={disabled ? "settings-role-toggle-state is-locked" : "settings-role-toggle-state"}
+      >
+        {stateLabel}
+      </span>
+    </div>
   );
 }
 
@@ -352,7 +381,7 @@ export function SettingsRolesSection() {
           {groupedDefinitions.map((group) => (
             <section key={group.resource} className="settings-role-mobile-group">
               <h3>{resourceLabels[group.resource]}</h3>
-              {group.definitions.map((definition) => <div key={definition.key}><span><strong>{definition.label}</strong><small>{definition.description}</small></span><PermissionToggle role={selectedRole} permission={definition.key} onToggle={togglePermission} /></div>)}
+              {group.definitions.map((definition) => <div key={definition.key}><span><strong>{definition.label}</strong><small>{definition.description}</small></span><PermissionToggle role={selectedRole} permission={definition.key} onToggle={togglePermission} showState /></div>)}
             </section>
           ))}
         </div>

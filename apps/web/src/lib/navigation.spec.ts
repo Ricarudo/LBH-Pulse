@@ -33,7 +33,6 @@ test("nested routes activate their owning desktop destinations", () => {
   assert.equal(getActiveNavigationKey("/contacts"), "directory");
   assert.equal(getActiveNavigationKey("/procurement"), "projects");
   assert.equal(getActiveNavigationKey("/field"), "projects");
-  assert.equal(getActiveNavigationKey("/activity"), "activity");
 });
 
 test("mobile overflow routes activate More", () => {
@@ -101,4 +100,12 @@ test("role administration remains exclusive to the protected Administrator", () 
   assert.equal(canAccessPath(forgedGrant, "/settings/roles"), false);
   assert.equal(canAccessPath(administrator, "/settings/roles"), true);
   assert.equal(canAccessPath(forgedGrant, "/settings/account"), true);
+});
+
+test("the security audit log requires both its protected grant and Administrator identity", () => {
+  const forgedGrant = userWith(["settings:read", "audit:read"]);
+  const administrator = userWith(["settings:read", "audit:read"], true);
+  assert.equal(canAccessPath(forgedGrant, "/settings/audit"), false);
+  assert.equal(canAccessPath(administrator, "/settings/audit"), true);
+  assert.equal(canAccessPath(forgedGrant, "/settings/privacy"), true);
 });

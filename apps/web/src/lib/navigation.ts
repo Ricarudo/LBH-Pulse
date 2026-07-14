@@ -1,6 +1,5 @@
 import type { ComponentType } from "react";
 import {
-  Activity,
   BarChart3,
   Building2,
   FileText,
@@ -28,7 +27,6 @@ export type PulsePage =
   | "field"
   | "billing"
   | "statistics"
-  | "activity"
   | "settings";
 
 export type NavigationKey =
@@ -38,7 +36,6 @@ export type NavigationKey =
   | "projects"
   | "directory"
   | "billing"
-  | "activity"
   | "statistics"
   | "settings"
   | "more";
@@ -70,7 +67,6 @@ export const navigationGroups: readonly NavigationGroup[] = [
   {
     label: "Insights",
     items: [
-      { href: "/activity", label: "Activity", key: "activity", icon: Activity },
       { href: "/statistics", label: "Analytics", key: "statistics", icon: BarChart3 }
     ]
   },
@@ -108,7 +104,6 @@ export const mobileOverflowGroups = [
     label: "Operations & insights",
     items: [
       { href: "/billing", label: "Billing", icon: ReceiptText },
-      { href: "/activity", label: "Activity", icon: Activity },
       { href: "/statistics", label: "Analytics", icon: BarChart3 }
     ]
   },
@@ -146,7 +141,6 @@ export function getActiveNavigationKey(pathname: string): NavigationKey {
     return "directory";
   }
   if (pathname.startsWith("/billing")) return "billing";
-  if (pathname.startsWith("/activity")) return "activity";
   if (pathname.startsWith("/statistics")) return "statistics";
   if (pathname.startsWith("/settings")) return "settings";
   return "hub";
@@ -156,7 +150,6 @@ export function getMobileActiveKey(pathname: string): NavigationKey {
   const active = getActiveNavigationKey(pathname);
   return active === "directory" ||
     active === "billing" ||
-    active === "activity" ||
     active === "statistics" ||
     active === "settings"
     ? "more"
@@ -197,7 +190,6 @@ export function canAccessPath(
     return canUser(user, "projects:read");
   }
   if (pathname.startsWith("/billing")) return canUser(user, "billing:read");
-  if (pathname.startsWith("/activity")) return canUser(user, "activity:read");
   if (pathname.startsWith("/statistics")) return canUser(user, "analytics:read");
   if (pathname.startsWith("/directory/items")) return canUser(user, "items:read");
   if (
@@ -214,6 +206,9 @@ export function canAccessPath(
   }
   if (pathname.startsWith("/settings/users")) return canUser(user, "users:manage");
   if (pathname.startsWith("/settings/roles")) return user.isSystemAdmin;
+  if (pathname.startsWith("/settings/audit")) {
+    return user.isSystemAdmin && canUser(user, "audit:read");
+  }
   if (
     pathname.startsWith("/settings/general") ||
     pathname.startsWith("/settings/request-checklists") ||
@@ -232,7 +227,6 @@ const topLevelOrder: NavigationKey[] = [
   "projects",
   "directory",
   "billing",
-  "activity",
   "statistics",
   "settings"
 ];

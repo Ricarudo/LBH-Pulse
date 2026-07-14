@@ -48,6 +48,7 @@ import {
   restoreAccessRoleSchema,
   saveAccessRoleMatrixSchema
 } from "@pulse/contracts/access-control";
+import { getDataPractices } from "@/lib/services/auditService";
 
 @Controller("settings")
 export class SettingsController {
@@ -70,6 +71,12 @@ export class SettingsController {
   async workspace(@Req() request: Request) {
     await this.auth.requireUser(request);
     return { workspace: await getWorkspaceSettings() };
+  }
+
+  @Get("data-practices")
+  async dataPractices(@Req() request: Request) {
+    await this.auth.requireUser(request);
+    return getDataPractices();
   }
 
   @Patch("workspace")

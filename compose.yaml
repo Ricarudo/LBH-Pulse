@@ -16,6 +16,8 @@ x-api-environment: &api-environment
   CLAMAV_PORT: "3310"
   CLAMAV_TIMEOUT_MS: "180000"
   DOCUMENT_TEMP_DIR: /tmp/pulse-uploads
+  PULSE_AUDIT_RETENTION_DAYS: "365"
+  PULSE_OPERATIONAL_RETENTION_DAYS: "730"
 
 services:
   postgres:

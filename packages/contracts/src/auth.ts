@@ -35,6 +35,7 @@ export const rolePermissions: Record<LocalRole, Permission[]> = {
     "activity:write",
     "activity:read",
     "analytics:read",
+    "audit:read",
     "settings:read",
     "settings:write",
     "users:manage",

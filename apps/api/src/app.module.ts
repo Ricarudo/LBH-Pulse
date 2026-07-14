@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { ActivityController } from "@/controllers/activity.controller";
+import { AuditController } from "@/controllers/audit.controller";
 import { AuthController } from "@/controllers/auth.controller";
 import { ClientBulkController } from "@/controllers/clientBulk.controller";
 import { ClientsController } from "@/controllers/clients.controller";
@@ -17,6 +17,7 @@ import { ProposalsModule } from "@/modules/proposals/proposals.module";
 import { QuoteItemsModule } from "@/modules/quote-items/quote-items.module";
 import { QuotesModule } from "@/modules/quotes/quotes.module";
 import { ItemsModule } from "@/items/items.module";
+import { ActivityRetentionService } from "@/lib/services/activityRetentionService";
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { ItemsModule } from "@/items/items.module";
     ProposalsModule
   ],
   controllers: [
-    ActivityController,
+    AuditController,
     AuthController,
     ClientBulkController,
     ClientsController,
@@ -40,6 +41,7 @@ import { ItemsModule } from "@/items/items.module";
     RequestsController,
     SearchController,
     SettingsController
-  ]
+  ],
+  providers: [ActivityRetentionService]
 })
 export class AppModule {}

@@ -49,6 +49,12 @@ DATABASE_URL="postgresql://pulse:pulse_dev_password@localhost:5432/pulse?schema=
 PostgreSQL and any storage services used by the endpoint must already be
 available. Docker Compose remains the preferred way to run the complete stack.
 
+Activity retention is enforced when the API starts and once every 24 hours.
+`PULSE_AUDIT_RETENTION_DAYS` controls authentication and administration-event
+retention (365 days by default). `PULSE_OPERATIONAL_RETENTION_DAYS` controls
+record and dashboard history retention (730 days by default). Both values must
+be whole days between 30 and 3650.
+
 ## Database and seed commands
 
 Run database commands from the repository root so the API workspace owns every

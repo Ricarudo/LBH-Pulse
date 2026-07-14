@@ -7,11 +7,13 @@ import {
   Building2,
   Check,
   ClipboardCheck,
+  Database,
   KeyRound,
   Palette,
   Plug,
   ShieldCheck,
   Sparkles,
+  ScrollText,
   UserRound,
   UsersRound
 } from "lucide-react";
@@ -21,6 +23,8 @@ import { usePulsePreferences } from "@/components/PulseShell";
 import { SettingsAccountsSection } from "@/components/SettingsAccountsSection";
 import { SettingsChecklistsSection } from "@/components/SettingsChecklistsSection";
 import { SettingsRolesSection } from "@/components/SettingsRolesSection";
+import { SettingsAuditSection } from "@/components/SettingsAuditSection";
+import { SettingsPrivacySection } from "@/components/SettingsPrivacySection";
 import { roleColorForeground } from "@pulse/contracts/access-control";
 import type {
   ThemeMode,
@@ -32,15 +36,18 @@ import type {
 export type SettingsSection =
   | "account"
   | "appearance"
+  | "privacy"
   | "general"
   | "users"
   | "roles"
   | "request-checklists"
+  | "audit"
   | "roadmap";
 
 const personalTabs = [
   { key: "account", label: "Account", icon: UserRound },
-  { key: "appearance", label: "Appearance", icon: Palette }
+  { key: "appearance", label: "Appearance", icon: Palette },
+  { key: "privacy", label: "Data & privacy", icon: Database }
 ] as const;
 
 const adminTabs = [
@@ -51,6 +58,7 @@ const adminTabs = [
 
 const userTab = { key: "users", label: "Users", icon: UsersRound } as const;
 const rolesTab = { key: "roles", label: "Roles & permissions", icon: ShieldCheck } as const;
+const auditTab = { key: "audit", label: "Audit log", icon: ScrollText } as const;
 
 async function responseJson<T>(response: Response) {
   const data = await response.json().catch(() => ({}));
@@ -308,7 +316,8 @@ export function SettingsWorkspace({ section }: { section: SettingsSection }) {
     ...personalTabs,
     ...(canUser(user, "settings:read") ? adminTabs : []),
     ...(canUser(user, "users:manage") ? [userTab] : []),
-    ...(user?.isSystemAdmin ? [rolesTab] : [])
+    ...(user?.isSystemAdmin ? [rolesTab] : []),
+    ...(user?.isSystemAdmin && canUser(user, "audit:read") ? [auditTab] : [])
   ];
   const allowed = tabs.some((tab) => tab.key === section);
   const active = allowed ? section : "account";
@@ -339,9 +348,11 @@ export function SettingsWorkspace({ section }: { section: SettingsSection }) {
       <div className="settings-content">
         {active === "account" ? <AccountSection /> : null}
         {active === "appearance" ? <AppearanceSection /> : null}
+        {active === "privacy" ? <SettingsPrivacySection /> : null}
         {active === "general" ? <GeneralSection canManage={canUser(user, "settings:write")} /> : null}
         {active === "users" && user ? <SettingsAccountsSection currentUserId={user.id} currentUserIsSystemAdmin={user.isSystemAdmin} /> : null}
         {active === "roles" ? <SettingsRolesSection /> : null}
+        {active === "audit" ? <SettingsAuditSection /> : null}
         {active === "request-checklists" ? <SettingsChecklistsSection readOnly={!canUser(user, "settings:write")} /> : null}
         {active === "roadmap" ? <RoadmapSection /> : null}
       </div>

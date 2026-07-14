@@ -117,7 +117,6 @@ const pageLabels: Record<PulsePage, string> = {
   field: "Projects",
   billing: "Billing",
   statistics: "Analytics",
-  activity: "Activity",
   settings: "Settings"
 };
 
@@ -215,14 +214,6 @@ function getShellRouteMeta(pathname: string): ShellRouteMeta {
       activePage: "statistics",
       title: "Analytics",
       subtitle: "High-level starter metrics for Pulse operations visibility."
-    };
-  }
-
-  if (pathname.startsWith("/activity")) {
-    return {
-      activePage: "activity",
-      title: "Activity",
-      subtitle: "Recent activity across Requests, Directory records, Opportunities, and Quotes."
     };
   }
 

@@ -7,9 +7,11 @@ import {
 const sections = new Set<SettingsSection>([
   "account",
   "appearance",
+  "privacy",
   "general",
   "users",
   "roles",
+  "audit",
   "request-checklists",
   "roadmap"
 ]);
