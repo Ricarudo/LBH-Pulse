@@ -27,6 +27,18 @@ enum ItemRelationType {
   OPTIONAL
 }
 
+enum LifecycleEntityType {
+  REQUEST
+  QUOTE
+  PROJECT
+  INVOICE
+}
+
+enum LifecycleEventPrecision {
+  EXACT
+  ESTIMATED
+}
+
 model Request {
   id              String              @id @default(cuid())
   requestNumber   String              @unique
@@ -327,6 +339,7 @@ model LocalUser {
   requestUpdateMentions RequestUpdateMention[] @relation("RequestUpdateMentions")
   completedRequestChecklistItems RequestChecklistItem[]
   uploadedDocuments LifecycleDocument[] @relation("UploadedDocuments")
+  lifecycleEvents LifecycleStatusEvent[] @relation("LifecycleEventActors")
   accessRole   AccessRole @relation(fields: [role], references: [id], onDelete: Restrict)
 
   @@index([role])
@@ -395,6 +408,28 @@ model Activity {
   @@index([type])
   @@index([createdAt])
   @@index([relatedEntityType, createdAt])
+}
+
+model LifecycleStatusEvent {
+  id                String                  @id @default(cuid())
+  entityType        LifecycleEntityType
+  entityId          String
+  fromStatus        String?
+  toStatus          String
+  changedAt         DateTime
+  actorUserId       String?
+  actorNameSnapshot String                  @default("Pulse System")
+  valueSnapshot     Decimal?                @db.Decimal(12, 2)
+  metadata          Json?
+  source            String                  @default("APPLICATION")
+  precision         LifecycleEventPrecision @default(EXACT)
+  createdAt         DateTime                @default(now())
+  actor             LocalUser?              @relation("LifecycleEventActors", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, changedAt])
+  @@index([entityType, toStatus, changedAt])
+  @@index([changedAt])
+  @@index([actorUserId])
 }
 
 model Opportunity {

@@ -19,6 +19,10 @@
       "types": "./dist/activity.d.ts",
       "default": "./dist/activity.js"
     },
+    "./analytics": {
+      "types": "./dist/analytics.d.ts",
+      "default": "./dist/analytics.js"
+    },
     "./audit": {
       "types": "./dist/audit.d.ts",
       "default": "./dist/audit.js"

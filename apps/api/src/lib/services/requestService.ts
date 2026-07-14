@@ -1,4 +1,4 @@
-import { Prisma } from "@/generated/prisma/client";
+import { LifecycleEntityType, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import {
   canUser,
@@ -6,6 +6,7 @@ import {
 } from "@pulse/contracts/auth";
 import { effectiveRolePermissions } from "@/lib/services/roleAccessService";
 import { recordActivity } from "@/lib/services/activityService";
+import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService";
 import { toInvoiceRecord, toProjectRecord, toQuoteRecord } from "@/lib/services/workService";
 import type {
   CreateRequestUpdateInput,
@@ -1318,13 +1319,36 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
     });
     const derivedStatus = deriveIntakeStatus(hydrated);
     if (derivedStatus !== hydrated.status) {
-      return tx.request.update({
+      const finalRequest = await tx.request.update({
         where: { id: created.id },
         data: { status: derivedStatus },
         include: requestInclude
       });
+      await recordLifecycleStatusEvent(tx, {
+        entityType: LifecycleEntityType.REQUEST,
+        entityId: finalRequest.id,
+        toStatus: finalRequest.status,
+        changedAt: finalRequest.createdAt,
+        metadata: {
+          receivedDate: finalRequest.receivedDate.toISOString(),
+          dueDate: finalRequest.dueDate?.toISOString() ?? null
+        },
+        user
+      });
+      return finalRequest;
     }
 
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.REQUEST,
+      entityId: hydrated.id,
+      toStatus: hydrated.status,
+      changedAt: hydrated.createdAt,
+      metadata: {
+        receivedDate: hydrated.receivedDate.toISOString(),
+        dueDate: hydrated.dueDate?.toISOString() ?? null
+      },
+      user
+    });
     return hydrated;
   });
 
@@ -1380,9 +1404,10 @@ export async function updateRequest(
     });
   }
 
-  const request = await prisma.request.update({
-    where: { id },
-    data: {
+  const request = await prisma.$transaction(async (tx) => {
+    const updatedRequest = await tx.request.update({
+      where: { id },
+      data: {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.requestType !== undefined ? { requestType: input.requestType } : {}),
       ...(input.source !== undefined ? { source: input.source } : {}),
@@ -1437,20 +1462,38 @@ export async function updateRequest(
       ...(input.relatedQuoteId !== undefined
         ? { relatedQuoteId: input.relatedQuoteId || null }
         : {}),
-      lastActivityAt: now,
-    },
-    include: requestInclude
-  });
+        lastActivityAt: now,
+      },
+      include: requestInclude
+    });
 
-  const derivedStatus = deriveIntakeStatus(request);
-  let finalRequest =
-    derivedStatus !== request.status
-      ? await prisma.request.update({
+    const derivedStatus = deriveIntakeStatus(updatedRequest);
+    const transitionedRequest =
+      derivedStatus !== updatedRequest.status
+        ? await tx.request.update({
           where: { id },
           data: { status: derivedStatus },
           include: requestInclude
         })
-      : request;
+        : updatedRequest;
+
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.REQUEST,
+      entityId: transitionedRequest.id,
+      fromStatus: existingRequest.status,
+      toStatus: transitionedRequest.status,
+      changedAt: now,
+      metadata: {
+        receivedDate: transitionedRequest.receivedDate.toISOString(),
+        dueDate: transitionedRequest.dueDate?.toISOString() ?? null
+      },
+      user
+    });
+
+    return transitionedRequest;
+  });
+
+  let finalRequest = request;
 
   if (
     input.assignedToId !== undefined &&
@@ -1579,13 +1622,36 @@ export async function changeRequestStatus(
     ? deriveIntakeStatus({ ...existingRequest, status: "Reviewing" })
     : status;
   const now = new Date();
-  const request = await prisma.request.update({
-    where: { id },
-    data: {
-      status: nextStatus,
-      lastActivityAt: now
-    },
-    include: requestInclude
+  const request = await prisma.$transaction(async (tx) => {
+    const updated = await tx.request.update({
+      where: { id },
+      data: {
+        status: nextStatus,
+        lastActivityAt: now
+      },
+      include: requestInclude
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.REQUEST,
+      entityId: updated.id,
+      fromStatus: existingRequest.status,
+      toStatus: updated.status,
+      changedAt: now,
+      metadata: {
+        receivedDate: updated.receivedDate.toISOString(),
+        dueDate: updated.dueDate?.toISOString() ?? null
+      },
+      user
+    });
+    await createRequestSystemUpdate(
+      tx,
+      updated.id,
+      isReopening ? `Request reopened as ${nextStatus}` : `Status changed to ${nextStatus}`,
+      normalizedReason || (isReopening ? "Request returned to active intake." : null),
+      user,
+      now
+    );
+    return updated;
   });
 
   await recordActivity({
@@ -1604,14 +1670,6 @@ export async function changeRequestStatus(
     }
   });
 
-  await createRequestSystemUpdate(
-    prisma,
-    request.id,
-    isReopening ? `Request reopened as ${nextStatus}` : `Status changed to ${nextStatus}`,
-    normalizedReason || (isReopening ? "Request returned to active intake." : null),
-    user,
-    now
-  );
   return toRequestRecord(await getRequestOrThrow(id), user?.id);
 }
 
@@ -1853,6 +1911,28 @@ export async function convertRequest(
       },
       include: requestInclude
     });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.REQUEST,
+      entityId: updatedRequest.id,
+      fromStatus: existingRequest.status,
+      toStatus: updatedRequest.status,
+      changedAt: now,
+      metadata: {
+        receivedDate: updatedRequest.receivedDate.toISOString(),
+        dueDate: updatedRequest.dueDate?.toISOString() ?? null
+      },
+      user
+    });
+    if (quote) {
+      await recordLifecycleStatusEvent(tx, {
+        entityType: LifecycleEntityType.QUOTE,
+        entityId: quote.id,
+        toStatus: quote.status,
+        changedAt: quote.createdAt,
+        valueSnapshot: Number(quote.total),
+        user
+      });
+    }
     await createRequestSystemUpdate(
       tx,
       id,

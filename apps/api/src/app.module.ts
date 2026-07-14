@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuditController } from "@/controllers/audit.controller";
+import { AnalyticsController } from "@/controllers/analytics.controller";
 import { AuthController } from "@/controllers/auth.controller";
 import { ClientBulkController } from "@/controllers/clientBulk.controller";
 import { ClientsController } from "@/controllers/clients.controller";
@@ -29,6 +30,7 @@ import { ActivityRetentionService } from "@/lib/services/activityRetentionServic
     ProposalsModule
   ],
   controllers: [
+    AnalyticsController,
     AuditController,
     AuthController,
     ClientBulkController,

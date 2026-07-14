@@ -1,7 +1,8 @@
-import { Prisma } from "@/generated/prisma/client";
+import { LifecycleEntityType, Prisma } from "@/generated/prisma/client";
 import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
+import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService";
 import { listProjectDocuments, listQuoteDocuments } from "@/lib/services/documentService";
 import type {
   AddAdHocQuoteItemInput,
@@ -840,8 +841,8 @@ export async function updateQuoteProposal(
 
 export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedUser) {
   const client = input.clientId ? await clientOrThrow(input.clientId) : null;
-  const quote = await prisma.$transaction(async (tx) =>
-    tx.quote.create({
+  const quote = await prisma.$transaction(async (tx) => {
+    const created = await tx.quote.create({
       data: {
         quoteNumber: await nextNumber(tx, "quote"),
         title: input.title,
@@ -852,8 +853,17 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
         total: input.total
       },
       include: quoteInclude
-    })
-  );
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.QUOTE,
+      entityId: created.id,
+      toStatus: created.status,
+      changedAt: created.createdAt,
+      valueSnapshot: Number(created.total),
+      user
+    });
+    return created;
+  });
   await recordActivity({
     user,
     relatedEntityType: "Quote",
@@ -872,16 +882,27 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
     const project = await prisma.project.findUnique({ where: { id: existing.project.id }, select: { clientId: true } });
     if (project && project.clientId !== client.id) throw new Error("WORK_CLIENT_MISMATCH");
   }
-  const quote = await prisma.quote.update({
-    where: { id: existing.id },
-    data: {
-      ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(client ? { clientId: client.id, clientName: client.displayName } : {}),
-      ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.total !== undefined ? { total: input.total } : {})
-    },
-    include: quoteInclude
+  const quote = await prisma.$transaction(async (tx) => {
+    const updated = await tx.quote.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(client ? { clientId: client.id, clientName: client.displayName } : {}),
+        ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.total !== undefined ? { total: input.total } : {})
+      },
+      include: quoteInclude
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.QUOTE,
+      entityId: updated.id,
+      fromStatus: existing.status,
+      toStatus: updated.status,
+      valueSnapshot: Number(updated.total),
+      user
+    });
+    return updated;
   });
   await recordActivity({
     user,
@@ -968,7 +989,22 @@ async function createProjectData(
 }
 
 export async function createProject(input: CreateProjectInput, user?: AuthenticatedUser) {
-  const project = await prisma.$transaction((tx) => createProjectData(input, tx));
+  const project = await prisma.$transaction(async (tx) => {
+    const created = await createProjectData(input, tx);
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.PROJECT,
+      entityId: created.id,
+      toStatus: created.status,
+      changedAt: created.createdAt,
+      valueSnapshot: Number(created.budget),
+      metadata: {
+        startDate: created.startDate?.toISOString() ?? null,
+        dueDate: created.dueDate?.toISOString() ?? null
+      },
+      user
+    });
+    return created;
+  });
   await recordActivity({
     user,
     relatedEntityType: "Project",
@@ -1005,6 +1041,18 @@ export async function convertQuoteToProject(
       },
       tx
     );
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.PROJECT,
+      entityId: project.id,
+      toStatus: project.status,
+      changedAt: project.createdAt,
+      valueSnapshot: Number(project.budget),
+      metadata: {
+        startDate: project.startDate?.toISOString() ?? null,
+        dueDate: project.dueDate?.toISOString() ?? null
+      },
+      user
+    });
     return { project, quote };
   });
   const { project, quote } = result;
@@ -1034,18 +1082,33 @@ export async function updateProject(id: string, input: UpdateProjectInput, user?
     const quote = await prisma.quote.findUnique({ where: { id: existing.quoteId }, select: { clientId: true } });
     if (quote?.clientId && quote.clientId !== input.clientId) throw new Error("WORK_CLIENT_MISMATCH");
   }
-  const project = await prisma.project.update({
-    where: { id: existing.id },
-    data: {
-      ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
-      ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.budget !== undefined ? { budget: input.budget } : {}),
-      ...(input.startDate !== undefined ? { startDate: dateInput(input.startDate) } : {}),
-      ...(input.dueDate !== undefined ? { dueDate: dateInput(input.dueDate) } : {})
-    },
-    include: projectInclude
+  const project = await prisma.$transaction(async (tx) => {
+    const updated = await tx.project.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
+        ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.budget !== undefined ? { budget: input.budget } : {}),
+        ...(input.startDate !== undefined ? { startDate: dateInput(input.startDate) } : {}),
+        ...(input.dueDate !== undefined ? { dueDate: dateInput(input.dueDate) } : {})
+      },
+      include: projectInclude
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.PROJECT,
+      entityId: updated.id,
+      fromStatus: existing.status,
+      toStatus: updated.status,
+      valueSnapshot: Number(updated.budget),
+      metadata: {
+        startDate: updated.startDate?.toISOString() ?? null,
+        dueDate: updated.dueDate?.toISOString() ?? null
+      },
+      user
+    });
+    return updated;
   });
   await recordActivity({
     user,
@@ -1126,7 +1189,22 @@ async function createInvoiceData(
 }
 
 export async function createInvoice(input: CreateInvoiceInput, user?: AuthenticatedUser) {
-  const invoice = await prisma.$transaction((tx) => createInvoiceData(input, tx));
+  const invoice = await prisma.$transaction(async (tx) => {
+    const created = await createInvoiceData(input, tx);
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.INVOICE,
+      entityId: created.id,
+      toStatus: created.status,
+      changedAt: created.createdAt,
+      valueSnapshot: Number(created.amount),
+      metadata: {
+        issuedDate: created.issuedDate?.toISOString() ?? null,
+        dueDate: created.dueDate?.toISOString() ?? null
+      },
+      user
+    });
+    return created;
+  });
   await recordActivity({
     user,
     relatedEntityType: "Invoice",
@@ -1146,7 +1224,8 @@ export async function createInvoiceFromProject(
   const project = await projectOrThrow(id);
   if (project.status === "Cancelled") throw new Error("PROJECT_CANCELLED");
   const invoice = await prisma.$transaction((tx) =>
-    createInvoiceData(
+    (async () => {
+      const created = await createInvoiceData(
       {
         title: input.title || `${project.title} milestone invoice`,
         clientId: project.clientId,
@@ -1158,7 +1237,21 @@ export async function createInvoiceFromProject(
         dueDate: input.dueDate
       },
       tx
-    )
+      );
+      await recordLifecycleStatusEvent(tx, {
+        entityType: LifecycleEntityType.INVOICE,
+        entityId: created.id,
+        toStatus: created.status,
+        changedAt: created.createdAt,
+        valueSnapshot: Number(created.amount),
+        metadata: {
+          issuedDate: created.issuedDate?.toISOString() ?? null,
+          dueDate: created.dueDate?.toISOString() ?? null
+        },
+        user
+      });
+      return created;
+    })()
   );
   await Promise.all([
     recordActivity({
@@ -1189,19 +1282,34 @@ export async function updateInvoice(id: string, input: UpdateInvoiceInput, user?
     const project = await projectOrThrow(effectiveProjectId);
     if (project.clientId !== effectiveClientId) throw new Error("WORK_CLIENT_MISMATCH");
   }
-  const invoice = await prisma.invoice.update({
-    where: { id: existing.id },
-    data: {
-      ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
-      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
-      ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.amount !== undefined ? { amount: input.amount } : {}),
-      ...(input.issuedDate !== undefined ? { issuedDate: dateInput(input.issuedDate) } : {}),
-      ...(input.dueDate !== undefined ? { dueDate: dateInput(input.dueDate) } : {})
-    },
-    include: invoiceInclude
+  const invoice = await prisma.$transaction(async (tx) => {
+    const updated = await tx.invoice.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
+        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+        ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.amount !== undefined ? { amount: input.amount } : {}),
+        ...(input.issuedDate !== undefined ? { issuedDate: dateInput(input.issuedDate) } : {}),
+        ...(input.dueDate !== undefined ? { dueDate: dateInput(input.dueDate) } : {})
+      },
+      include: invoiceInclude
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.INVOICE,
+      entityId: updated.id,
+      fromStatus: existing.status,
+      toStatus: updated.status,
+      valueSnapshot: Number(updated.amount),
+      metadata: {
+        issuedDate: updated.issuedDate?.toISOString() ?? null,
+        dueDate: updated.dueDate?.toISOString() ?? null
+      },
+      user
+    });
+    return updated;
   });
   await recordActivity({
     user,

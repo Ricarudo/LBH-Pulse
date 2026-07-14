@@ -18,7 +18,9 @@
     "motion": "^12.42.2",
     "next": "16.2.6",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "react-is": "^19.2.6",
+    "recharts": "^3.9.2"
   },
   "devDependencies": {
     "@types/node": "25.6.2",

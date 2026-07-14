@@ -213,7 +213,7 @@ function getShellRouteMeta(pathname: string): ShellRouteMeta {
     return {
       activePage: "statistics",
       title: "Analytics",
-      subtitle: "High-level starter metrics for Pulse operations visibility."
+      subtitle: "Company performance, from first request to final invoice."
     };
   }
 
@@ -315,6 +315,7 @@ function PulseShellFrame({
     pathname.startsWith("/quotes") ||
     pathname === "/projects" ||
     pathname === "/billing" ||
+    pathname === "/statistics" ||
     pathname === "/settings" ||
     pathname.startsWith("/settings/");
   const mobileActiveKey = getMobileActiveKey(pathname);
