@@ -13,6 +13,23 @@ services:
       timeout: 5s
       retries: 12
 
+  initialize:
+    build:
+      context: .
+      dockerfile: docker/ci/Dockerfile
+    command: ["/bin/sh", "-c", "npm run build -w @pulse/contracts && npm run db:initialize -w @pulse/api && touch /tmp/pulse-initialized && tail -f /dev/null"]
+    environment:
+      DATABASE_URL: postgresql://pulse:pulse_ci_password@postgres:5432/pulse?schema=pulse
+      PULSE_SESSION_SECRET: pulse-ci-session-secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/pulse-initialized"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
   api:
     build:
       context: .
@@ -30,7 +47,7 @@ services:
       retries: 18
       start_period: 10s
     depends_on:
-      postgres:
+      initialize:
         condition: service_healthy
 
   web:
