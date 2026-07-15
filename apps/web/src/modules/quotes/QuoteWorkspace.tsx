@@ -18,6 +18,7 @@ import {
   X
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { searchItems } from "@/lib/api/items";
 import {
   addAdHocQuoteItem,
@@ -655,7 +656,8 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
       </div>
 
       {revisionDialogOpen ? (
-        <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !revisionBusy) setRevisionDialogOpen(false); }}>
+        <ViewportPortal>
+          <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !revisionBusy) setRevisionDialogOpen(false); }}>
           <form className="client-create-dialog quote-revision-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-revision-dialog-title" onSubmit={requestRevision}>
             <div className="client-create-dialog-header">
               <div><span className="dashboard-eyebrow">Client lifecycle</span><h3 id="quote-revision-dialog-title">Open {quote.baseQuoteNumber}R{quote.revisionNumber + 1}</h3><p>Preserve {quote.quoteNumber} as read-only history and continue this same quote as a new draft.</p></div>
@@ -682,11 +684,13 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
               <button className="primary-button compact" type="submit" disabled={revisionBusy || !revisionReason.trim()}><RotateCcw size={15} />{revisionBusy ? "Opening revision…" : "Open revision"}</button>
             </div>
           </form>
-        </div>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {selectedVersion ? (
-        <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedVersion(null); }}>
+        <ViewportPortal>
+          <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedVersion(null); }}>
           <section className="client-create-dialog quote-version-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-version-dialog-title">
             <div className="client-create-dialog-header">
               <div><span className="dashboard-eyebrow">Read-only quote version</span><h3 id="quote-version-dialog-title">{selectedVersion.revision.quoteNumber}</h3><p>{selectedVersion.revision.title}</p></div>
@@ -760,11 +764,13 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
             )}
             <div className="client-create-dialog-actions"><button className="primary-button compact" type="button" onClick={() => setSelectedVersion(null)}>Close history</button></div>
           </section>
-        </div>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {addOpen ? (
-        <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddOpen(false); }}>
+        <ViewportPortal>
+          <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddOpen(false); }}>
           <section className="client-create-dialog quote-add-dialog" role="dialog" aria-modal="true">
             <div className="client-create-dialog-header">
               <div><span className="dashboard-eyebrow">Directory Items</span><h3>Add Item</h3></div>
@@ -801,11 +807,13 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
               </aside>
             </div>
           </section>
-        </div>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {adHocOpen ? (
-        <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdHocOpen(false); }}>
+        <ViewportPortal>
+          <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdHocOpen(false); }}>
           <form className="client-create-dialog" role="dialog" aria-modal="true" onSubmit={addAdHocLine}>
             <div className="client-create-dialog-header">
               <div><span className="dashboard-eyebrow">BOM line</span><h3>Add ad hoc line</h3></div>
@@ -825,10 +833,11 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
             </div>
             <div className="client-create-dialog-actions"><button className="toolbar-button compact" type="button" onClick={() => setAdHocOpen(false)}>Cancel</button><button className="primary-button compact" type="submit" disabled={busy}>Add line</button></div>
           </form>
-        </div>
+          </div>
+        </ViewportPortal>
       ) : null}
 
-      {toast ? <div className="work-queue-toast" role="status">{toast}</div> : null}
+      {toast ? <ViewportPortal><div className="work-queue-toast" role="status">{toast}</div></ViewportPortal> : null}
     </section>
   );
 }

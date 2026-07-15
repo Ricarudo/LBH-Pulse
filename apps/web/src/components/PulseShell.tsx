@@ -990,7 +990,7 @@ function PulseShellFrame({
                   </nav>
                 </aside>
 
-                <main className="main">
+                <main className={pathname === "/statistics" ? "main main-analytics" : "main"}>
                   <PageTransition
                     header={!shouldHideHeader ? (
                       <header className="page-header">

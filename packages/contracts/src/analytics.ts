@@ -6,20 +6,16 @@ export type AnalyticsView = (typeof analyticsViews)[number];
 export const analyticsValueFormats = ["number", "currency", "percent", "duration"] as const;
 export type AnalyticsValueFormat = (typeof analyticsValueFormats)[number];
 
-export const analyticsChartTypes = ["bar", "line", "area", "funnel"] as const;
+export const analyticsChartTypes = ["bar", "column", "donut", "stackedBar", "combo"] as const;
 export type AnalyticsChartType = (typeof analyticsChartTypes)[number];
+
+export const analyticsQualityStatuses = ["exact", "mixed", "estimated", "partial", "unavailable"] as const;
+export type AnalyticsQualityStatus = (typeof analyticsQualityStatuses)[number];
 
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const optionalFilter = z.string().trim().max(160).optional().transform((value) => value || undefined);
 
-export const analyticsQuerySchema = z.object({
-  view: z.enum(analyticsViews).default("overview"),
-  from: dateString.optional(),
-  to: dateString.optional(),
-  trade: optionalFilter,
-  owner: optionalFilter,
-  clientId: optionalFilter
-}).superRefine((value, context) => {
+function validateRange(value: { from?: string; to?: string }, context: z.RefinementCtx) {
   if (Boolean(value.from) !== Boolean(value.to)) {
     context.addIssue({
       code: "custom",
@@ -34,7 +30,16 @@ export const analyticsQuerySchema = z.object({
       path: ["from"]
     });
   }
-});
+}
+
+export const analyticsQuerySchema = z.object({
+  view: z.enum(analyticsViews).default("overview"),
+  from: dateString.optional(),
+  to: dateString.optional(),
+  trade: optionalFilter,
+  owner: optionalFilter,
+  clientId: optionalFilter
+}).superRefine(validateRange);
 
 export const analyticsDetailsQuerySchema = z.object({
   view: z.enum(analyticsViews).default("overview"),
@@ -43,20 +48,25 @@ export const analyticsDetailsQuerySchema = z.object({
   trade: optionalFilter,
   owner: optionalFilter,
   clientId: optionalFilter,
-  metric: z.string().trim().min(1).max(80).default("recent"),
+  metric: z.string().trim().min(1).max(100).default("recent"),
   segment: optionalFilter,
+  bucketFrom: dateString.optional(),
+  bucketTo: dateString.optional(),
+  sort: z.enum(["reference", "client", "status", "owner", "date", "value"]).default("date"),
+  direction: z.enum(["asc", "desc"]).default("desc"),
   cursor: z.string().trim().max(160).optional(),
   take: z.coerce.number().int().min(1).max(50).default(25)
 }).superRefine((value, context) => {
-  if (Boolean(value.from) !== Boolean(value.to)) {
+  validateRange(value, context);
+  if (Boolean(value.bucketFrom) !== Boolean(value.bucketTo)) {
     context.addIssue({
       code: "custom",
-      message: "Both from and to are required for a custom analytics range.",
-      path: value.from ? ["to"] : ["from"]
+      message: "Both bucket boundaries are required.",
+      path: value.bucketFrom ? ["bucketTo"] : ["bucketFrom"]
     });
   }
-  if (value.from && value.to && value.from > value.to) {
-    context.addIssue({ code: "custom", message: "Invalid analytics date range.", path: ["from"] });
+  if (value.bucketFrom && value.bucketTo && value.bucketFrom > value.bucketTo) {
+    context.addIssue({ code: "custom", message: "Invalid analytics bucket range.", path: ["bucketFrom"] });
   }
 });
 
@@ -73,27 +83,70 @@ export type AnalyticsRange = {
   comparisonLabel: string;
 };
 
+export type AnalyticsCalculationComponent = {
+  label: string;
+  value: number | null;
+  format: AnalyticsValueFormat;
+  decimals?: number;
+};
+
+export type AnalyticsCalculation = {
+  formula: string;
+  scopeLabel: string;
+  components: AnalyticsCalculationComponent[];
+  includes?: string[];
+  excludes?: string[];
+};
+
+export type AnalyticsMetricQuality = {
+  status: AnalyticsQualityStatus;
+  knownCount: number;
+  eligibleCount: number;
+  exactCount?: number;
+  estimatedCount?: number;
+  note?: string;
+};
+
 export type AnalyticsKpi = {
   id: string;
   label: string;
   description: string;
   value: number | null;
+  comparisonValue?: number | null;
   format: AnalyticsValueFormat;
+  decimals?: number;
+  scope: "period" | "asOf";
   deltaPercent?: number | null;
-  snapshot?: boolean;
-  estimated?: boolean;
-  exactSampleCount?: number;
-  estimatedSampleCount?: number;
+  favorableDirection: "up" | "down" | "neutral";
   metric: string;
+  calculation: AnalyticsCalculation;
+  quality: AnalyticsMetricQuality;
+};
+
+export type AnalyticsDrilldown = {
+  metric: string;
+  segment?: string;
+  bucketFrom?: string;
+  bucketTo?: string;
+  label?: string;
+};
+
+export type AnalyticsChartSeries = {
+  key: string;
+  label: string;
+  format: AnalyticsValueFormat;
+  decimals?: number;
+  mark: "bar" | "line" | "dot";
+  color: string;
+  axis?: "left" | "right";
+  stackId?: string;
 };
 
 export type AnalyticsPoint = {
   key: string;
   label: string;
-  value: number;
-  secondaryValue?: number;
-  tertiaryValue?: number;
-  segment?: string;
+  values: Record<string, number | null>;
+  drilldowns?: Record<string, AnalyticsDrilldown>;
 };
 
 export type AnalyticsChart = {
@@ -101,13 +154,12 @@ export type AnalyticsChart = {
   title: string;
   description: string;
   type: AnalyticsChartType;
-  format: AnalyticsValueFormat;
-  secondaryFormat?: AnalyticsValueFormat;
-  valueLabel: string;
-  secondaryLabel?: string;
-  metric: string;
+  layout: "standard" | "wide";
+  orientation?: "horizontal" | "vertical";
+  series: AnalyticsChartSeries[];
   points: AnalyticsPoint[];
-  overlapNotice?: boolean;
+  overlapNotice?: string;
+  emptyMessage?: string;
 };
 
 export type AnalyticsFilterOption = { value: string; label: string };
@@ -115,6 +167,7 @@ export type AnalyticsFilterOption = { value: string; label: string };
 export type AnalyticsDataQuality = {
   exactLifecycleEvents: number;
   estimatedLifecycleEvents: number;
+  partialMetricCount: number;
   message?: string;
 };
 
@@ -135,7 +188,7 @@ export type AnalyticsResponse = {
 
 export type AnalyticsDetailRow = {
   id: string;
-  kind: "Request" | "Quote" | "Project" | "Invoice";
+  kind: "Request" | "Quote" | "QuoteVersion" | "Project" | "Invoice";
   reference: string;
   title: string;
   client: string;
@@ -143,15 +196,22 @@ export type AnalyticsDetailRow = {
   status: string;
   owner: string;
   date: string;
-  value?: number;
+  value?: number | null;
+  valueFormat?: AnalyticsValueFormat;
   durationDays?: number;
+  context?: string;
+  precision?: "EXACT" | "ESTIMATED";
   href: string;
 };
 
 export type AnalyticsDetailsResponse = {
   metric: string;
   segment?: string;
+  label: string;
+  total: number;
   summary: string;
+  valueLabel?: string;
+  calculation?: AnalyticsCalculation;
   rows: AnalyticsDetailRow[];
   nextCursor?: string;
 };

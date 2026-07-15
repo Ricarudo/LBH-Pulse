@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
 import type { ItemDetailResponse, ItemRecord } from "@pulse/contracts/items";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { deactivateItem, fetchItemDetail, fetchItems, updateItem } from "@/lib/api/items";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
@@ -381,7 +382,7 @@ export function ItemDetailWorkspace({ itemId }: ItemDetailWorkspaceProps) {
           onSubmit={saveItem}
         />
       ) : null}
-      {toast ? <div className="work-queue-toast" role="status">{toast}</div> : null}
+      {toast ? <ViewportPortal><div className="work-queue-toast" role="status">{toast}</div></ViewportPortal> : null}
     </section>
   );
 }

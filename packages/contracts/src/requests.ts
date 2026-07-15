@@ -154,6 +154,8 @@ export type RequestUpdate = {
   id: string;
   requestId: string | null;
   quoteId: string | null;
+  projectId: string | null;
+  invoiceId: string | null;
   kind: RequestUpdateKind;
   title: string;
   body: string;

@@ -1,7 +1,11 @@
 import type { LifecycleDocumentRecord } from "./documents";
 import type { QuoteItemRecord } from "./items";
 import type { ClientContact } from "./clients";
-import { serviceCategories, type RequestUpdate } from "./requests";
+import {
+  serviceCategories,
+  type RequestAssignee,
+  type RequestUpdate
+} from "./requests";
 
 export const quoteStatuses = [
   "Draft",
@@ -130,7 +134,8 @@ export type ProjectRecord = {
   clientName: string;
   quoteId: string | null;
   quoteNumber: string;
-  owner: string;
+  assignedToId: string | null;
+  assignedTo: RequestAssignee | null;
   status: ProjectStatus;
   budget: number;
   startDate: string;
@@ -149,14 +154,25 @@ export type InvoiceRecord = {
   clientName: string;
   projectId: string | null;
   projectNumber: string;
-  owner: string;
+  assignedToId: string | null;
+  assignedTo: RequestAssignee | null;
   status: InvoiceStatus;
   amount: number;
   issuedDate: string;
   dueDate: string;
   createdAt: string;
   updatedAt: string;
+  documents: LifecycleDocumentRecord[];
 };
+
+export type WorkUpdateState = {
+  currentStep: RequestUpdate | null;
+  unreadMentionCount: number;
+  updates: RequestUpdate[];
+};
+
+export type ProjectDetailRecord = ProjectRecord & WorkUpdateState;
+export type InvoiceDetailRecord = InvoiceRecord & WorkUpdateState;
 
 export type ClientWorkSummary = {
   activeRequests: number;
@@ -172,12 +188,20 @@ export type ClientWorkSummary = {
 export type QuoteResponse = { quote: QuoteDetailRecord };
 export type QuotesResponse = { quotes: QuoteRecord[] };
 export type ProjectResponse = { project: ProjectRecord };
+export type ProjectDetailResponse = { project: ProjectDetailRecord };
+export type InvoiceResponse = { invoice: InvoiceRecord };
+export type InvoiceDetailResponse = { invoice: InvoiceDetailRecord };
 export type QuoteRevisionResponse = { revision: QuoteRevisionDetailRecord };
 
 import { z } from "zod";
 
 const id = z.string().trim().min(1);
 const optionalId = z.string().trim().optional().transform((value) => value || undefined);
+const assignedToId = z
+  .string()
+  .trim()
+  .nullish()
+  .transform((value) => value || null);
 const optionalDate = z.string().trim().optional().transform((value) => value || undefined);
 const money = z.coerce.number().min(0).max(9999999999);
 const quoteTrades = z
@@ -217,27 +241,45 @@ export const createProjectSchema = z.object({
   title: z.string().trim().min(1).max(200),
   clientId: id,
   quoteId: optionalId,
-  owner: z.string().trim().max(120).default("Unassigned"),
+  assignedToId: assignedToId.default(null),
   status: z.enum(projectStatuses).default("Ready"),
   budget: money.default(0),
   startDate: optionalDate,
   dueDate: optionalDate
 });
 
-export const updateProjectSchema = createProjectSchema.partial();
+export const updateProjectSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  clientId: id.optional(),
+  quoteId: optionalId.optional(),
+  assignedToId: assignedToId.optional(),
+  status: z.enum(projectStatuses).optional(),
+  budget: money.optional(),
+  startDate: optionalDate.optional(),
+  dueDate: optionalDate.optional()
+});
 
 export const createInvoiceSchema = z.object({
   title: z.string().trim().min(1).max(200),
   clientId: id,
   projectId: optionalId,
-  owner: z.string().trim().max(120).default("Unassigned"),
+  assignedToId: assignedToId.default(null),
   status: z.enum(invoiceStatuses).default("Draft"),
   amount: money.default(0),
   issuedDate: optionalDate,
   dueDate: optionalDate
 });
 
-export const updateInvoiceSchema = createInvoiceSchema.partial();
+export const updateInvoiceSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  clientId: id.optional(),
+  projectId: optionalId.optional(),
+  assignedToId: assignedToId.optional(),
+  status: z.enum(invoiceStatuses).optional(),
+  amount: money.optional(),
+  issuedDate: optionalDate.optional(),
+  dueDate: optionalDate.optional()
+});
 
 export const convertQuoteSchema = z.object({
   startDate: optionalDate,
@@ -246,7 +288,7 @@ export const convertQuoteSchema = z.object({
 
 export const createProjectInvoiceSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
-  owner: z.string().trim().max(120).optional(),
+  assignedToId: assignedToId.optional(),
   amount: money.optional(),
   issuedDate: optionalDate,
   dueDate: optionalDate

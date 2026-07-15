@@ -98,6 +98,8 @@ export function toQuoteUpdateRecord(update: QuoteUpdateWithRelations): RequestUp
     id: update.id,
     requestId: update.requestId,
     quoteId: update.quoteId,
+    projectId: update.projectId,
+    invoiceId: update.invoiceId,
     kind: update.kind === "comment" || update.kind === "step" || update.kind === "system"
       ? update.kind
       : "system",

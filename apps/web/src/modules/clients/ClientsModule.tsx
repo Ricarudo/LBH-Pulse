@@ -16,6 +16,7 @@ import {
 // a new client behaves consistently no matter where it is created.
 import { FormRequestError, formJson } from "@/lib/forms/sanitization";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import {
   ArrowLeft,
@@ -497,22 +498,23 @@ export function ClientsModule() {
 
       </section>
       {isQuickCreateOpen ? (
-        <div
-          className="client-create-dialog-scrim"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeQuickCreateDialog();
-            }
-          }}
-        >
-          <form
-            className="client-create-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="quick-client-dialog-title"
-            onMouseDown={(event) => event.stopPropagation()}
-            onSubmit={handleQuickCreateSubmit}
+        <ViewportPortal>
+          <div
+            className="client-create-dialog-scrim"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                closeQuickCreateDialog();
+              }
+            }}
           >
+            <form
+              className="client-create-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="quick-client-dialog-title"
+              onMouseDown={(event) => event.stopPropagation()}
+              onSubmit={handleQuickCreateSubmit}
+            >
             <div className="client-create-dialog-header">
               <div>
                 <p className="eyebrow">Directory</p>
@@ -695,8 +697,9 @@ export function ClientsModule() {
                 {isCreatingClient ? "Creating..." : "Create Client"}
               </button>
             </div>
-          </form>
-        </div>
+            </form>
+          </div>
+        </ViewportPortal>
       ) : null}
     </div>
   );

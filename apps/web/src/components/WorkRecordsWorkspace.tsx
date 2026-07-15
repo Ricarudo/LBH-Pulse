@@ -15,11 +15,12 @@ import {
   X
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
-import { LifecycleDocuments } from "@/components/LifecycleDocuments";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { convertQuoteToProject } from "@/lib/api/quotes";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ClientRecord } from "@pulse/contracts/clients";
+import type { RequestAssignee } from "@pulse/contracts/requests";
 import {
   invoiceStatuses,
   projectStatuses,
@@ -45,6 +46,7 @@ type FormState = {
   contactId: string;
   projectId: string;
   owner: string;
+  assignedToId: string;
   value: string;
   dueDate: string;
 };
@@ -61,6 +63,7 @@ const emptyForm: FormState = {
   contactId: "",
   projectId: "",
   owner: "Unassigned",
+  assignedToId: "",
   value: "0",
   dueDate: ""
 };
@@ -79,7 +82,7 @@ const workspaceCopy: Record<
   },
   projects: {
     eyebrow: "Delivery work",
-    summary: "Track execution, ownership, timing, budgets, and billing readiness.",
+    summary: "Track execution, assignment, timing, budgets, and billing readiness.",
     singular: "Project",
     plural: "projects"
   },
@@ -173,6 +176,21 @@ function recordTrades(record: WorkRecord) {
   return "trades" in record ? record.trades : [];
 }
 
+function recordAssignedName(record: WorkRecord) {
+  return "owner" in record
+    ? record.owner || "Unassigned"
+    : record.assignedTo?.name ?? "Unassigned";
+}
+
+function recordHref(kind: WorkKind, recordId: string, tab?: "files" | "updates") {
+  const base = kind === "quotes"
+    ? `/quotes/${recordId}`
+    : kind === "projects"
+      ? `/projects/${recordId}`
+      : `/billing/${recordId}`;
+  return tab ? `${base}?tab=${tab}` : base;
+}
+
 function statusTone(status: string) {
   if (["Approved", "Paid", "Completed"].includes(status)) return "success";
   if (["Rejected", "Cancelled", "Expired", "Overdue", "Void"].includes(status)) {
@@ -211,6 +229,8 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const [records, setRecords] = useState<WorkRecord[]>([]);
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
+  const [invoiceAssignees, setInvoiceAssignees] = useState<RequestAssignee[]>([]);
   const [invoiceSource, setInvoiceSource] = useState<ProjectRecord | null>(null);
   const [activeView, setActiveView] = useState(
     kind === "quotes" ? "open" : "all"
@@ -223,7 +243,6 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [saving, setSaving] = useState(false);
-  const [documentRecordId, setDocumentRecordId] = useState("");
   const [focusedRecordId, setFocusedRecordId] = useState("");
   const writePermission = kind === "quotes"
     ? "quotes:write"
@@ -231,6 +250,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       ? "projects:write"
       : "billing:write";
   const canWrite = canUser(user, writePermission);
+  const canCreateBilling = kind === "projects" && canUser(user, "billing:write");
   const requestedRecordId = searchParams.get("record") ?? "";
   const copy = workspaceCopy[kind];
   const views = workViews[kind];
@@ -246,7 +266,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       try {
         setIsLoading(true);
         setLoadError("");
-        const [workData, clientData, projectData] = await Promise.all([
+        const [workData, clientData, projectData, userData, invoiceUserData] = await Promise.all([
           requestJson<Record<WorkKind, WorkRecord[]>>(`/api/${kind}`, {
             cache: "no-store"
           }),
@@ -259,11 +279,23 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             ? requestJson<{ projects: ProjectRecord[] }>("/api/projects", {
                 cache: "no-store"
               })
-            : Promise.resolve({ projects: [] })
+            : Promise.resolve({ projects: [] }),
+          kind !== "quotes" && canWrite
+            ? requestJson<{ assignees: RequestAssignee[] }>(`/api/${kind}/team-members`, {
+                cache: "no-store"
+              })
+            : Promise.resolve({ assignees: [] }),
+          canCreateBilling
+            ? requestJson<{ assignees: RequestAssignee[] }>("/api/invoices/team-members", {
+                cache: "no-store"
+              })
+            : Promise.resolve({ assignees: [] })
         ]);
         setRecords(workData[kind]);
         setClients(clientData.clients);
         setProjects(projectData.projects);
+        setAssignees(userData.assignees);
+        setInvoiceAssignees(invoiceUserData.assignees);
       } catch (error) {
         setLoadError(
           error instanceof Error
@@ -275,7 +307,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       }
     }
     void load();
-  }, [canWrite, kind, title]);
+  }, [canCreateBilling, canWrite, kind, title]);
 
   useEffect(() => {
     if (!toast) return;
@@ -344,7 +376,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             recordNumber(record),
             record.title,
             record.clientName,
-            record.owner,
+            recordAssignedName(record),
             record.status,
             ...recordTrades(record),
             recordSource(record)
@@ -367,13 +399,23 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   }, [activeView, records, searchTerm, sort, views]);
 
   function openCreate(project?: ProjectRecord) {
+    const availableAssignees = project ? invoiceAssignees : assignees;
+    const inheritedAssigneeId = project?.assignedToId &&
+      availableAssignees.some((assignee) => assignee.id === project.assignedToId)
+      ? project.assignedToId
+      : null;
+    const currentUserId = user?.id &&
+      availableAssignees.some((assignee) => assignee.id === user.id)
+      ? user.id
+      : "";
     setInvoiceSource(project ?? null);
     setForm({
       ...emptyForm,
       title: project ? `${project.title} milestone invoice` : "",
       clientId: project?.clientId ?? "",
       projectId: project?.id ?? "",
-      owner: project?.owner ?? user?.name ?? "Unassigned",
+      owner: user?.name ?? "Unassigned",
+      assignedToId: inheritedAssigneeId ?? currentUserId,
       value: project ? String(project.budget) : "0"
     });
     setFormOpen(true);
@@ -403,7 +445,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             method: "POST",
             body: JSON.stringify({
               title: form.title,
-              owner: form.owner,
+              assignedToId: form.assignedToId || null,
               amount: Number(form.value),
               dueDate: form.dueDate || undefined
             })
@@ -437,7 +479,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             ? {
                 title: form.title,
                 clientId: form.clientId,
-                owner: form.owner,
+                assignedToId: form.assignedToId || null,
                 status: "Ready",
                 budget: Number(form.value),
                 dueDate: form.dueDate || undefined
@@ -446,7 +488,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 title: form.title,
                 clientId: form.clientId,
                 projectId: form.projectId || undefined,
-                owner: form.owner,
+                assignedToId: form.assignedToId || null,
                 status: "Draft",
                 amount: Number(form.value),
                 dueDate: form.dueDate || undefined
@@ -524,7 +566,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   }
 
   function renderActions(record: WorkRecord, mobile = false) {
-    const canShowFiles = kind !== "invoices" && "documents" in record;
+    const canShowFiles = kind !== "quotes";
     const canCreateProject =
       kind === "quotes" &&
       canUser(user, "projects:write") &&
@@ -534,24 +576,19 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     const canCreateInvoice = kind === "projects" && canUser(user, "billing:write") && "budget" in record;
 
     return (
-      <div className={mobile ? "work-queue-card-actions" : "work-queue-actions"}>
-        {kind === "quotes" ? (
-          <Link href={`/quotes/${record.id}`}>
-            Open workspace
-            <ArrowRight size={14} />
-          </Link>
-        ) : null}
+      <div
+        className={mobile ? "work-queue-card-actions" : "work-queue-actions"}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Link href={recordHref(kind, record.id)}>
+          Open workspace
+          <ArrowRight size={14} />
+        </Link>
         {canShowFiles ? (
-          <button
-            type="button"
-            aria-expanded={documentRecordId === record.id}
-            onClick={() =>
-              setDocumentRecordId(documentRecordId === record.id ? "" : record.id)
-            }
-          >
+          <Link href={recordHref(kind, record.id, "files")}>
             <FileText size={14} />
             Files
-          </button>
+          </Link>
         ) : null}
         {canCreateProject ? (
           <button
@@ -582,9 +619,6 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
           <span>
             {record.invoiceCount} invoice{record.invoiceCount === 1 ? "" : "s"}
           </span>
-        ) : null}
-        {kind === "invoices" ? (
-          <span>—</span>
         ) : null}
       </div>
     );
@@ -646,7 +680,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             <span className="sr-only">Search {title.toLowerCase()}</span>
             <input
               type="search"
-              placeholder={`Search ${copy.singular.toLowerCase()}, client, owner, or status`}
+              placeholder={`Search ${copy.singular.toLowerCase()}, client, assigned person, or status`}
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
             />
@@ -702,7 +736,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 <th>{copy.singular}</th>
                 <th>Client</th>
                 <th>Status</th>
-                <th>Owner</th>
+                <th>{kind === "quotes" ? "Owner" : "Assigned to"}</th>
                 <th>Timing</th>
                 <th>{valueLabel}</th>
                 {kind !== "quotes" ? <th>Actions</th> : null}
@@ -725,18 +759,18 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                       <Fragment key={record.id}>
                         <tr
                           data-work-record={record.id}
-                          tabIndex={kind === "quotes" ? 0 : -1}
-                          role={kind === "quotes" ? "link" : undefined}
-                          aria-label={kind === "quotes" ? `Open ${recordNumber(record)}: ${record.title}` : undefined}
-                          onClick={kind === "quotes" ? () => router.push(`/quotes/${record.id}`) : undefined}
-                          onKeyDown={kind === "quotes" ? (event) => {
+                          tabIndex={0}
+                          role="link"
+                          aria-label={`Open ${recordNumber(record)}: ${record.title}`}
+                          onClick={() => router.push(recordHref(kind, record.id))}
+                          onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
-                              router.push(`/quotes/${record.id}`);
+                              router.push(recordHref(kind, record.id));
                             }
-                          } : undefined}
+                          }}
                           className={[
-                            kind === "quotes" ? "work-queue-clickable" : "",
+                            "work-queue-clickable",
                             needsAttention(record) ? "needs-attention" : "",
                             focusedRecordId === record.id
                               ? "work-record-focused"
@@ -762,7 +796,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                           </td>
                           <td>{renderStatus(record)}</td>
                           <td>
-                            <strong>{record.owner || "Unassigned"}</strong>
+                            <strong>{recordAssignedName(record)}</strong>
                           </td>
                           <td
                             className={
@@ -785,32 +819,6 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                           </td>
                           {kind !== "quotes" ? <td>{renderActions(record)}</td> : null}
                         </tr>
-                        {kind !== "invoices" &&
-                        documentRecordId === record.id &&
-                        "documents" in record ? (
-                          <tr
-                            className="work-queue-documents-row"
-                            key={`${record.id}-documents`}
-                          >
-                            <td colSpan={kind === "quotes" ? 6 : 7}>
-                              <LifecycleDocuments
-                                stage={kind === "quotes" ? "quote" : "project"}
-                                recordId={record.id}
-                                documents={record.documents}
-                                canWrite={canWrite}
-                                onChange={(documents) =>
-                                  setRecords((current) =>
-                                    current.map((item) =>
-                                      item.id === record.id
-                                        ? { ...item, documents }
-                                        : item
-                                    )
-                                  )
-                                }
-                              />
-                            </td>
-                          </tr>
-                        ) : null}
                       </Fragment>
                     );
                   })}
@@ -829,16 +837,16 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   <article
                     className={`work-queue-mobile-card${needsAttention(record) ? " needs-attention" : ""}${focusedRecordId === record.id ? " work-record-focused" : ""}`}
                     data-work-record={record.id}
-                    tabIndex={kind === "quotes" ? 0 : -1}
-                    role={kind === "quotes" ? "link" : undefined}
-                    aria-label={kind === "quotes" ? `Open ${recordNumber(record)}: ${record.title}` : undefined}
-                    onClick={kind === "quotes" ? () => router.push(`/quotes/${record.id}`) : undefined}
-                    onKeyDown={kind === "quotes" ? (event) => {
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Open ${recordNumber(record)}: ${record.title}`}
+                    onClick={() => router.push(recordHref(kind, record.id))}
+                    onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        router.push(`/quotes/${record.id}`);
+                        router.push(recordHref(kind, record.id));
                       }
-                    } : undefined}
+                    }}
                     key={record.id}
                   >
                     <div className="work-queue-card-body">
@@ -875,30 +883,11 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                         </div>
                       </div>
                       <div className="work-queue-card-owner">
-                        <span>Owner</span>
-                        <strong>{record.owner || "Unassigned"}</strong>
+                        <span>{kind === "quotes" ? "Owner" : "Assigned to"}</span>
+                        <strong>{recordAssignedName(record)}</strong>
                       </div>
                     </div>
                     {kind !== "quotes" ? renderActions(record, true) : null}
-                    {kind !== "invoices" &&
-                    documentRecordId === record.id &&
-                    "documents" in record ? (
-                      <div className="work-queue-card-documents">
-                        <LifecycleDocuments
-                          stage={kind === "quotes" ? "quote" : "project"}
-                          recordId={record.id}
-                          documents={record.documents}
-                          canWrite={canWrite}
-                          onChange={(documents) =>
-                            setRecords((current) =>
-                              current.map((item) =>
-                                item.id === record.id ? { ...item, documents } : item
-                              )
-                            )
-                          }
-                        />
-                      </div>
-                    ) : null}
                   </article>
                 );
               })}
@@ -921,39 +910,40 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       </div>
 
       {formOpen ? (
-        <div
-          className="work-queue-modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) closeCreate();
-          }}
-        >
-          <form
-            className="work-queue-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="work-create-title"
-            onSubmit={createRecord}
+        <ViewportPortal>
+          <div
+            className="work-queue-modal-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) closeCreate();
+            }}
           >
-            <div className="work-queue-modal-heading">
-              <div>
-                <span>
-                  {invoiceSource ? invoiceSource.projectNumber : copy.eyebrow}
-                </span>
-                <h2 id="work-create-title">
-                  New {invoiceSource ? "Invoice" : copy.singular}
-                </h2>
-                <p>Create a client-linked record in Pulse.</p>
+            <form
+              className="work-queue-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="work-create-title"
+              onSubmit={createRecord}
+            >
+              <div className="work-queue-modal-heading">
+                <div>
+                  <span>
+                    {invoiceSource ? invoiceSource.projectNumber : copy.eyebrow}
+                  </span>
+                  <h2 id="work-create-title">
+                    New {invoiceSource ? "Invoice" : copy.singular}
+                  </h2>
+                  <p>Create a client-linked record in Pulse.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeCreate}
+                  aria-label="Close create form"
+                >
+                  <X size={20} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={closeCreate}
-                aria-label="Close create form"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="work-queue-form-grid">
+              <div className="work-queue-form-grid">
               <label>
                 Title
                 <input
@@ -1024,10 +1014,15 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                       const project = projects.find(
                         (item) => item.id === event.target.value
                       );
+                      const inheritedAssigneeId = project?.assignedToId &&
+                        assignees.some((assignee) => assignee.id === project.assignedToId)
+                        ? project.assignedToId
+                        : form.assignedToId;
                       setForm({
                         ...form,
                         projectId: event.target.value,
-                        clientId: project?.clientId ?? form.clientId
+                        clientId: project?.clientId ?? form.clientId,
+                        assignedToId: inheritedAssigneeId
                       });
                     }}
                   >
@@ -1045,15 +1040,34 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   </select>
                 </label>
               ) : null}
-              <label>
-                Owner
-                <input
-                  value={form.owner}
-                  onChange={(event) =>
-                    setForm({ ...form, owner: event.target.value })
-                  }
-                />
-              </label>
+              {kind === "quotes" ? (
+                <label>
+                  Owner
+                  <input
+                    value={form.owner}
+                    onChange={(event) =>
+                      setForm({ ...form, owner: event.target.value })
+                    }
+                  />
+                </label>
+              ) : (
+                <label>
+                  Assigned person
+                  <select
+                    value={form.assignedToId}
+                    onChange={(event) =>
+                      setForm({ ...form, assignedToId: event.target.value })
+                    }
+                  >
+                    <option value="">Unassigned</option>
+                    {(invoiceSource ? invoiceAssignees : assignees).map((assignee) => (
+                      <option key={assignee.id} value={assignee.id}>
+                        {assignee.name} · {assignee.roleLabel}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 {valueLabel}
                 <input
@@ -1078,24 +1092,27 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   />
                 </label>
               ) : null}
-            </div>
-            <div className="work-queue-modal-actions">
-              <button type="button" onClick={closeCreate}>
-                Cancel
-              </button>
-              <button className="primary-button" type="submit" disabled={saving}>
-                <Save size={17} />
-                {saving ? "Saving..." : `Save ${invoiceSource ? "invoice" : copy.singular.toLowerCase()}`}
-              </button>
-            </div>
-          </form>
-        </div>
+              </div>
+              <div className="work-queue-modal-actions">
+                <button type="button" onClick={closeCreate}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit" disabled={saving}>
+                  <Save size={17} />
+                  {saving ? "Saving..." : `Save ${invoiceSource ? "invoice" : copy.singular.toLowerCase()}`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {toast ? (
-        <div className="work-queue-toast" role="status" aria-live="polite">
-          {toast}
-        </div>
+        <ViewportPortal>
+          <div className="work-queue-toast" role="status" aria-live="polite">
+            {toast}
+          </div>
+        </ViewportPortal>
       ) : null}
     </section>
   );

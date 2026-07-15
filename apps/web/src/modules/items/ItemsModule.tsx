@@ -11,6 +11,7 @@ import {
   Search
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { createItem, fetchItems } from "@/lib/api/items";
 import { formatMoney } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
@@ -297,7 +298,7 @@ export function ItemsModule() {
           onSubmit={saveItem}
         />
       ) : null}
-      {toast ? <div className="work-queue-toast" role="status">{toast}</div> : null}
+      {toast ? <ViewportPortal><div className="work-queue-toast" role="status">{toast}</div></ViewportPortal> : null}
     </section>
   );
 }

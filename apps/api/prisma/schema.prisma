@@ -114,6 +114,8 @@ model RequestUpdate {
   id                    String                 @id @default(cuid())
   requestId             String?
   quoteId               String?
+  projectId             String?
+  invoiceId             String?
   kind                  String
   title                 String?
   body                  String?
@@ -133,6 +135,8 @@ model RequestUpdate {
   updatedAt             DateTime               @updatedAt
   request               Request?               @relation("RequestUpdates", fields: [requestId], references: [id], onDelete: Cascade)
   quote                 Quote?                 @relation("QuoteUpdates", fields: [quoteId], references: [id], onDelete: Cascade)
+  project               Project?               @relation("ProjectUpdates", fields: [projectId], references: [id], onDelete: Cascade)
+  invoice               Invoice?               @relation("InvoiceUpdates", fields: [invoiceId], references: [id], onDelete: Cascade)
   author                LocalUser?             @relation("RequestUpdateAuthors", fields: [authorId], references: [id], onDelete: SetNull)
   assignee              LocalUser?             @relation("RequestUpdateAssignees", fields: [assigneeId], references: [id], onDelete: SetNull)
   supersedes            RequestUpdate?         @relation("RequestUpdateSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
@@ -141,6 +145,8 @@ model RequestUpdate {
 
   @@index([requestId, createdAt])
   @@index([quoteId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([invoiceId, createdAt])
   @@index([requestId, kind, stepStatus])
   @@index([assigneeId, stepStatus])
   @@index([supersedesId])
@@ -338,6 +344,8 @@ model LocalUser {
   createdRequests                Request[]              @relation("CreatedRequests")
   authoredRequestUpdates         RequestUpdate[]        @relation("RequestUpdateAuthors")
   assignedRequestUpdates         RequestUpdate[]        @relation("RequestUpdateAssignees")
+  assignedProjects               Project[]              @relation("AssignedProjects")
+  assignedInvoices               Invoice[]              @relation("AssignedInvoices")
   requestCollaborations          RequestCollaborator[]  @relation("RequestCollaboratorUsers")
   addedRequestCollaborators      RequestCollaborator[]  @relation("RequestCollaboratorAddedBy")
   requestUpdateMentions          RequestUpdateMention[] @relation("RequestUpdateMentions")
@@ -657,7 +665,9 @@ model Project {
   title         String
   clientId      String
   quoteId       String?             @unique
-  owner         String              @default("Unassigned")
+  assignedToId  String?
+  ownerSnapshot String              @default("Unassigned") @map("owner")
+  currentStepId String?
   status        String              @default("Ready")
   budget        Decimal             @default(0) @db.Decimal(12, 2)
   startDate     DateTime?
@@ -667,12 +677,15 @@ model Project {
   updatedAt     DateTime            @updatedAt
   client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
   quote         Quote?              @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  assignedTo    LocalUser?          @relation("AssignedProjects", fields: [assignedToId], references: [id], onDelete: SetNull)
   invoices      Invoice[]
   documents     LifecycleDocument[]
+  updates       RequestUpdate[]     @relation("ProjectUpdates")
 
   @@index([clientId])
   @@index([status])
-  @@index([owner])
+  @@index([assignedToId])
+  @@index([currentStepId])
   @@index([archivedAt])
 }
 
@@ -681,6 +694,7 @@ model LifecycleDocument {
   requestId        String?
   quoteId          String?
   projectId        String?
+  invoiceId        String?
   objectKey        String?    @unique
   originalFileName String
   mediaType        String?
@@ -701,11 +715,13 @@ model LifecycleDocument {
   request          Request?   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   quote            Quote?     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   project          Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invoice          Invoice?   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   uploadedBy       LocalUser? @relation("UploadedDocuments", fields: [uploadedById], references: [id], onDelete: SetNull)
 
   @@index([requestId, deletedAt])
   @@index([quoteId, deletedAt])
   @@index([projectId, deletedAt])
+  @@index([invoiceId, deletedAt])
   @@index([uploadedById])
   @@index([sha256])
   @@index([tags], type: Gin)
@@ -713,26 +729,32 @@ model LifecycleDocument {
 }
 
 model Invoice {
-  id            String    @id @default(cuid())
-  invoiceNumber String    @unique
+  id            String              @id @default(cuid())
+  invoiceNumber String              @unique
   title         String
   clientId      String
   projectId     String?
-  owner         String    @default("Unassigned")
-  status        String    @default("Draft")
-  amount        Decimal   @default(0) @db.Decimal(12, 2)
+  assignedToId  String?
+  ownerSnapshot String              @default("Unassigned") @map("owner")
+  currentStepId String?
+  status        String              @default("Draft")
+  amount        Decimal             @default(0) @db.Decimal(12, 2)
   issuedDate    DateTime?
   dueDate       DateTime?
   archivedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project       Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assignedTo    LocalUser?          @relation("AssignedInvoices", fields: [assignedToId], references: [id], onDelete: SetNull)
+  documents     LifecycleDocument[]
+  updates       RequestUpdate[]     @relation("InvoiceUpdates")
 
   @@index([clientId])
   @@index([projectId])
   @@index([status])
-  @@index([owner])
+  @@index([assignedToId])
+  @@index([currentStepId])
   @@index([archivedAt])
 }
 

@@ -2,6 +2,7 @@
 
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { Plus, X } from "lucide-react";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import {
   itemRelationTypes,
   itemStatuses,
@@ -158,19 +159,20 @@ export function ItemEditorDialog({
   }
 
   return (
-    <div
-      className="client-create-dialog-scrim"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <form
-        className="client-create-dialog item-editor-dialog"
-        role="dialog"
-        aria-modal="true"
-        onSubmit={onSubmit}
+    <ViewportPortal>
+      <div
+        className="client-create-dialog-scrim"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
       >
+        <form
+          className="client-create-dialog item-editor-dialog"
+          role="dialog"
+          aria-modal="true"
+          onSubmit={onSubmit}
+        >
         <div className="client-create-dialog-header">
           <div>
             <span className="dashboard-eyebrow">{editingItem ? "Edit item" : "New item"}</span>
@@ -232,7 +234,8 @@ export function ItemEditorDialog({
           <button className="toolbar-button compact" type="button" onClick={onClose}>Cancel</button>
           <button className="primary-button compact" type="submit" disabled={saving}>{saving ? "Saving..." : "Save item"}</button>
         </div>
-      </form>
-    </div>
+        </form>
+      </div>
+    </ViewportPortal>
   );
 }

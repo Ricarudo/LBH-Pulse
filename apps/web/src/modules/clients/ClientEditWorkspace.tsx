@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { canUser } from "@pulse/contracts/auth";
 import {
   clientIndustries,
@@ -490,13 +491,14 @@ function ContactModal({
     existingPrimaryName !== contact.name;
 
   return (
-    <div className="client-contact-modal-backdrop" role="presentation">
-      <div
-        aria-labelledby="client-contact-modal-title"
-        aria-modal="true"
-        className="client-contact-modal"
-        role="dialog"
-      >
+    <ViewportPortal>
+      <div className="client-contact-modal-backdrop" role="presentation">
+        <div
+          aria-labelledby="client-contact-modal-title"
+          aria-modal="true"
+          className="client-contact-modal"
+          role="dialog"
+        >
         <div className="client-contact-modal-heading">
           <div>
             <span>{state.mode === "add" ? "New Point of Contact" : "Point of Contact"}</span>
@@ -644,8 +646,9 @@ function ContactModal({
             {isSaving ? "Saving..." : "Save Contact"}
           </button>
         </div>
+        </div>
       </div>
-    </div>
+    </ViewportPortal>
   );
 }
 

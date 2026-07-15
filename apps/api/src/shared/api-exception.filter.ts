@@ -293,6 +293,26 @@ const errorMap: Record<string, ErrorPayload> = {
   },
   PROJECT_NOT_FOUND: { status: 404, body: { error: "Project not found." } },
   INVOICE_NOT_FOUND: { status: 404, body: { error: "Invoice not found." } },
+  WORK_ASSIGNEE_INVALID: {
+    status: 400,
+    body: { error: "Assigned person must be an active Pulse user with access to this workspace." }
+  },
+  WORK_UPDATE_ASSIGNEE_REQUIRED: {
+    status: 400,
+    body: { error: "Choose a responsible assignee for the current step." }
+  },
+  WORK_UPDATE_ASSIGNEE_INVALID: {
+    status: 400,
+    body: { error: "The current-step assignee must be an active Pulse user with access to this workspace." }
+  },
+  WORK_MENTION_USER_INVALID: {
+    status: 400,
+    body: { error: "One or more mentioned users do not have access to this workspace." }
+  },
+  WORK_UPDATE_NOT_FOUND: { status: 404, body: { error: "Lifecycle update not found." } },
+  WORK_UPDATE_NOT_OPEN: { status: 409, body: { error: "Only an open current step can be completed." } },
+  WORK_UPDATE_NOT_UNDOABLE: { status: 409, body: { error: "This update is no longer undoable." } },
+  WORK_UPDATE_UNDO_CONFLICT: { status: 409, body: { error: "The workspace changed before this update could be undone." } },
   QUOTE_ALREADY_CONVERTED: { status: 409, body: { error: "This quote already has a project." } },
   QUOTE_NOT_APPROVED: { status: 400, body: { error: "Approve the quote before creating a project." } },
   QUOTE_CLIENT_REQUIRED: { status: 400, body: { error: "Select a client before creating a project from this quote." } },
@@ -305,7 +325,7 @@ const errorMap: Record<string, ErrorPayload> = {
   DOCUMENT_TYPE_INVALID: { status: 400, body: { error: "Only PDF, JPEG, PNG, and WebP files are supported." } },
   DOCUMENT_SIGNATURE_INVALID: { status: 400, body: { error: "The file contents do not match the selected file type." } },
   DOCUMENT_TOO_LARGE: { status: 413, body: { error: "PDF files may be up to 100 MB; images may be up to 10 MB." } },
-  DOCUMENT_LINEAGE_LIMIT: { status: 413, body: { error: "This Request–Quote–Project lifecycle has reached its 500 MB document limit." } },
+  DOCUMENT_LINEAGE_LIMIT: { status: 413, body: { error: "This Request–Quote–Project–Invoice lifecycle has reached its 500 MB document limit." } },
   DOCUMENT_CATEGORY_INVALID: { status: 400, body: { error: "Select a valid document category for this lifecycle stage." } },
   DOCUMENT_TAGS_INVALID: { status: 400, body: { error: "Add up to 8 purpose tags, using no more than 32 characters per tag." } },
   DOCUMENT_MALWARE_DETECTED: { status: 422, body: { error: "The file failed malware inspection and was rejected." } },

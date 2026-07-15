@@ -7,7 +7,18 @@ import {
   createQuoteSystemUpdate,
   listQuoteUpdates
 } from "@/lib/services/quoteUpdateService";
-import { listProjectDocuments, listQuoteDocuments } from "@/lib/services/documentService";
+import {
+  listInvoiceDocuments,
+  listProjectDocuments,
+  listQuoteDocuments
+} from "@/lib/services/documentService";
+import {
+  createWorkSystemUpdate,
+  findEligibleWorkAssignee,
+  listWorkUpdates,
+  resolveLegacyWorkAssignee,
+  resolveWorkAssignee
+} from "@/lib/services/workUpdateService";
 import type {
   AddAdHocQuoteItemInput,
   AddQuoteItemInput,
@@ -129,6 +140,7 @@ const itemForQuoteInclude = {
 const projectInclude = {
   client: { select: { id: true, displayName: true } },
   quote: { select: { id: true, quoteNumber: true } },
+  assignedTo: { include: { accessRole: true } },
   invoices: {
     where: { archivedAt: null },
     select: { id: true }
@@ -137,7 +149,8 @@ const projectInclude = {
 
 const invoiceInclude = {
   client: { select: { id: true, displayName: true } },
-  project: { select: { id: true, projectNumber: true } }
+  project: { select: { id: true, projectNumber: true } },
+  assignedTo: { include: { accessRole: true } }
 } satisfies Prisma.InvoiceInclude;
 
 type QuoteWithRelations = Prisma.QuoteGetPayload<{ include: typeof quoteInclude }>;
@@ -220,6 +233,23 @@ function categoriesFromSnapshot(value?: string | null) {
 
 function nullable(value?: string) {
   return value ? value : null;
+}
+
+function toWorkAssignee(user: {
+  id: string;
+  name: string;
+  email: string;
+  accessRole: { id: string; name: string; color: string };
+} | null) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.accessRole.id,
+    roleLabel: user.accessRole.name,
+    roleColor: user.accessRole.color
+  };
 }
 
 export function parseQuoteVersionNumber(quoteNumber: string) {
@@ -512,7 +542,8 @@ export function toProjectRecord(
     clientName: project.client.displayName,
     quoteId: project.quoteId,
     quoteNumber: project.quote?.quoteNumber ?? "",
-    owner: project.owner,
+    assignedToId: project.assignedToId,
+    assignedTo: toWorkAssignee(project.assignedTo),
     status: project.status as ProjectRecord["status"],
     budget: Number(project.budget),
     startDate: dateOutput(project.startDate),
@@ -524,7 +555,10 @@ export function toProjectRecord(
   };
 }
 
-export function toInvoiceRecord(invoice: InvoiceWithRelations): InvoiceRecord {
+export function toInvoiceRecord(
+  invoice: InvoiceWithRelations,
+  documents: LifecycleDocumentRecord[] = []
+): InvoiceRecord {
   return {
     id: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
@@ -533,13 +567,15 @@ export function toInvoiceRecord(invoice: InvoiceWithRelations): InvoiceRecord {
     clientName: invoice.client.displayName,
     projectId: invoice.projectId,
     projectNumber: invoice.project?.projectNumber ?? "",
-    owner: invoice.owner,
+    assignedToId: invoice.assignedToId,
+    assignedTo: toWorkAssignee(invoice.assignedTo),
     status: invoice.status as InvoiceRecord["status"],
     amount: Number(invoice.amount),
     issuedDate: dateOutput(invoice.issuedDate),
     dueDate: dateOutput(invoice.dueDate),
     createdAt: dateOutput(invoice.createdAt),
-    updatedAt: invoice.updatedAt.toISOString()
+    updatedAt: invoice.updatedAt.toISOString(),
+    documents
   };
 }
 
@@ -715,6 +751,46 @@ async function recalculateQuoteTotal(
   });
 }
 
+async function quoteAnalyticsSnapshot(
+  tx: Prisma.TransactionClient,
+  quoteId: string,
+  eventType: string
+): Promise<Prisma.InputJsonObject> {
+  const items = await tx.quoteItem.findMany({
+    where: { quoteId },
+    select: { lineSubtotal: true, quantity: true, unitCost: true }
+  });
+  return {
+    eventType,
+    revenueSnapshot: items.reduce((total, item) => total + Number(item.lineSubtotal), 0),
+    costSnapshot: items.reduce((total, item) => total + Number(item.quantity) * Number(item.unitCost), 0),
+    revenueBearingLineCount: items.filter((item) => Number(item.lineSubtotal) > 0).length,
+    lineCount: items.length
+  };
+}
+
+async function recordQuoteValueSnapshot(
+  tx: Prisma.TransactionClient,
+  quoteId: string,
+  eventType: string,
+  user?: AuthenticatedUser
+) {
+  const quote = await tx.quote.findUniqueOrThrow({
+    where: { id: quoteId },
+    select: { id: true, status: true, total: true }
+  });
+  return recordLifecycleStatusEvent(tx, {
+    entityType: LifecycleEntityType.QUOTE,
+    entityId: quote.id,
+    fromStatus: quote.status,
+    toStatus: quote.status,
+    valueSnapshot: Number(quote.total),
+    metadata: await quoteAnalyticsSnapshot(tx, quote.id, eventType),
+    recordWhenUnchanged: true,
+    user
+  });
+}
+
 function quoteItemDataFromItem(
   item: ItemForQuote,
   quantity: number,
@@ -870,6 +946,7 @@ export async function addQuoteItem(
 
     await createQuoteItemsFromSources(tx, quote.id, sources);
     await recalculateQuoteTotal(tx, quote.id);
+    await recordQuoteValueSnapshot(tx, quote.id, "quote_bom_value_changed", user);
     const updatedQuote = await tx.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: quoteDetailInclude
@@ -902,6 +979,7 @@ export async function addQuoteKit(
 
     await createQuoteItemsFromSources(tx, quote.id, sources);
     await recalculateQuoteTotal(tx, quote.id);
+    await recordQuoteValueSnapshot(tx, quote.id, "quote_bom_value_changed", user);
     const updatedQuote = await tx.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: quoteDetailInclude
@@ -963,6 +1041,7 @@ export async function addAdHocQuoteItem(
       }
     });
     await recalculateQuoteTotal(tx, quote.id);
+    await recordQuoteValueSnapshot(tx, quote.id, "quote_bom_value_changed", user);
     return tx.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: quoteDetailInclude
@@ -1028,6 +1107,7 @@ export async function updateQuoteItem(
       }
     });
     await recalculateQuoteTotal(tx, quote.id);
+    await recordQuoteValueSnapshot(tx, quote.id, "quote_bom_value_changed", user);
     return tx.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: quoteDetailInclude
@@ -1058,6 +1138,7 @@ export async function removeQuoteItem(
     if (!existing) throw new Error("QUOTE_ITEM_NOT_FOUND");
     await tx.quoteItem.delete({ where: { id: existing.id } });
     await recalculateQuoteTotal(tx, quote.id);
+    await recordQuoteValueSnapshot(tx, quote.id, "quote_bom_value_changed", user);
     return tx.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: quoteDetailInclude
@@ -1198,6 +1279,13 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
       toStatus: created.status,
       changedAt: created.createdAt,
       valueSnapshot: Number(created.total),
+      metadata: {
+        eventType: "quote_created",
+        revenueSnapshot: 0,
+        costSnapshot: 0,
+        revenueBearingLineCount: 0,
+        lineCount: 0
+      },
       user
     });
     return created;
@@ -1216,6 +1304,7 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
 export async function updateQuote(id: string, input: UpdateQuoteInput, user?: AuthenticatedUser) {
   const existing = await quoteOrThrow(id);
   const statusChanged = input.status !== undefined && input.status !== existing.status;
+  const valueChanged = input.total !== undefined && input.total !== Number(existing.total);
   const statusChangedAt = new Date();
   const client = input.clientId ? await clientOrThrow(input.clientId) : null;
   const effectiveClientId = client?.id ?? existing.clientId;
@@ -1265,6 +1354,12 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
       toStatus: updated.status,
       changedAt: statusChanged ? statusChangedAt : undefined,
       valueSnapshot: Number(updated.total),
+      metadata: await quoteAnalyticsSnapshot(
+        tx,
+        updated.id,
+        statusChanged ? "quote_status_changed" : "quote_value_changed"
+      ),
+      recordWhenUnchanged: valueChanged,
       user
     });
     if (statusChanged) {
@@ -1320,6 +1415,11 @@ export async function createQuoteRevision(
     const nextRevisionNumber = version.revisionNumber + 1;
     const nextQuoteNumber = `${version.baseQuoteNumber}R${nextRevisionNumber}`;
     const snapshot = quoteRevisionSnapshot(quote);
+    const revisionAnalyticsSnapshot = await quoteAnalyticsSnapshot(
+      tx,
+      quote.id,
+      "quote_revision_requested"
+    );
 
     const revision = await tx.quoteRevision.create({
       data: {
@@ -1375,7 +1475,7 @@ export async function createQuoteRevision(
       changedAt: requestedAt,
       valueSnapshot: Number(quote.total),
       metadata: {
-        eventType: "quote_revision_requested",
+        ...revisionAnalyticsSnapshot,
         quoteNumber: quote.quoteNumber,
         revisionNumber: version.revisionNumber,
         nextQuoteNumber,
@@ -1393,6 +1493,7 @@ export async function createQuoteRevision(
       changedAt: requestedAt,
       valueSnapshot: Number(quote.total),
       metadata: {
+        ...revisionAnalyticsSnapshot,
         eventType: "quote_revision_opened",
         quoteNumber: nextQuoteNumber,
         revisionNumber: nextRevisionNumber,
@@ -1482,15 +1583,25 @@ export async function listProjects() {
   );
 }
 
-export async function getProjectById(id: string) {
+export async function getProjectById(id: string, viewerId?: string) {
   const project = await projectOrThrow(id);
-  return toProjectRecord(project, await listProjectDocuments(project.id));
+  const [documents, updateState] = await Promise.all([
+    listProjectDocuments(project.id),
+    listWorkUpdates("project", project.id, "all", undefined, 25, viewerId)
+  ]);
+  return {
+    ...toProjectRecord(project, documents),
+    currentStep: updateState.currentStep,
+    unreadMentionCount: updateState.unreadMentionCount,
+    updates: updateState.updates
+  };
 }
 
 async function createProjectData(
   input: CreateProjectInput,
   tx: Prisma.TransactionClient
 ) {
+  const assignedTo = await resolveWorkAssignee("project", input.assignedToId, tx);
   const client = await tx.client.findFirst({
     where: { id: input.clientId, archivedAt: null },
     select: { id: true }
@@ -1515,7 +1626,8 @@ async function createProjectData(
       title: input.title,
       clientId: input.clientId,
       quoteId: input.quoteId,
-      owner: input.owner || "Unassigned",
+      assignedToId: assignedTo?.id ?? null,
+      ownerSnapshot: assignedTo?.name ?? "Unassigned",
       status: input.status,
       budget: input.budget,
       startDate: dateInput(input.startDate),
@@ -1535,10 +1647,22 @@ export async function createProject(input: CreateProjectInput, user?: Authentica
       changedAt: created.createdAt,
       valueSnapshot: Number(created.budget),
       metadata: {
+        eventType: "project_created",
         startDate: created.startDate?.toISOString() ?? null,
         dueDate: created.dueDate?.toISOString() ?? null
       },
       user
+    });
+    await createWorkSystemUpdate(tx, {
+      stage: "project",
+      recordId: created.id,
+      title: `${created.projectNumber} created`,
+      body: created.quote?.quoteNumber
+        ? `Project created from ${created.quote.quoteNumber}.`
+        : "Project created by direct entry.",
+      user,
+      createdAt: created.createdAt,
+      metadata: { eventType: "project_created", toStatus: created.status }
     });
     return created;
   });
@@ -1565,12 +1689,15 @@ export async function convertQuoteToProject(
       include: quoteInclude
     });
     if (!quote.clientId) throw new Error("QUOTE_CLIENT_REQUIRED");
+    // Quotes still carry a legacy owner string. Resolve it to a Pulse user at
+    // this boundary until quotes receive their own user-assignment pass.
+    const assignedTo = await resolveLegacyWorkAssignee("project", quote.owner, tx);
     const project = await createProjectData(
       {
         title: quote.title,
         clientId: quote.clientId,
         quoteId: quote.id,
-        owner: quote.owner,
+        assignedToId: assignedTo?.id ?? null,
         status: "Ready",
         budget: Number(quote.total),
         startDate: input.startDate,
@@ -1585,10 +1712,20 @@ export async function convertQuoteToProject(
       changedAt: project.createdAt,
       valueSnapshot: Number(project.budget),
       metadata: {
+        eventType: "project_created_from_quote",
         startDate: project.startDate?.toISOString() ?? null,
         dueDate: project.dueDate?.toISOString() ?? null
       },
       user
+    });
+    await createWorkSystemUpdate(tx, {
+      stage: "project",
+      recordId: project.id,
+      title: `${project.projectNumber} created from ${quote.quoteNumber}`,
+      body: `Approved quote ${quote.quoteNumber} entered project delivery.`,
+      user,
+      createdAt: project.createdAt,
+      metadata: { eventType: "project_created_from_quote", toStatus: project.status }
     });
     return { project, quote };
   });
@@ -1614,6 +1751,13 @@ export async function convertQuoteToProject(
 
 export async function updateProject(id: string, input: UpdateProjectInput, user?: AuthenticatedUser) {
   const existing = await projectOrThrow(id);
+  const assignedTo = input.assignedToId !== undefined
+    ? await resolveWorkAssignee("project", input.assignedToId)
+    : undefined;
+  const snapshotChanged =
+    (input.budget !== undefined && input.budget !== Number(existing.budget)) ||
+    (input.startDate !== undefined && (dateInput(input.startDate)?.getTime() ?? null) !== (existing.startDate?.getTime() ?? null)) ||
+    (input.dueDate !== undefined && (dateInput(input.dueDate)?.getTime() ?? null) !== (existing.dueDate?.getTime() ?? null));
   if (input.clientId) await clientOrThrow(input.clientId);
   if (input.clientId && existing.quoteId) {
     const quote = await prisma.quote.findUnique({ where: { id: existing.quoteId }, select: { clientId: true } });
@@ -1625,7 +1769,12 @@ export async function updateProject(id: string, input: UpdateProjectInput, user?
       data: {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
-        ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
+        ...(input.assignedToId !== undefined
+          ? {
+              assignedToId: assignedTo?.id ?? null,
+              ownerSnapshot: assignedTo?.name ?? "Unassigned"
+            }
+          : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.budget !== undefined ? { budget: input.budget } : {}),
         ...(input.startDate !== undefined ? { startDate: dateInput(input.startDate) } : {}),
@@ -1640,11 +1789,42 @@ export async function updateProject(id: string, input: UpdateProjectInput, user?
       toStatus: updated.status,
       valueSnapshot: Number(updated.budget),
       metadata: {
+        eventType: input.status !== undefined && input.status !== existing.status
+          ? "project_status_changed"
+          : "project_snapshot_changed",
         startDate: updated.startDate?.toISOString() ?? null,
         dueDate: updated.dueDate?.toISOString() ?? null
       },
+      recordWhenUnchanged: snapshotChanged,
       user
     });
+    if (input.status !== undefined && input.status !== existing.status) {
+      await createWorkSystemUpdate(tx, {
+        stage: "project",
+        recordId: updated.id,
+        title: `${updated.projectNumber} moved to ${updated.status}`,
+        body: `Status changed from ${existing.status} to ${updated.status}.`,
+        user,
+        metadata: {
+          eventType: "project_status_changed",
+          fromStatus: existing.status,
+          toStatus: updated.status
+        }
+      });
+    }
+    if (
+      input.assignedToId !== undefined &&
+      (assignedTo?.id ?? null) !== existing.assignedToId
+    ) {
+      await createWorkSystemUpdate(tx, {
+        stage: "project",
+        recordId: updated.id,
+        title: "Assigned person changed",
+        body: `${existing.assignedTo?.name ?? "Unassigned"} → ${assignedTo?.name ?? "Unassigned"}`,
+        user,
+        metadata: { eventType: "project_assignee_changed" }
+      });
+    }
     return updated;
   });
   await recordActivity({
@@ -1676,23 +1856,37 @@ export async function archiveProject(id: string, user?: AuthenticatedUser) {
 }
 
 export async function listInvoices() {
-  return (
-    await prisma.invoice.findMany({
+  const invoices = await prisma.invoice.findMany({
       where: { archivedAt: null },
       include: invoiceInclude,
       orderBy: { updatedAt: "desc" }
-    })
-  ).map(toInvoiceRecord);
+    });
+  return Promise.all(
+    invoices.map(async (invoice) =>
+      toInvoiceRecord(invoice, await listInvoiceDocuments(invoice.id))
+    )
+  );
 }
 
-export async function getInvoiceById(id: string) {
-  return toInvoiceRecord(await invoiceOrThrow(id));
+export async function getInvoiceById(id: string, viewerId?: string) {
+  const invoice = await invoiceOrThrow(id);
+  const [documents, updateState] = await Promise.all([
+    listInvoiceDocuments(invoice.id),
+    listWorkUpdates("invoice", invoice.id, "all", undefined, 25, viewerId)
+  ]);
+  return {
+    ...toInvoiceRecord(invoice, documents),
+    currentStep: updateState.currentStep,
+    unreadMentionCount: updateState.unreadMentionCount,
+    updates: updateState.updates
+  };
 }
 
 async function createInvoiceData(
   input: CreateInvoiceInput,
   tx: Prisma.TransactionClient
 ) {
+  const assignedTo = await resolveWorkAssignee("invoice", input.assignedToId, tx);
   const client = await tx.client.findFirst({
     where: { id: input.clientId, archivedAt: null },
     select: { id: true }
@@ -1715,7 +1909,8 @@ async function createInvoiceData(
       title: input.title,
       clientId: input.clientId,
       projectId: input.projectId,
-      owner: input.owner || "Unassigned",
+      assignedToId: assignedTo?.id ?? null,
+      ownerSnapshot: assignedTo?.name ?? "Unassigned",
       status: input.status,
       amount: input.amount,
       issuedDate: dateInput(input.issuedDate),
@@ -1735,10 +1930,22 @@ export async function createInvoice(input: CreateInvoiceInput, user?: Authentica
       changedAt: created.createdAt,
       valueSnapshot: Number(created.amount),
       metadata: {
+        eventType: "invoice_created",
         issuedDate: created.issuedDate?.toISOString() ?? null,
         dueDate: created.dueDate?.toISOString() ?? null
       },
       user
+    });
+    await createWorkSystemUpdate(tx, {
+      stage: "invoice",
+      recordId: created.id,
+      title: `${created.invoiceNumber} created`,
+      body: created.project?.projectNumber
+        ? `Invoice created from ${created.project.projectNumber}.`
+        : "Invoice created by direct entry.",
+      user,
+      createdAt: created.createdAt,
+      metadata: { eventType: "invoice_created", toStatus: created.status }
     });
     return created;
   });
@@ -1750,7 +1957,7 @@ export async function createInvoice(input: CreateInvoiceInput, user?: Authentica
     title: `${invoice.invoiceNumber} created`,
     detail: invoice.title
   });
-  return toInvoiceRecord(invoice);
+  return toInvoiceRecord(invoice, await listInvoiceDocuments(invoice.id));
 }
 
 export async function createInvoiceFromProject(
@@ -1760,36 +1967,58 @@ export async function createInvoiceFromProject(
 ) {
   const project = await projectOrThrow(id);
   if (project.status === "Cancelled") throw new Error("PROJECT_CANCELLED");
-  const invoice = await prisma.$transaction((tx) =>
-    (async () => {
-      const created = await createInvoiceData(
+  const invoice = await prisma.$transaction(async (tx) => {
+    const inheritedAssignee = input.assignedToId === undefined
+      ? await findEligibleWorkAssignee("invoice", project.assignedToId, tx)
+      : undefined;
+    const created = await createInvoiceData(
       {
         title: input.title || `${project.title} milestone invoice`,
         clientId: project.clientId,
         projectId: project.id,
-        owner: input.owner || project.owner,
+        assignedToId: input.assignedToId === undefined
+          ? inheritedAssignee?.id ?? null
+          : input.assignedToId,
         status: "Draft",
         amount: input.amount ?? Number(project.budget),
         issuedDate: input.issuedDate,
         dueDate: input.dueDate
       },
       tx
-      );
-      await recordLifecycleStatusEvent(tx, {
-        entityType: LifecycleEntityType.INVOICE,
-        entityId: created.id,
-        toStatus: created.status,
-        changedAt: created.createdAt,
-        valueSnapshot: Number(created.amount),
-        metadata: {
-          issuedDate: created.issuedDate?.toISOString() ?? null,
-          dueDate: created.dueDate?.toISOString() ?? null
-        },
-        user
-      });
-      return created;
-    })()
-  );
+    );
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.INVOICE,
+      entityId: created.id,
+      toStatus: created.status,
+      changedAt: created.createdAt,
+      valueSnapshot: Number(created.amount),
+      metadata: {
+        eventType: "invoice_created_from_project",
+        issuedDate: created.issuedDate?.toISOString() ?? null,
+        dueDate: created.dueDate?.toISOString() ?? null
+      },
+      user
+    });
+    await createWorkSystemUpdate(tx, {
+      stage: "invoice",
+      recordId: created.id,
+      title: `${created.invoiceNumber} created from ${project.projectNumber}`,
+      body: `Billing record opened for ${project.projectNumber}.`,
+      user,
+      createdAt: created.createdAt,
+      metadata: { eventType: "invoice_created_from_project", toStatus: created.status }
+    });
+    await createWorkSystemUpdate(tx, {
+      stage: "project",
+      recordId: project.id,
+      title: `${created.invoiceNumber} created`,
+      body: `Invoice ${created.invoiceNumber} was created from this project.`,
+      user,
+      createdAt: created.createdAt,
+      metadata: { eventType: "project_invoice_created" }
+    });
+    return created;
+  });
   await Promise.all([
     recordActivity({
       user,
@@ -1806,11 +2035,18 @@ export async function createInvoiceFromProject(
       title: `${invoice.invoiceNumber} created from ${project.projectNumber}`
     })
   ]);
-  return toInvoiceRecord(invoice);
+  return toInvoiceRecord(invoice, await listInvoiceDocuments(invoice.id));
 }
 
 export async function updateInvoice(id: string, input: UpdateInvoiceInput, user?: AuthenticatedUser) {
   const existing = await invoiceOrThrow(id);
+  const assignedTo = input.assignedToId !== undefined
+    ? await resolveWorkAssignee("invoice", input.assignedToId)
+    : undefined;
+  const snapshotChanged =
+    (input.amount !== undefined && input.amount !== Number(existing.amount)) ||
+    (input.issuedDate !== undefined && (dateInput(input.issuedDate)?.getTime() ?? null) !== (existing.issuedDate?.getTime() ?? null)) ||
+    (input.dueDate !== undefined && (dateInput(input.dueDate)?.getTime() ?? null) !== (existing.dueDate?.getTime() ?? null));
   if (input.clientId) await clientOrThrow(input.clientId);
   const effectiveProjectId = input.projectId ?? existing.projectId;
   const effectiveClientId = input.clientId ?? existing.clientId;
@@ -1826,7 +2062,12 @@ export async function updateInvoice(id: string, input: UpdateInvoiceInput, user?
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
         ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
-        ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
+        ...(input.assignedToId !== undefined
+          ? {
+              assignedToId: assignedTo?.id ?? null,
+              ownerSnapshot: assignedTo?.name ?? "Unassigned"
+            }
+          : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.amount !== undefined ? { amount: input.amount } : {}),
         ...(input.issuedDate !== undefined ? { issuedDate: dateInput(input.issuedDate) } : {}),
@@ -1841,11 +2082,42 @@ export async function updateInvoice(id: string, input: UpdateInvoiceInput, user?
       toStatus: updated.status,
       valueSnapshot: Number(updated.amount),
       metadata: {
+        eventType: input.status !== undefined && input.status !== existing.status
+          ? "invoice_status_changed"
+          : "invoice_snapshot_changed",
         issuedDate: updated.issuedDate?.toISOString() ?? null,
         dueDate: updated.dueDate?.toISOString() ?? null
       },
+      recordWhenUnchanged: snapshotChanged,
       user
     });
+    if (input.status !== undefined && input.status !== existing.status) {
+      await createWorkSystemUpdate(tx, {
+        stage: "invoice",
+        recordId: updated.id,
+        title: `${updated.invoiceNumber} moved to ${updated.status}`,
+        body: `Status changed from ${existing.status} to ${updated.status}.`,
+        user,
+        metadata: {
+          eventType: "invoice_status_changed",
+          fromStatus: existing.status,
+          toStatus: updated.status
+        }
+      });
+    }
+    if (
+      input.assignedToId !== undefined &&
+      (assignedTo?.id ?? null) !== existing.assignedToId
+    ) {
+      await createWorkSystemUpdate(tx, {
+        stage: "invoice",
+        recordId: updated.id,
+        title: "Assigned person changed",
+        body: `${existing.assignedTo?.name ?? "Unassigned"} → ${assignedTo?.name ?? "Unassigned"}`,
+        user,
+        metadata: { eventType: "invoice_assignee_changed" }
+      });
+    }
     return updated;
   });
   await recordActivity({
@@ -1856,7 +2128,7 @@ export async function updateInvoice(id: string, input: UpdateInvoiceInput, user?
     title: `${invoice.invoiceNumber} updated`,
     metadata: { status: invoice.status, amount: Number(invoice.amount) }
   });
-  return toInvoiceRecord(invoice);
+  return toInvoiceRecord(invoice, await listInvoiceDocuments(invoice.id));
 }
 
 export async function archiveInvoice(id: string, user?: AuthenticatedUser) {
@@ -1873,5 +2145,5 @@ export async function archiveInvoice(id: string, user?: AuthenticatedUser) {
     type: "Archived",
     title: `${invoice.invoiceNumber} archived`
   });
-  return toInvoiceRecord(invoice);
+  return toInvoiceRecord(invoice, await listInvoiceDocuments(invoice.id));
 }

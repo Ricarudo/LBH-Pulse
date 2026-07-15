@@ -19,6 +19,7 @@ import {
   type AccessRoleRecord,
   type Permission
 } from "@pulse/contracts/access-control";
+import { ViewportPortal } from "@/components/ViewportPortal";
 
 type RolesResponse = { roles: AccessRoleRecord[] };
 type RoleResponse = { role: AccessRoleRecord };
@@ -395,27 +396,31 @@ export function SettingsRolesSection() {
       ) : null}
 
       {createOpen ? (
-        <div className="settings-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}>
-          <form className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="create-role-title" onSubmit={(event) => { event.preventDefault(); void createRole(); }}>
-            <div className="settings-section-title"><div><h2 id="create-role-title">Create role</h2><p>Start blank or copy effective permissions from an active role.</p></div><button type="button" className="icon-button" aria-label="Close" onClick={() => setCreateOpen(false)}><X size={18} /></button></div>
-            <div className="settings-form settings-create-role-form">
-              <label><span>Name</span><input autoFocus required minLength={2} maxLength={50} value={createName} onChange={(event) => setCreateName(event.target.value)} /></label>
-              <label><span>Color</span><div className="settings-role-color-editor"><input type="color" value={createColor} onChange={(event) => setCreateColor(event.target.value.toUpperCase())} /><input pattern="#[0-9A-Fa-f]{6}" value={createColor} onChange={(event) => setCreateColor(event.target.value)} /><span className="role-badge" style={{ backgroundColor: createColor, color: roleColorForeground(createColor) }}>Preview</span></div></label>
-              <label><span>Starting permissions</span><select value={copyFromRoleId} onChange={(event) => setCopyFromRoleId(event.target.value)}><option value="">No access</option>{drafts.map((role) => <option key={role.id} value={role.id}>Copy {role.name}</option>)}</select></label>
-            </div>
-            <div className="settings-modal-actions"><button className="toolbar-button" type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary-button" disabled={saving || createName.trim().length < 2}>{saving ? "Creating…" : "Create role"}</button></div>
-          </form>
-        </div>
+        <ViewportPortal>
+          <div className="settings-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}>
+            <form className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="create-role-title" onSubmit={(event) => { event.preventDefault(); void createRole(); }}>
+              <div className="settings-section-title"><div><h2 id="create-role-title">Create role</h2><p>Start blank or copy effective permissions from an active role.</p></div><button type="button" className="icon-button" aria-label="Close" onClick={() => setCreateOpen(false)}><X size={18} /></button></div>
+              <div className="settings-form settings-create-role-form">
+                <label><span>Name</span><input autoFocus required minLength={2} maxLength={50} value={createName} onChange={(event) => setCreateName(event.target.value)} /></label>
+                <label><span>Color</span><div className="settings-role-color-editor"><input type="color" value={createColor} onChange={(event) => setCreateColor(event.target.value.toUpperCase())} /><input pattern="#[0-9A-Fa-f]{6}" value={createColor} onChange={(event) => setCreateColor(event.target.value)} /><span className="role-badge" style={{ backgroundColor: createColor, color: roleColorForeground(createColor) }}>Preview</span></div></label>
+                <label><span>Starting permissions</span><select value={copyFromRoleId} onChange={(event) => setCopyFromRoleId(event.target.value)}><option value="">No access</option>{drafts.map((role) => <option key={role.id} value={role.id}>Copy {role.name}</option>)}</select></label>
+              </div>
+              <div className="settings-modal-actions"><button className="toolbar-button" type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary-button" disabled={saving || createName.trim().length < 2}>{saving ? "Creating…" : "Create role"}</button></div>
+            </form>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {archiveRole ? (
-        <div className="settings-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setArchiveRole(null)}>
-          <form className="settings-modal" role="alertdialog" aria-modal="true" aria-labelledby="archive-role-title" onSubmit={(event) => { event.preventDefault(); void confirmArchive(); }}>
-            <div className="settings-section-title"><div><h2 id="archive-role-title">Archive {archiveRole.name}?</h2><p>The role remains in audit history and can be restored later.</p></div><button type="button" className="icon-button" aria-label="Close" onClick={() => setArchiveRole(null)}><X size={18} /></button></div>
-            {archiveRole.assignedUserCount ? <label className="settings-form"><span>Move {archiveRole.assignedUserCount} assigned user{archiveRole.assignedUserCount === 1 ? "" : "s"} to</span><select required value={replacementRoleId} onChange={(event) => setReplacementRoleId(event.target.value)}>{drafts.filter((role) => role.id !== archiveRole.id).map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label> : <p className="settings-callout">No users are assigned to this role.</p>}
-            <div className="settings-modal-actions"><button className="toolbar-button" type="button" onClick={() => setArchiveRole(null)}>Cancel</button><button className="primary-button danger" disabled={saving || (archiveRole.assignedUserCount > 0 && !replacementRoleId)}><Archive size={16} />{saving ? "Archiving…" : "Archive role"}</button></div>
-          </form>
-        </div>
+        <ViewportPortal>
+          <div className="settings-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setArchiveRole(null)}>
+            <form className="settings-modal" role="alertdialog" aria-modal="true" aria-labelledby="archive-role-title" onSubmit={(event) => { event.preventDefault(); void confirmArchive(); }}>
+              <div className="settings-section-title"><div><h2 id="archive-role-title">Archive {archiveRole.name}?</h2><p>The role remains in audit history and can be restored later.</p></div><button type="button" className="icon-button" aria-label="Close" onClick={() => setArchiveRole(null)}><X size={18} /></button></div>
+              {archiveRole.assignedUserCount ? <label className="settings-form"><span>Move {archiveRole.assignedUserCount} assigned user{archiveRole.assignedUserCount === 1 ? "" : "s"} to</span><select required value={replacementRoleId} onChange={(event) => setReplacementRoleId(event.target.value)}>{drafts.filter((role) => role.id !== archiveRole.id).map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label> : <p className="settings-callout">No users are assigned to this role.</p>}
+              <div className="settings-modal-actions"><button className="toolbar-button" type="button" onClick={() => setArchiveRole(null)}>Cancel</button><button className="primary-button danger" disabled={saving || (archiveRole.assignedUserCount > 0 && !replacementRoleId)}><Archive size={16} />{saving ? "Archiving…" : "Archive role"}</button></div>
+            </form>
+          </div>
+        </ViewportPortal>
       ) : null}
     </section>
   );

@@ -317,6 +317,8 @@ function toRequestUpdateRecord(
     id: update.id,
     requestId: update.requestId,
     quoteId: update.quoteId,
+    projectId: update.projectId,
+    invoiceId: update.invoiceId,
     kind: (update.kind === "comment" || update.kind === "step" || update.kind === "system"
       ? update.kind
       : "system") as "comment" | "step" | "system",
@@ -1140,6 +1142,7 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
       include: {
         client: { select: { id: true, displayName: true } },
         quote: { select: { id: true, quoteNumber: true } },
+        assignedTo: { include: { accessRole: true } },
         invoices: { where: { archivedAt: null }, select: { id: true } }
       },
       orderBy: { updatedAt: "desc" }
@@ -1148,7 +1151,8 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
       where: { clientId: client.id, archivedAt: null },
       include: {
         client: { select: { id: true, displayName: true } },
-        project: { select: { id: true, projectNumber: true } }
+        project: { select: { id: true, projectNumber: true } },
+        assignedTo: { include: { accessRole: true } }
       },
       orderBy: { updatedAt: "desc" }
     })
@@ -1161,7 +1165,9 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
   const projectRecords = canUser(user, "projects:read")
     ? projects.map((project) => toProjectRecord(project))
     : [];
-  const invoiceRecords = canUser(user, "billing:read") ? invoices.map(toInvoiceRecord) : [];
+  const invoiceRecords = canUser(user, "billing:read")
+    ? invoices.map((invoice) => toInvoiceRecord(invoice))
+    : [];
   const revisionRequests = quoteRecords.reduce((total, quote) => total + quote.revisionNumber, 0);
   const revisedQuotes = quoteRecords.filter((quote) => quote.revisionNumber > 0).length;
   const sentVersions = canUser(user, "quotes:read")

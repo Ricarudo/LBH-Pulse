@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   documentTagLimits,
+  invoiceDocumentCategories,
   projectDocumentCategories,
   quoteDocumentCategories,
   requestDocumentCategories,
@@ -14,7 +15,7 @@ import {
 import { filterLifecycleDocuments } from "@/lib/documents";
 import { formatWorkspaceDate } from "@/lib/formatting";
 
-type Stage = "request" | "quote" | "project";
+type Stage = "request" | "quote" | "project" | "invoice";
 
 type Props = {
   stage: Stage;
@@ -33,11 +34,19 @@ function formatBytes(bytes: number) {
 function categories(stage: Stage) {
   if (stage === "request") return requestDocumentCategories;
   if (stage === "quote") return quoteDocumentCategories;
-  return projectDocumentCategories;
+  if (stage === "project") return projectDocumentCategories;
+  return invoiceDocumentCategories;
 }
 
 function endpoint(stage: Stage, id: string) {
-  return `/api/${stage === "request" ? "requests" : stage === "quote" ? "quotes" : "projects"}/${id}/documents`;
+  const collection = stage === "request"
+    ? "requests"
+    : stage === "quote"
+      ? "quotes"
+      : stage === "project"
+        ? "projects"
+        : "invoices";
+  return `/api/${collection}/${id}/documents`;
 }
 
 function DocumentPreviewModal({
@@ -234,6 +243,10 @@ export function LifecycleDocuments({
       {
         label: "From Quote",
         items: visibleDocuments.filter((document) => document.inherited && document.sourceType === "Quote")
+      },
+      {
+        label: "From Project",
+        items: visibleDocuments.filter((document) => document.inherited && document.sourceType === "Project")
       }
     ].filter((group) => group.items.length),
     [visibleDocuments]

@@ -653,7 +653,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
       const closed = ["Completed", "Cancelled"].includes(project.status);
       const matchesFilter = workspaceFilter === "Active Projects" ? !closed : workspaceFilter === "Closed Projects" ? closed : true;
       return matchesFilter && matchesSearch(
-        [project.projectNumber, project.title, project.status, project.owner, project.quoteNumber, project.budget, project.dueDate],
+        [project.projectNumber, project.title, project.status, project.assignedTo?.name, project.quoteNumber, project.budget, project.dueDate],
         normalizedSearch
       );
     }),
@@ -665,7 +665,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
       const closed = ["Paid", "Void"].includes(invoice.status);
       const matchesFilter = workspaceFilter === "Open Invoices" ? !closed : workspaceFilter === "Paid / Void Invoices" ? closed : true;
       return matchesFilter && matchesSearch(
-        [invoice.invoiceNumber, invoice.title, invoice.status, invoice.owner, invoice.projectNumber, invoice.amount, invoice.dueDate],
+        [invoice.invoiceNumber, invoice.title, invoice.status, invoice.assignedTo?.name, invoice.projectNumber, invoice.amount, invoice.dueDate],
         normalizedSearch
       );
     }),
@@ -1251,7 +1251,7 @@ function ProjectsTable({ projects }: { projects: ProjectRecord[] }) {
         <tr key={project.id}>
           <td><strong>{project.projectNumber}</strong><br /><span className="table-muted">{project.title}</span></td>
           <td><span className={project.status === "On Hold" ? "status-pill warning" : "status-pill"}>{project.status}</span></td>
-          <td>{project.owner}</td><td>{formatMoney(project.budget)}</td>
+          <td>{project.assignedTo?.name ?? "Unassigned"}</td><td>{formatMoney(project.budget)}</td>
           <td>{project.quoteNumber || "Manual project"}</td><td>{displayDate(project.dueDate)}</td><td>{project.invoiceCount}</td>
         </tr>
       ))}</tbody>
@@ -1270,7 +1270,7 @@ function InvoicesTable({ invoices }: { invoices: InvoiceRecord[] }) {
         <tr key={invoice.id}>
           <td><strong>{invoice.invoiceNumber}</strong><br /><span className="table-muted">{invoice.title}</span></td>
           <td><span className={invoice.status === "Overdue" ? "status-pill danger" : invoice.status === "Draft" || invoice.status === "Review" ? "status-pill warning" : "status-pill"}>{invoice.status}</span></td>
-          <td>{invoice.owner}</td><td>{formatMoney(invoice.amount)}</td><td>{invoice.projectNumber || "No project"}</td>
+          <td>{invoice.assignedTo?.name ?? "Unassigned"}</td><td>{formatMoney(invoice.amount)}</td><td>{invoice.projectNumber || "No project"}</td>
           <td>{displayDate(invoice.issuedDate)}</td><td>{displayDate(invoice.dueDate)}</td>
         </tr>
       ))}</tbody>

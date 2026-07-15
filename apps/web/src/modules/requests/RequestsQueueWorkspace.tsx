@@ -17,7 +17,9 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { formatWorkspaceDate } from "@/lib/formatting";
+import { useResponsiveMode } from "@/lib/responsive";
 import {
   requestPriorities,
   requestSources,
@@ -194,6 +196,7 @@ export function RequestsQueueWorkspace({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const responsiveMode = useResponsiveMode();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [quickUpdateId, setQuickUpdateId] = useState("");
   const [updatingIds, setUpdatingIds] = useState<string[]>([]);
@@ -517,7 +520,8 @@ export function RequestsQueueWorkspace({
         </div>
 
         {filtersOpen ? (
-          <section className="requests-filter-panel" aria-label="Request filters">
+          <ViewportPortal enabled={responsiveMode === "compact"}>
+            <section className="requests-filter-panel" aria-label="Request filters">
             <div className="requests-filter-heading">
               <div>
                 <strong>Filter the queue</strong>
@@ -616,7 +620,8 @@ export function RequestsQueueWorkspace({
                 Clear all
               </button>
             </div>
-          </section>
+            </section>
+          </ViewportPortal>
         ) : null}
 
         {activeFilters.length ? (
@@ -978,19 +983,20 @@ export function RequestsQueueWorkspace({
       </div>
 
       {quickUpdateRequest ? (
-        <div
-          className="queue-sheet-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setQuickUpdateId("");
-          }}
-        >
-          <section
-            className="queue-quick-update-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="quick-update-title"
+        <ViewportPortal>
+          <div
+            className="queue-sheet-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) setQuickUpdateId("");
+            }}
           >
+            <section
+              className="queue-quick-update-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="quick-update-title"
+            >
             <div className="queue-sheet-heading">
               <div>
                 <span>{quickUpdateRequest.requestNumber}</span>
@@ -1054,19 +1060,21 @@ export function RequestsQueueWorkspace({
               Open full request
               <ChevronRight size={18} />
             </Link>
-          </section>
-        </div>
+            </section>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {pendingTerminal && terminalRequest ? (
-        <div className="queue-confirm-backdrop">
-          <section
-            className="queue-confirm-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="terminal-status-title"
-            aria-describedby="terminal-status-description"
-          >
+        <ViewportPortal>
+          <div className="queue-confirm-backdrop">
+            <section
+              className="queue-confirm-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="terminal-status-title"
+              aria-describedby="terminal-status-description"
+            >
             <span className="queue-confirm-icon"><AlertTriangle size={20} /></span>
             <h2 id="terminal-status-title">
               {pendingTerminal.reopen
@@ -1119,8 +1127,9 @@ export function RequestsQueueWorkspace({
                   : `Confirm ${pendingTerminal.status}`}
               </button>
             </div>
-          </section>
-        </div>
+            </section>
+          </div>
+        </ViewportPortal>
       ) : null}
     </section>
   );

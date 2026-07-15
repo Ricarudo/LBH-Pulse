@@ -15,6 +15,7 @@ type LifecycleEventInput = {
   changedAt?: Date;
   valueSnapshot?: number | null;
   metadata?: Prisma.InputJsonObject;
+  recordWhenUnchanged?: boolean;
   user?: AuthenticatedUser;
 };
 
@@ -22,7 +23,7 @@ export async function recordLifecycleStatusEvent(
   db: LifecycleWriter,
   input: LifecycleEventInput
 ) {
-  if (input.fromStatus === input.toStatus) return null;
+  if (input.fromStatus === input.toStatus && !input.recordWhenUnchanged) return null;
 
   return db.lifecycleStatusEvent.create({
     data: {

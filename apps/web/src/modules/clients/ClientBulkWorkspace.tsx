@@ -21,6 +21,7 @@ import {
   useState
 } from "react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { canUser } from "@pulse/contracts/auth";
 import type {
   ClientBulkCommitResult,
@@ -570,13 +571,14 @@ export function ClientBulkWorkspace() {
       ) : null}
 
       {confirmOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            aria-labelledby="client-bulk-confirm-title"
-            aria-modal="true"
-            className="client-bulk-confirm-dialog"
-            role="dialog"
-          >
+        <ViewportPortal>
+          <div className="modal-backdrop client-bulk-modal-backdrop" role="presentation">
+            <section
+              aria-labelledby="client-bulk-confirm-title"
+              aria-modal="true"
+              className="client-bulk-confirm-dialog"
+              role="dialog"
+            >
             <h3 id="client-bulk-confirm-title">Apply this client import?</h3>
             <p>
               {selectedRows.size} selected row
@@ -602,8 +604,9 @@ export function ClientBulkWorkspace() {
                 Confirm Import
               </button>
             </div>
-          </section>
-        </div>
+            </section>
+          </div>
+        </ViewportPortal>
       ) : null}
     </div>
   );

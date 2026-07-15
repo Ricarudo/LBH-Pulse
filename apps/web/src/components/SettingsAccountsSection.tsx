@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, KeyRound, Plus, RotateCcw, Search, X } from "lucide-react";
 import { roleColorForeground, type RoleSummary } from "@pulse/contracts/access-control";
 import type { LocalAccountRecord } from "@pulse/contracts/local-users";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { formatWorkspaceDate } from "@/lib/formatting";
 
 type AccountsResponse = {
@@ -458,7 +459,7 @@ export function SettingsAccountsSection({
         </aside>
       </div>
 
-      {createOpen ? <div className="settings-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false); }}><form className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="create-user-title" onSubmit={(event) => { event.preventDefault(); void createAccount(); }}><div className="settings-section-title"><div><h2 id="create-user-title">Create local user</h2><p>Create their account with a temporary password.</p></div><button type="button" className="icon-button" aria-label="Close" onClick={() => setCreateOpen(false)}><X size={18} /></button></div>
+      {createOpen ? <ViewportPortal><div className="settings-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false); }}><form className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="create-user-title" onSubmit={(event) => { event.preventDefault(); void createAccount(); }}><div className="settings-section-title"><div><h2 id="create-user-title">Create local user</h2><p>Create their account with a temporary password.</p></div><button type="button" className="icon-button" aria-label="Close" onClick={() => setCreateOpen(false)}><X size={18} /></button></div>
         <div className="settings-temporary-password-note"><KeyRound size={18} aria-hidden="true" /><div><strong>This password is temporary</strong><p>The user will be required to replace it when they sign in for the first time.</p></div></div>
         <div className="settings-form settings-create-user-form">
           <label><span>Name</span><input autoFocus required value={createDraft.name} onChange={(event) => updateCreateDraft({ name: event.target.value })} /></label>
@@ -469,7 +470,7 @@ export function SettingsAccountsSection({
         </div>
         {createError ? <div className="settings-form-error" role="alert">{createError}</div> : null}
         <div className="settings-modal-actions"><button type="button" className="toolbar-button" onClick={() => setCreateOpen(false)}>Cancel</button><button type="submit" className="primary-button" disabled={saving || !canCreateAccount}>{saving ? "Creating user…" : "Create user"}</button></div>
-      </form></div> : null}
+      </form></div></ViewportPortal> : null}
     </section>
   );
 }

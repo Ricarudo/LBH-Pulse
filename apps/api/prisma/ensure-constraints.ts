@@ -9,24 +9,19 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   await prisma.$executeRawUnsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint constraint_record
-        JOIN pg_namespace namespace_record
-          ON namespace_record.oid = constraint_record.connamespace
-        WHERE constraint_record.conname = 'LifecycleDocument_one_origin_check'
-          AND namespace_record.nspname = 'pulse'
-      ) THEN
-        ALTER TABLE "pulse"."LifecycleDocument"
-        ADD CONSTRAINT "LifecycleDocument_one_origin_check" CHECK (
-          (CASE WHEN "requestId" IS NOT NULL THEN 1 ELSE 0 END) +
-          (CASE WHEN "quoteId" IS NOT NULL THEN 1 ELSE 0 END) +
-          (CASE WHEN "projectId" IS NOT NULL THEN 1 ELSE 0 END) = 1
-        );
-      END IF;
-    END $$;
+    ALTER TABLE "pulse"."LifecycleDocument"
+      DROP CONSTRAINT IF EXISTS "LifecycleDocument_one_origin_check";
+    ALTER TABLE "pulse"."LifecycleDocument"
+      ADD CONSTRAINT "LifecycleDocument_one_origin_check" CHECK (
+        num_nonnulls("requestId", "quoteId", "projectId", "invoiceId") = 1
+      );
+
+    ALTER TABLE "pulse"."RequestUpdate"
+      DROP CONSTRAINT IF EXISTS "RequestUpdate_lifecycle_parent_check";
+    ALTER TABLE "pulse"."RequestUpdate"
+      ADD CONSTRAINT "RequestUpdate_lifecycle_parent_check" CHECK (
+        num_nonnulls("requestId", "quoteId", "projectId", "invoiceId") = 1
+      );
   `);
 }
 

@@ -45,6 +45,7 @@ import {
   type ReactNode
 } from "react";
 import { canUser } from "@pulse/contracts/auth";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import {
   dashboardGreeting,
   dashboardWidgetCatalog,
@@ -1003,7 +1004,7 @@ export function HubDashboard() {
       ) : null}
 
       <div className="sr-only" role="status" aria-live="polite">{message}</div>
-      {message ? <div className="dashboard-toast" role="status">{message}</div> : null}
+      {message ? <ViewportPortal><div className="dashboard-toast" role="status">{message}</div></ViewportPortal> : null}
     </div>
   );
 }

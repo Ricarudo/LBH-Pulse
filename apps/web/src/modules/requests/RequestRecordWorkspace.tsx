@@ -34,6 +34,7 @@ import {
   useState
 } from "react";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { canUser } from "@pulse/contracts/auth";
 import { convertRequestToQuote } from "@/lib/api/requests";
 import { useCurrentUser } from "@/lib/useCurrentUser";
@@ -1349,15 +1350,18 @@ export function RequestRecordWorkspace({
       ) : null}
 
       {undoAction ? (
-        <div className="request-undo-snackbar" role="status" aria-live="polite">
-          <span>{undoAction.label}</span>
-          <button type="button" onClick={() => void undoUpdate()}>Undo</button>
-        </div>
+        <ViewportPortal>
+          <div className="request-undo-snackbar" role="status" aria-live="polite">
+            <span>{undoAction.label}</span>
+            <button type="button" onClick={() => void undoUpdate()}>Undo</button>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {supersessionConfirmationOpen && request.currentStep ? (
-        <div className="record-dialog-backdrop">
-          <section className="record-dialog" role="alertdialog" aria-modal="true" aria-labelledby="replace-current-step-title" aria-describedby="replace-current-step-description">
+        <ViewportPortal>
+          <div className="record-dialog-backdrop">
+            <section className="record-dialog" role="alertdialog" aria-modal="true" aria-labelledby="replace-current-step-title" aria-describedby="replace-current-step-description">
             <div className="record-dialog-heading">
               <span><AlertTriangle size={19} /></span>
               <div>
@@ -1386,13 +1390,15 @@ export function RequestRecordWorkspace({
                 {isPostingUpdate ? "Replacing..." : "Replace current step"}
               </button>
             </div>
-          </section>
-        </div>
+            </section>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {closeStatus ? (
-        <div className="record-dialog-backdrop">
-          <section className="record-dialog" role="dialog" aria-modal="true" aria-labelledby="close-request-title">
+        <ViewportPortal>
+          <div className="record-dialog-backdrop">
+            <section className="record-dialog" role="dialog" aria-modal="true" aria-labelledby="close-request-title">
             <div className="record-dialog-heading">
               <span><AlertTriangle size={19} /></span>
               <div>
@@ -1423,13 +1429,15 @@ export function RequestRecordWorkspace({
                 {isChangingStatus ? "Saving..." : `Confirm ${closeStatus}`}
               </button>
             </div>
-          </section>
-        </div>
+            </section>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {conversionOpen ? (
-        <div className="record-dialog-backdrop">
-          <section className="record-dialog" role="dialog" aria-modal="true" aria-labelledby="convert-request-title">
+        <ViewportPortal>
+          <div className="record-dialog-backdrop">
+            <section className="record-dialog" role="dialog" aria-modal="true" aria-labelledby="convert-request-title">
             <div className="record-dialog-heading">
               <span className="success"><CheckCircle2 size={19} /></span>
               <div>
@@ -1456,8 +1464,9 @@ export function RequestRecordWorkspace({
                 {isConverting ? "Creating..." : "Create draft quote"}
               </button>
             </div>
-          </section>
-        </div>
+            </section>
+          </div>
+        </ViewportPortal>
       ) : null}
     </section>
   );

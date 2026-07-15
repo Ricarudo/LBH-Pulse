@@ -149,16 +149,16 @@ function workHref(kind: DashboardWorkItem["kind"], entityId: string, updateId?: 
       : `/requests/${entityId}`;
   }
   if (kind === "quote") return `/quotes?record=${encodeURIComponent(entityId)}`;
-  if (kind === "project") return `/projects?record=${encodeURIComponent(entityId)}`;
-  return `/billing?record=${encodeURIComponent(entityId)}`;
+  if (kind === "project") return `/projects/${encodeURIComponent(entityId)}`;
+  return `/billing/${encodeURIComponent(entityId)}`;
 }
 
 function activityHref(entityType: string, entityId: string) {
   if (entityType === "Request") return `/requests/${entityId}`;
   if (entityType === "Client") return `/clients/${entityId}`;
   if (entityType === "Quote") return `/quotes?record=${encodeURIComponent(entityId)}`;
-  if (entityType === "Project") return `/projects?record=${encodeURIComponent(entityId)}`;
-  if (entityType === "Invoice") return `/billing?record=${encodeURIComponent(entityId)}`;
+  if (entityType === "Project") return `/projects/${encodeURIComponent(entityId)}`;
+  if (entityType === "Invoice") return `/billing/${encodeURIComponent(entityId)}`;
   return undefined;
 }
 
@@ -314,7 +314,7 @@ export async function getDashboardData(
             projectNumber: true,
             title: true,
             status: true,
-            owner: true,
+            assignedTo: { select: { name: true } },
             budget: true,
             dueDate: true,
             client: { select: { displayName: true } }
@@ -327,7 +327,7 @@ export async function getDashboardData(
             invoiceNumber: true,
             title: true,
             status: true,
-            owner: true,
+            assignedTo: { select: { name: true } },
             amount: true,
             dueDate: true,
             client: { select: { displayName: true } }
@@ -343,10 +343,10 @@ export async function getDashboardData(
     ? quotes.filter((quote) => recordMatchesScope(scope, user, quote.owner, teamNames))
     : [];
   const scopedProjects = canUser(user, "projects:read")
-    ? projects.filter((project) => recordMatchesScope(scope, user, project.owner, teamNames))
+    ? projects.filter((project) => recordMatchesScope(scope, user, project.assignedTo?.name, teamNames))
     : [];
   const scopedInvoices = canUser(user, "billing:read")
-    ? invoices.filter((invoice) => recordMatchesScope(scope, user, invoice.owner, teamNames))
+    ? invoices.filter((invoice) => recordMatchesScope(scope, user, invoice.assignedTo?.name, teamNames))
     : [];
 
   const workItems: DashboardWorkItem[] = [];
@@ -416,7 +416,7 @@ export async function getDashboardData(
     const dueDate = dateOutput(project.dueDate);
     const timing = classifyDashboardDate(dueDate, businessDate);
     const reasons: string[] = [];
-    if (isUnassigned(project.owner)) reasons.push("Needs an owner");
+    if (!project.assignedTo) reasons.push("Needs an assigned person");
     if (project.status === "On Hold") reasons.push("Project on hold");
     if (timing === "later" && !reasons.length) continue;
     workItems.push({
@@ -426,7 +426,7 @@ export async function getDashboardData(
       reference: project.projectNumber,
       title: project.title,
       context: project.client.displayName,
-      owner: project.owner,
+      owner: project.assignedTo?.name ?? "Unassigned",
       status: project.status,
       dueDate: dueDate || undefined,
       timing,
@@ -441,7 +441,7 @@ export async function getDashboardData(
     const dueDate = dateOutput(invoice.dueDate);
     const timing = classifyDashboardDate(dueDate, businessDate);
     const reasons: string[] = [];
-    if (isUnassigned(invoice.owner)) reasons.push("Needs an owner");
+    if (!invoice.assignedTo) reasons.push("Needs an assigned person");
     if (invoice.status === "Overdue" || timing === "overdue") reasons.push("Payment overdue");
     if (timing === "later" && !reasons.length) continue;
     workItems.push({
@@ -451,7 +451,7 @@ export async function getDashboardData(
       reference: invoice.invoiceNumber,
       title: invoice.title,
       context: invoice.client.displayName,
-      owner: invoice.owner,
+      owner: invoice.assignedTo?.name ?? "Unassigned",
       status: invoice.status,
       dueDate: dueDate || undefined,
       timing,

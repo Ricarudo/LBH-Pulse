@@ -11,6 +11,7 @@ import type { Permission } from "@pulse/contracts/access-control";
 import { recordActivity } from "@/lib/services/activityService";
 import {
   documentTagLimits,
+  invoiceDocumentCategories,
   projectDocumentCategories,
   quoteDocumentCategories,
   requestDocumentCategories,
@@ -30,12 +31,13 @@ const allowedMedia = {
   ".webp": "image/webp"
 } as const;
 
-type Stage = "request" | "quote" | "project";
+type Stage = "request" | "quote" | "project" | "invoice";
 
 type Lineage = {
   requestIds: string[];
   quoteId: string | null;
   projectId: string | null;
+  invoiceIds: string[];
   sourceId: string;
   sourceNumber: string;
   sourceType: DocumentSourceType;
@@ -68,7 +70,19 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
         id: true,
         requestNumber: true,
         relatedQuoteId: true,
-        relatedQuote: { select: { project: { select: { id: true } } } }
+        relatedQuote: {
+          select: {
+            project: {
+              select: {
+                id: true,
+                invoices: {
+                  where: { archivedAt: null },
+                  select: { id: true }
+                }
+              }
+            }
+          }
+        }
       }
     });
     if (!request) throw new Error("REQUEST_NOT_FOUND");
@@ -76,6 +90,7 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
       requestIds: [request.id],
       quoteId: request.relatedQuoteId,
       projectId: request.relatedQuote?.project?.id ?? null,
+      invoiceIds: request.relatedQuote?.project?.invoices.map((invoice) => invoice.id) ?? [],
       sourceId: request.id,
       sourceNumber: request.requestNumber,
       sourceType: "Request"
@@ -88,7 +103,15 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
         id: true,
         quoteNumber: true,
         requests: { where: { archivedAt: null }, select: { id: true } },
-        project: { select: { id: true } }
+        project: {
+          select: {
+            id: true,
+            invoices: {
+              where: { archivedAt: null },
+              select: { id: true }
+            }
+          }
+        }
       }
     });
     if (!quote) throw new Error("QUOTE_NOT_FOUND");
@@ -96,30 +119,65 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
       requestIds: quote.requests.map((request) => request.id),
       quoteId: quote.id,
       projectId: quote.project?.id ?? null,
+      invoiceIds: quote.project?.invoices.map((invoice) => invoice.id) ?? [],
       sourceId: quote.id,
       sourceNumber: quote.quoteNumber,
       sourceType: "Quote"
     };
   }
-  const project = await prisma.project.findFirst({
+  if (stage === "project") {
+    const project = await prisma.project.findFirst({
+      where: { id, archivedAt: null },
+      select: {
+        id: true,
+        projectNumber: true,
+        quoteId: true,
+        quote: {
+          select: { requests: { where: { archivedAt: null }, select: { id: true } } }
+        },
+        invoices: {
+          where: { archivedAt: null },
+          select: { id: true }
+        }
+      }
+    });
+    if (!project) throw new Error("PROJECT_NOT_FOUND");
+    return {
+      requestIds: project.quote?.requests.map((request) => request.id) ?? [],
+      quoteId: project.quoteId,
+      projectId: project.id,
+      invoiceIds: project.invoices.map((invoice) => invoice.id),
+      sourceId: project.id,
+      sourceNumber: project.projectNumber,
+      sourceType: "Project"
+    };
+  }
+
+  const invoice = await prisma.invoice.findFirst({
     where: { id, archivedAt: null },
     select: {
       id: true,
-      projectNumber: true,
-      quoteId: true,
-      quote: {
-        select: { requests: { where: { archivedAt: null }, select: { id: true } } }
+      invoiceNumber: true,
+      projectId: true,
+      project: {
+        select: {
+          quoteId: true,
+          quote: {
+            select: { requests: { where: { archivedAt: null }, select: { id: true } } }
+          }
+        }
       }
     }
   });
-  if (!project) throw new Error("PROJECT_NOT_FOUND");
+  if (!invoice) throw new Error("INVOICE_NOT_FOUND");
   return {
-    requestIds: project.quote?.requests.map((request) => request.id) ?? [],
-    quoteId: project.quoteId,
-    projectId: project.id,
-    sourceId: project.id,
-    sourceNumber: project.projectNumber,
-    sourceType: "Project"
+    requestIds: invoice.project?.quote?.requests.map((request) => request.id) ?? [],
+    quoteId: invoice.project?.quoteId ?? null,
+    projectId: invoice.projectId,
+    invoiceIds: [invoice.id],
+    sourceId: invoice.id,
+    sourceNumber: invoice.invoiceNumber,
+    sourceType: "Invoice"
   };
 }
 
@@ -127,15 +185,22 @@ function documentOrigin(document: {
   requestId: string | null;
   quoteId: string | null;
   projectId: string | null;
+  invoiceId: string | null;
 }) {
   if (document.requestId) return { type: "Request" as const, id: document.requestId };
   if (document.quoteId) return { type: "Quote" as const, id: document.quoteId };
   if (document.projectId) return { type: "Project" as const, id: document.projectId };
+  if (document.invoiceId) return { type: "Invoice" as const, id: document.invoiceId };
   throw new Error("DOCUMENT_ORIGIN_INVALID");
 }
 
 async function assertDocumentAccess(
-  document: { requestId: string | null; quoteId: string | null; projectId: string | null },
+  document: {
+    requestId: string | null;
+    quoteId: string | null;
+    projectId: string | null;
+    invoiceId: string | null;
+  },
   user: AuthenticatedUser,
   mode: "read" | "write"
 ) {
@@ -145,10 +210,27 @@ async function assertDocumentAccess(
     if (mode === "read") {
       const request = await prisma.request.findUnique({
         where: { id: document.requestId },
-        select: { relatedQuoteId: true, relatedQuote: { select: { project: { select: { id: true } } } } }
+        select: {
+          relatedQuoteId: true,
+          relatedQuote: {
+            select: {
+              project: {
+                select: {
+                  id: true,
+                  invoices: {
+                    where: { archivedAt: null },
+                    take: 1,
+                    select: { id: true }
+                  }
+                }
+              }
+            }
+          }
+        }
       });
       if (request?.relatedQuoteId) permissions.add("quotes:read");
       if (request?.relatedQuote?.project) permissions.add("projects:read");
+      if (request?.relatedQuote?.project?.invoices.length) permissions.add("billing:read");
     }
   }
   if (document.quoteId) {
@@ -156,12 +238,34 @@ async function assertDocumentAccess(
     if (mode === "read") {
       const quote = await prisma.quote.findUnique({
         where: { id: document.quoteId },
-        select: { project: { select: { id: true } } }
+        select: {
+          project: {
+            select: {
+              id: true,
+              invoices: {
+                where: { archivedAt: null },
+                take: 1,
+                select: { id: true }
+              }
+            }
+          }
+        }
       });
       if (quote?.project) permissions.add("projects:read");
+      if (quote?.project?.invoices.length) permissions.add("billing:read");
     }
   }
-  if (document.projectId) permissions.add(mode === "read" ? "projects:read" : "projects:write");
+  if (document.projectId) {
+    permissions.add(mode === "read" ? "projects:read" : "projects:write");
+    if (mode === "read") {
+      const invoice = await prisma.invoice.findFirst({
+        where: { projectId: document.projectId, archivedAt: null },
+        select: { id: true }
+      });
+      if (invoice) permissions.add("billing:read");
+    }
+  }
+  if (document.invoiceId) permissions.add(mode === "read" ? "billing:read" : "billing:write");
   if (![...permissions].some((permission) => canUser(user, permission))) {
     throw new Error("DOCUMENT_ACCESS_DENIED");
   }
@@ -172,17 +276,22 @@ function visibleWhere(stage: Stage, lineage: Lineage) {
   if (stage === "quote") {
     return { OR: [{ requestId: { in: lineage.requestIds } }, { quoteId: lineage.quoteId! }] };
   }
+  const upstream = [
+    { requestId: { in: lineage.requestIds } },
+    ...(lineage.quoteId ? [{ quoteId: lineage.quoteId }] : []),
+    ...(lineage.projectId ? [{ projectId: lineage.projectId }] : [])
+  ];
+  if (stage === "project") return { OR: upstream };
   return {
     OR: [
-      { requestId: { in: lineage.requestIds } },
-      ...(lineage.quoteId ? [{ quoteId: lineage.quoteId }] : []),
-      { projectId: lineage.projectId! }
+      ...upstream,
+      { invoiceId: lineage.sourceId }
     ]
   };
 }
 
 async function sourceNumbers(lineage: Lineage) {
-  const [requests, quote, project] = await Promise.all([
+  const [requests, quote, project, invoices] = await Promise.all([
     lineage.requestIds.length
       ? prisma.request.findMany({
           where: { id: { in: lineage.requestIds } },
@@ -197,12 +306,19 @@ async function sourceNumbers(lineage: Lineage) {
           where: { id: lineage.projectId },
           select: { id: true, projectNumber: true }
         })
-      : null
+      : null,
+    lineage.invoiceIds.length
+      ? prisma.invoice.findMany({
+          where: { id: { in: lineage.invoiceIds } },
+          select: { id: true, invoiceNumber: true }
+        })
+      : []
   ]);
   return new Map<string, string>([
     ...requests.map((request) => [request.id, request.requestNumber] as const),
     ...(quote ? [[quote.id, quote.quoteNumber] as const] : []),
-    ...(project ? [[project.id, project.projectNumber] as const] : [])
+    ...(project ? [[project.id, project.projectNumber] as const] : []),
+    ...invoices.map((invoice) => [invoice.id, invoice.invoiceNumber] as const)
   ]);
 }
 
@@ -243,6 +359,7 @@ async function listForStage(stage: Stage, id: string): Promise<LifecycleDocument
 export const listRequestDocuments = (id: string) => listForStage("request", id);
 export const listQuoteDocuments = (id: string) => listForStage("quote", id);
 export const listProjectDocuments = (id: string) => listForStage("project", id);
+export const listInvoiceDocuments = (id: string) => listForStage("invoice", id);
 
 async function readSignature(filePath: string) {
   const handle = await open(filePath, "r");
@@ -331,7 +448,8 @@ export async function scanDocumentWithClamAv(filePath: string) {
 function categoriesFor(stage: Stage): readonly string[] {
   if (stage === "request") return requestDocumentCategories;
   if (stage === "quote") return quoteDocumentCategories;
-  return projectDocumentCategories;
+  if (stage === "project") return projectDocumentCategories;
+  return invoiceDocumentCategories;
 }
 
 export function parseDocumentTags(value: string | string[] | undefined): string[] {
@@ -403,7 +521,8 @@ export async function uploadDocument(
         OR: [
           { requestId: { in: lineage.requestIds } },
           ...(lineage.quoteId ? [{ quoteId: lineage.quoteId }] : []),
-          ...(lineage.projectId ? [{ projectId: lineage.projectId }] : [])
+          ...(lineage.projectId ? [{ projectId: lineage.projectId }] : []),
+          ...(lineage.invoiceIds.length ? [{ invoiceId: { in: lineage.invoiceIds } }] : [])
         ]
       },
       _sum: { byteSize: true }
@@ -428,7 +547,7 @@ export async function uploadDocument(
     let document;
     try {
       document = await prisma.$transaction(async (tx) => {
-        const lockKey = lineage.quoteId ?? lineage.projectId ?? lineage.requestIds[0] ?? id;
+        const lockKey = lineage.quoteId ?? lineage.projectId ?? lineage.invoiceIds[0] ?? lineage.requestIds[0] ?? id;
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`documents:${lockKey}`}))`;
         const finalQuota = await tx.lifecycleDocument.aggregate({
           where: {
@@ -436,7 +555,8 @@ export async function uploadDocument(
             OR: [
               { requestId: { in: lineage.requestIds } },
               ...(lineage.quoteId ? [{ quoteId: lineage.quoteId }] : []),
-              ...(lineage.projectId ? [{ projectId: lineage.projectId }] : [])
+              ...(lineage.projectId ? [{ projectId: lineage.projectId }] : []),
+              ...(lineage.invoiceIds.length ? [{ invoiceId: { in: lineage.invoiceIds } }] : [])
             ]
           },
           _sum: { byteSize: true }
@@ -449,6 +569,7 @@ export async function uploadDocument(
             ...(stage === "request" ? { requestId: id } : {}),
             ...(stage === "quote" ? { quoteId: id } : {}),
             ...(stage === "project" ? { projectId: id } : {}),
+            ...(stage === "invoice" ? { invoiceId: id } : {}),
             objectKey,
             originalFileName: original,
             mediaType: expectedMedia,

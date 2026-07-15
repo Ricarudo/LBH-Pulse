@@ -15,17 +15,18 @@ import {
   useRef,
   useState
 } from "react";
-import {
-  completeQuoteUpdate,
-  fetchQuoteUpdates,
-  fetchQuoteUpdateTeamMembers,
-  markQuoteMentionsRead,
-  postQuoteUpdate,
-  undoQuoteUpdate,
-  type QuoteUpdatesResponse
-} from "@/lib/api/quotes";
-import { formatWorkspaceDate } from "@/lib/formatting";
 import { ViewportPortal } from "@/components/ViewportPortal";
+import {
+  completeWorkUpdate,
+  fetchWorkUpdates,
+  fetchWorkUsers,
+  markWorkMentionsRead,
+  postWorkUpdate,
+  undoWorkUpdate,
+  type WorkApiStage,
+  type WorkUpdatesResponse
+} from "@/lib/api/work";
+import { formatWorkspaceDate } from "@/lib/formatting";
 import {
   requestUpdateFilters,
   type RequestAssignee,
@@ -34,12 +35,13 @@ import {
 } from "@pulse/contracts/requests";
 
 type Props = {
-  quoteId: string;
+  stage: WorkApiStage;
+  recordId: string;
   initialUpdates: RequestUpdate[];
   initialCurrentStep: RequestUpdate | null;
   unreadMentionCount: number;
   canWrite: boolean;
-  onChange: (state: QuoteUpdatesResponse) => void;
+  onChange: (state: WorkUpdatesResponse) => void;
   onToast: (message: string) => void;
 };
 
@@ -47,8 +49,16 @@ function formatDate(value: string) {
   return formatWorkspaceDate(value) || "Not set";
 }
 
-export function QuoteUpdatesPanel({
-  quoteId,
+function sourceLabel(update: RequestUpdate) {
+  if (update.invoiceId) return "Invoice";
+  if (update.projectId) return "Project";
+  if (update.quoteId) return "Quote";
+  return "Request";
+}
+
+export function LifecycleUpdatesPanel({
+  stage,
+  recordId,
   initialUpdates,
   initialCurrentStep,
   unreadMentionCount,
@@ -56,6 +66,7 @@ export function QuoteUpdatesPanel({
   onChange,
   onToast
 }: Props) {
+  const label = stage === "project" ? "project" : "invoice";
   const [updates, setUpdates] = useState(initialUpdates);
   const [currentStep, setCurrentStep] = useState(initialCurrentStep);
   const [filter, setFilter] = useState<RequestUpdateFilter>("all");
@@ -81,20 +92,20 @@ export function QuoteUpdatesPanel({
   }, [initialCurrentStep, initialUpdates]);
 
   useEffect(() => {
-    void fetchQuoteUpdateTeamMembers({ cache: "no-store" })
+    void fetchWorkUsers(stage, { cache: "no-store" })
       .then((data) => setTeamMembers(data.teamMembers))
       .catch(() => setTeamMembers([]));
-  }, []);
+  }, [stage]);
 
   useEffect(() => {
     if (!unreadMentionCount) return;
-    void markQuoteMentionsRead(quoteId).catch(() => undefined);
-  }, [quoteId, unreadMentionCount]);
+    void markWorkMentionsRead(stage, recordId).catch(() => undefined);
+  }, [recordId, stage, unreadMentionCount]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void fetchQuoteUpdates(quoteId, filter, null, { cache: "no-store" })
+    void fetchWorkUpdates(stage, recordId, filter, null, { cache: "no-store" })
       .then((data) => {
         if (cancelled) return;
         setUpdates(data.updates);
@@ -108,8 +119,10 @@ export function QuoteUpdatesPanel({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
-  }, [filter, quoteId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [filter, recordId, stage]);
 
   useEffect(() => {
     if (!undoAction) return;
@@ -121,11 +134,14 @@ export function QuoteUpdatesPanel({
     if (mentionQuery === null) return [];
     const query = mentionQuery.toLowerCase();
     return teamMembers
-      .filter((member) => member.name.toLowerCase().includes(query) || member.email.toLowerCase().includes(query))
+      .filter((member) =>
+        member.name.toLowerCase().includes(query) ||
+        member.email.toLowerCase().includes(query)
+      )
       .slice(0, 5);
   }, [mentionQuery, teamMembers]);
 
-  function applyState(data: QuoteUpdatesResponse) {
+  function applyState(data: WorkUpdatesResponse) {
     setUpdates(data.updates);
     setCurrentStep(data.currentStep);
     setCursor(data.nextCursor);
@@ -158,7 +174,9 @@ export function QuoteUpdatesPanel({
       setMentionIndex((current) => (current + 1) % mentionSuggestions.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setMentionIndex((current) => (current - 1 + mentionSuggestions.length) % mentionSuggestions.length);
+      setMentionIndex(
+        (current) => (current - 1 + mentionSuggestions.length) % mentionSuggestions.length
+      );
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       insertMention(mentionSuggestions[mentionIndex]);
@@ -178,7 +196,7 @@ export function QuoteUpdatesPanel({
     try {
       setConfirmReplace(false);
       setPosting(true);
-      const data = await postQuoteUpdate(quoteId, {
+      const data = await postWorkUpdate(stage, recordId, {
         kind: isStep ? "step" : "comment",
         title: "",
         body: body.trim(),
@@ -187,7 +205,9 @@ export function QuoteUpdatesPanel({
         mentionIds
       });
       applyState(data);
-      if (isStep && data.currentStep) setUndoAction({ id: data.currentStep.id, label: "Undo step replacement" });
+      if (isStep && data.currentStep) {
+        setUndoAction({ id: data.currentStep.id, label: "Undo step replacement" });
+      }
       setBody("");
       setIsStep(false);
       setAssigneeId("");
@@ -206,7 +226,7 @@ export function QuoteUpdatesPanel({
     if (!currentStep || !canWrite) return;
     try {
       const completedId = currentStep.id;
-      const data = await completeQuoteUpdate(quoteId, completedId);
+      const data = await completeWorkUpdate(stage, recordId, completedId);
       applyState(data);
       setUndoAction({ id: completedId, label: "Undo completion" });
       onToast("Current step completed.");
@@ -218,7 +238,7 @@ export function QuoteUpdatesPanel({
   async function undo() {
     if (!undoAction) return;
     try {
-      applyState(await undoQuoteUpdate(quoteId, undoAction.id));
+      applyState(await undoWorkUpdate(stage, recordId, undoAction.id));
       setUndoAction(null);
       onToast("Update change undone.");
     } catch (error) {
@@ -230,7 +250,9 @@ export function QuoteUpdatesPanel({
     if (!cursor || loading) return;
     try {
       setLoading(true);
-      const data = await fetchQuoteUpdates(quoteId, filter, cursor, { cache: "no-store" });
+      const data = await fetchWorkUpdates(stage, recordId, filter, cursor, {
+        cache: "no-store"
+      });
       setUpdates((current) => [...current, ...data.updates]);
       setCursor(data.nextCursor);
       setHasMore(data.hasMore);
@@ -242,19 +264,26 @@ export function QuoteUpdatesPanel({
   }
 
   return (
-    <section className="quote-updates-workspace" aria-labelledby="quote-updates-heading">
+    <section className="quote-updates-workspace lifecycle-updates-workspace" aria-labelledby={`${label}-updates-heading`}>
       <div className="panel-header">
         <div>
-          <h2 id="quote-updates-heading">Updates</h2>
-          <p className="panel-note">Request history and quote work stay together in one immutable timeline.</p>
+          <h2 id={`${label}-updates-heading`}>Updates</h2>
+          <p className="panel-note">Upstream history and {label} work stay together in one immutable lifecycle timeline.</p>
         </div>
-        {unreadMentionCount ? <span className="quote-update-unread">{unreadMentionCount} unread mention{unreadMentionCount === 1 ? "" : "s"}</span> : null}
+        {unreadMentionCount ? (
+          <span className="quote-update-unread">
+            {unreadMentionCount} unread mention{unreadMentionCount === 1 ? "" : "s"}
+          </span>
+        ) : null}
       </div>
       <div className="quote-updates-layout">
         <div className="quote-updates-compose-column">
           <section className="request-current-step-card">
             <div className="record-section-heading">
-              <div><span>Current step</span><h2>{currentStep?.title || currentStep?.body || "No current step"}</h2></div>
+              <div>
+                <span>Current step</span>
+                <h2>{currentStep?.title || currentStep?.body || "No current step"}</h2>
+              </div>
               {currentStep ? <span className="request-step-status">Open</span> : null}
             </div>
             {currentStep ? (
@@ -268,14 +297,17 @@ export function QuoteUpdatesPanel({
                   <CheckCircle2 size={16} /> Complete step
                 </button>
               </>
-            ) : <p className="request-current-step-empty">Promote an update to keep the next responsible action visible on the quote.</p>}
+            ) : (
+              <p className="request-current-step-empty">Promote an update to keep the next responsible action visible on this {label}.</p>
+            )}
           </section>
+
           <section className="request-update-composer">
-            <label htmlFor="quote-update-body">
+            <label htmlFor={`${label}-update-body`}>
               Add an update
               <textarea
                 ref={composerRef}
-                id="quote-update-body"
+                id={`${label}-update-body`}
                 value={body}
                 onChange={(event) => changeBody(event.target.value)}
                 onKeyDown={handleComposerKeyDown}
@@ -287,14 +319,28 @@ export function QuoteUpdatesPanel({
             {mentionSuggestions.length ? (
               <div className="request-mention-suggestions" role="listbox" aria-label="Mention suggestions">
                 {mentionSuggestions.map((member, index) => (
-                  <button type="button" role="option" aria-selected={index === mentionIndex} key={member.id} onMouseDown={(event) => event.preventDefault()} onClick={() => insertMention(member)}>
-                    <AtSign size={14} /><span><strong>{member.name}</strong><small>{member.email}</small></span>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={index === mentionIndex}
+                    key={member.id}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => insertMention(member)}
+                  >
+                    <AtSign size={14} />
+                    <span><strong>{member.name}</strong><small>{member.email}</small></span>
                   </button>
                 ))}
               </div>
             ) : null}
             <div className="request-update-composer-footer">
-              <button type="button" className={isStep ? "request-update-chip active" : "request-update-chip"} aria-pressed={isStep} onClick={() => setIsStep((current) => !current)} disabled={!canWrite}>
+              <button
+                type="button"
+                className={isStep ? "request-update-chip active" : "request-update-chip"}
+                aria-pressed={isStep}
+                onClick={() => setIsStep((current) => !current)}
+                disabled={!canWrite}
+              >
                 <CheckCircle2 size={14} /> Set as current step
               </button>
               <button className="primary" type="button" onClick={() => void post()} disabled={!canWrite || !body.trim() || posting}>
@@ -303,12 +349,22 @@ export function QuoteUpdatesPanel({
             </div>
             {isStep ? (
               <div className="request-step-fields">
-                <label>Responsible assignee <span aria-hidden="true">*</span><select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}><option value="">Choose a Pulse user</option>{teamMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-                <label>Target date <span className="optional-label">Optional</span><input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></label>
+                <label>
+                  Responsible assignee <span aria-hidden="true">*</span>
+                  <select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
+                    <option value="">Choose a Pulse user</option>
+                    {teamMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Target date <span className="optional-label">Optional</span>
+                  <input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} />
+                </label>
               </div>
             ) : null}
           </section>
         </div>
+
         <div className="quote-updates-feed">
           <div className="request-updates-toolbar" role="tablist" aria-label="Update filters">
             {requestUpdateFilters.map((value) => (
@@ -321,15 +377,19 @@ export function QuoteUpdatesPanel({
             <ol className="request-update-list">
               {updates.map((update) => (
                 <li key={update.id} className={`request-update-item kind-${update.kind}${update.stepStatus ? ` status-${update.stepStatus}` : ""}`}>
-                  <div className="request-update-item-marker" aria-hidden="true">{update.kind === "step" ? <CheckCircle2 size={16} /> : update.kind === "comment" ? <AtSign size={16} /> : <CalendarClock size={16} />}</div>
+                  <div className="request-update-item-marker" aria-hidden="true">
+                    {update.kind === "step" ? <CheckCircle2 size={16} /> : update.kind === "comment" ? <AtSign size={16} /> : <CalendarClock size={16} />}
+                  </div>
                   <div className="request-update-item-content">
-                    <div className="request-update-item-headline"><strong>{update.title}</strong><span className="request-update-item-status">{update.kind === "step" ? update.stepStatus : update.kind === "system" ? "System" : "Comment"}</span></div>
+                    <div className="request-update-item-headline">
+                      <strong>{update.title}</strong>
+                      <span className="request-update-item-status">{update.kind === "step" ? update.stepStatus : update.kind === "system" ? "System" : "Comment"}</span>
+                    </div>
                     {update.body ? <p>{update.body}</p> : null}
                     <div className="request-update-item-meta">
-                      <span className="quote-update-stage">{update.quoteId ? "Quote" : "Request"}</span>
+                      <span className="quote-update-stage">{sourceLabel(update)}</span>
                       <span>{update.author.name}</span>
                       <time dateTime={update.createdAt}>{formatWorkspaceDate(update.createdAt, true)}</time>
-                      {update.metadata?.precision === "ESTIMATED" ? <span className="quote-update-estimated">Estimated date</span> : null}
                       {update.kind === "step" && update.assignee ? <span>Assigned to {update.assignee.name}</span> : null}
                       {update.kind === "step" && update.targetDate ? <span>Target {formatDate(update.targetDate)}</span> : null}
                     </div>
@@ -337,18 +397,42 @@ export function QuoteUpdatesPanel({
                 </li>
               ))}
             </ol>
-          ) : <div className="activity-empty-state"><AtSign size={18} /><span>{loading ? "Loading updates…" : "No updates match this filter yet."}</span></div>}
-          {hasMore ? <button className="request-updates-load-more" type="button" onClick={() => void loadMore()} disabled={loading}>{loading ? "Loading…" : "Load older updates"}</button> : null}
+          ) : (
+            <div className="activity-empty-state"><AtSign size={18} /><span>{loading ? "Loading updates…" : "No updates match this filter yet."}</span></div>
+          )}
+          {hasMore ? (
+            <button className="request-updates-load-more" type="button" onClick={() => void loadMore()} disabled={loading}>
+              {loading ? "Loading…" : "Load older updates"}
+            </button>
+          ) : null}
         </div>
       </div>
-      {undoAction ? <ViewportPortal><div className="request-undo-snackbar" role="status"><span>{undoAction.label}</span><button type="button" onClick={() => void undo()}>Undo</button></div></ViewportPortal> : null}
+
+      {undoAction ? (
+        <ViewportPortal>
+          <div className="request-undo-snackbar" role="status">
+            <span>{undoAction.label}</span>
+            <button type="button" onClick={() => void undo()}>Undo</button>
+          </div>
+        </ViewportPortal>
+      ) : null}
       {confirmReplace && currentStep ? (
         <ViewportPortal>
           <div className="record-dialog-backdrop">
-            <section className="record-dialog" role="alertdialog" aria-modal="true" aria-labelledby="quote-replace-step-title">
-              <div className="record-dialog-heading"><span><CheckCircle2 size={19} /></span><div><h2 id="quote-replace-step-title">Replace the current step?</h2><p>The existing step remains in the lifecycle timeline as superseded.</p></div><button type="button" aria-label="Close dialog" onClick={() => setConfirmReplace(false)}><X size={19} /></button></div>
-              <div className="record-conversion-summary request-supersession-summary"><strong>{currentStep.title || currentStep.body}</strong><span>Assigned to {currentStep.assignee?.name || "Unassigned"}</span></div>
-              <div className="record-dialog-actions"><button type="button" onClick={() => setConfirmReplace(false)}>Keep current step</button><button className="danger" type="button" onClick={() => void post(true)} disabled={posting}>{posting ? "Replacing…" : "Replace current step"}</button></div>
+            <section className="record-dialog" role="alertdialog" aria-modal="true" aria-labelledby={`${label}-replace-step-title`}>
+              <div className="record-dialog-heading">
+                <span><CheckCircle2 size={19} /></span>
+                <div><h2 id={`${label}-replace-step-title`}>Replace the current step?</h2><p>The existing step remains in the lifecycle timeline as superseded.</p></div>
+                <button type="button" aria-label="Close dialog" onClick={() => setConfirmReplace(false)}><X size={19} /></button>
+              </div>
+              <div className="record-conversion-summary request-supersession-summary">
+                <strong>{currentStep.title || currentStep.body}</strong>
+                <span>Assigned to {currentStep.assignee?.name || "Unassigned"}</span>
+              </div>
+              <div className="record-dialog-actions">
+                <button type="button" onClick={() => setConfirmReplace(false)}>Keep current step</button>
+                <button className="danger" type="button" onClick={() => void post(true)} disabled={posting}>{posting ? "Replacing…" : "Replace current step"}</button>
+              </div>
             </section>
           </div>
         </ViewportPortal>

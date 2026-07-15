@@ -1,4 +1,4 @@
-export type DocumentSourceType = "Request" | "Quote" | "Project";
+export type DocumentSourceType = "Request" | "Quote" | "Project" | "Invoice";
 
 export type LifecycleDocumentRecord = {
   id: string;
@@ -60,5 +60,14 @@ export const projectDocumentCategories = [
   "Permit",
   "Site Photo",
   "Closeout",
+  "Other"
+] as const;
+
+export const invoiceDocumentCategories = [
+  "Invoice",
+  "Supporting Document",
+  "Purchase Order",
+  "Payment Record",
+  "Credit Memo",
   "Other"
 ] as const;

@@ -24,6 +24,7 @@ import {
 } from "@pulse/contracts/clients";
 import { formJson } from "@/lib/forms/sanitization";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { ViewportPortal } from "@/components/ViewportPortal";
 import { ClientProfileSiteDialog } from "./ClientProfileDialogs";
 
 type ClientListResponse = {
@@ -473,22 +474,23 @@ export function SitesModule() {
       </section>
 
       {clientPickerOpen ? (
-        <div
-          className="client-create-dialog-scrim"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setClientPickerOpen(false);
-            }
-          }}
-        >
-          <form
-            className="client-create-dialog site-client-picker-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="site-client-picker-title"
-            onMouseDown={(event) => event.stopPropagation()}
-            onSubmit={continueCreateSite}
+        <ViewportPortal>
+          <div
+            className="client-create-dialog-scrim"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setClientPickerOpen(false);
+              }
+            }}
           >
+            <form
+              className="client-create-dialog site-client-picker-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="site-client-picker-title"
+              onMouseDown={(event) => event.stopPropagation()}
+              onSubmit={continueCreateSite}
+            >
             <div className="client-create-dialog-header">
               <div>
                 <p className="eyebrow">Directory</p>
@@ -552,8 +554,9 @@ export function SitesModule() {
                 </Link>
               )}
             </div>
-          </form>
-        </div>
+            </form>
+          </div>
+        </ViewportPortal>
       ) : null}
 
       {siteEditor ? (

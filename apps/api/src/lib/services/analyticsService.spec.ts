@@ -4,10 +4,13 @@ import {
   agingBucket,
   analyticsDelta,
   analyticsLocalDate,
+  canUseCurrentQuoteMarginFallback,
   calculateAverageRevisions,
   calculateQuotedMargin,
   calculateRevisionReturnRate,
+  calculateWeightedQuotedMargin,
   calculateWinRate,
+  isOnTimeLocalDate,
   isSupersededLifecycleDecision,
   resolveAnalyticsRange
 } from "@/lib/services/analyticsService";
@@ -51,6 +54,35 @@ describe("analytics metric definitions", () => {
       { lineSubtotal: 0, quantity: 1, unitCost: 20 }
     ]), 0.5);
     assert.equal(calculateQuotedMargin([]), null);
+  });
+
+  it("weights quoted margin by revenue and treats zero cost as valid", () => {
+    assert.equal(calculateWeightedQuotedMargin([
+      [{ lineSubtotal: 100, quantity: 1, unitCost: 0 }],
+      [{ lineSubtotal: 900, quantity: 1, unitCost: 450 }]
+    ]), 0.55);
+    assert.equal(calculateQuotedMargin([
+      { lineSubtotal: 100, quantity: 1, unitCost: 0 }
+    ]), 1);
+  });
+
+  it("does not infer captured costs from legacy-import defaults", () => {
+    assert.equal(canUseCurrentQuoteMarginFallback("LEGACY_IMPORT"), false);
+    assert.equal(canUseCurrentQuoteMarginFallback("APPLICATION"), true);
+    assert.equal(canUseCurrentQuoteMarginFallback("MIGRATION"), true);
+  });
+
+  it("compares completion and due dates in the workspace calendar", () => {
+    assert.equal(isOnTimeLocalDate(
+      new Date("2026-07-15T02:30:00Z"),
+      new Date("2026-07-14T13:00:00Z"),
+      "America/Puerto_Rico"
+    ), true);
+    assert.equal(isOnTimeLocalDate(
+      new Date("2026-07-15T04:30:00Z"),
+      new Date("2026-07-14T13:00:00Z"),
+      "America/Puerto_Rico"
+    ), false);
   });
 
   it("places receivables into stable aging buckets", () => {

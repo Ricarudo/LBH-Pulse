@@ -1659,32 +1659,34 @@ async function main() {
     projectNumber: string,
     title: string,
     clientName: string,
-    owner: string,
+    assigneeName: string,
     status: string,
     budget: number,
     dueDate: string
   ]> = [
-    ["PRJ-118", "Banco Popular Tower", "Banco Popular Tower", "David K.", "In Progress", 284000, "2026-06-02"],
-    ["PRJ-119", "Northfield Upgrade", "Northfield Industries", "Alex M.", "Field Work", 96000, "2026-05-28"],
-    ["PRJ-120", "Metro Retail Camera Refresh", "Metro Retail Group", "Maria S.", "Ready", 42000, "2026-06-05"]
+    ["PRJ-118", "Banco Popular Tower", "Banco Popular Tower", "Project Manager User", "In Progress", 284000, "2026-06-02"],
+    ["PRJ-119", "Northfield Upgrade", "Northfield Industries", "Technician User", "Field Work", 96000, "2026-05-28"],
+    ["PRJ-120", "Metro Retail Camera Refresh", "Metro Retail Group", "Project Manager User", "Ready", 42000, "2026-06-05"]
   ];
   const seededProjects = await Promise.all(projectSeeds.map(([
     projectNumber,
     title,
     clientName,
-    owner,
+    assigneeName,
     status,
     budget,
     dueDate
   ]) => {
     const client = clientsByName.get(clientName);
     if (!client) return null;
+    const assignee = usersByName.get(assigneeName);
     return prisma.project.create({
       data: {
         projectNumber,
         title,
         clientId: client.id,
-        owner,
+        assignedToId: assignee?.id,
+        ownerSnapshot: assignee?.name ?? "Unassigned",
         status,
         budget,
         dueDate: new Date(`${dueDate}T12:00:00.000Z`)
@@ -1702,13 +1704,13 @@ async function main() {
     title: string,
     clientName: string,
     projectNumber: string,
-    owner: string,
+    assigneeName: string,
     status: string,
     amount: number,
     dueDate: string
   ]> = [
-    ["INV-901", "Northfield progress invoice", "Northfield Industries", "PRJ-119", "Sarah M.", "Sent", 24800, "2026-05-20"],
-    ["INV-902", "Banco Popular milestone billing", "Banco Popular Tower", "PRJ-118", "David K.", "Review", 76000, "2026-05-19"],
+    ["INV-901", "Northfield progress invoice", "Northfield Industries", "PRJ-119", "Technician User", "Sent", 24800, "2026-05-20"],
+    ["INV-902", "Banco Popular milestone billing", "Banco Popular Tower", "PRJ-118", "Project Manager User", "Review", 76000, "2026-05-19"],
     ["INV-903", "Metro Retail deposit", "Metro Retail Group", "PRJ-120", "Sales User", "Overdue", 8500, "2026-05-13"]
   ];
   await Promise.all(invoiceSeeds.map(([
@@ -1716,20 +1718,22 @@ async function main() {
     title,
     clientName,
     projectNumber,
-    owner,
+    assigneeName,
     status,
     amount,
     dueDate
   ]) => {
     const client = clientsByName.get(clientName);
     if (!client) return null;
+    const assignee = usersByName.get(assigneeName);
     return prisma.invoice.create({
       data: {
         invoiceNumber,
         title,
         clientId: client.id,
         projectId: projectsByNumber.get(projectNumber)?.id,
-        owner,
+        assignedToId: assignee?.id,
+        ownerSnapshot: assignee?.name ?? "Unassigned",
         status,
         amount,
         dueDate: new Date(`${dueDate}T12:00:00.000Z`)
