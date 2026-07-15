@@ -20756,7 +20756,8 @@ a {
 /* Analytics verification pass */
 .main-analytics {
   padding: 0;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .main-analytics .page-transition-stage {
