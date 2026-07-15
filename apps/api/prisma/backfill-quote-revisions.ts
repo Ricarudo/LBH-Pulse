@@ -14,6 +14,7 @@ const prisma = new PrismaClient({ adapter });
 
 const quoteLoad = {
   items: { orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }] },
+  contact: { include: { site: { select: { siteName: true } } } },
   project: { select: { id: true } },
   revisions: { select: { id: true, revisionNumber: true } }
 } satisfies Prisma.QuoteInclude;
@@ -84,10 +85,39 @@ function snapshotItemTotal(snapshot: Prisma.JsonValue) {
   }, 0);
 }
 
+function contactSnapshot(contact: LoadedQuote["contact"]) {
+  if (!contact) return null;
+  return {
+    id: contact.id,
+    siteId: contact.siteId ?? undefined,
+    siteName: contact.site?.siteName ?? undefined,
+    role: contact.role ?? "",
+    firstName: contact.firstName,
+    lastName: contact.lastName,
+    name: contact.name?.trim() ||
+      [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() ||
+      "Not captured",
+    title: contact.title ?? "",
+    department: contact.department ?? "",
+    email: contact.email ?? "",
+    phone: contact.phone ?? "",
+    mobile: contact.mobile ?? "",
+    preferredContactMethod: contact.preferredContactMethod ?? "",
+    isPrimary: contact.isPrimary,
+    isBilling: contact.isBilling,
+    isPrimaryContact: contact.isPrimary || contact.isPrimaryContact,
+    isBillingContact: contact.isBilling || contact.isBillingContact,
+    isTechnicalContact: contact.isTechnicalContact,
+    isDecisionMaker: contact.isDecisionMaker,
+    notes: contact.notes ?? ""
+  };
+}
+
 function quoteSnapshot(quote: LoadedQuote, baseQuoteNumber: string, dataAvailable = true) {
   return JSON.parse(JSON.stringify({
     dataAvailable,
     baseQuoteNumber,
+    contact: contactSnapshot(quote.contact),
     context: {
       sourceRequestId: quote.sourceRequestIdSnapshot,
       requestNumber: quote.requestNumberSnapshot ?? "",
@@ -449,6 +479,7 @@ async function consolidateFamily(
       sentAtPrecision: latestSentAt ? sentPrecisionFor(latest, sourceEvents) : null,
       title: latest.title,
       clientId: latest.clientId,
+      contactId: latest.contactId,
       clientName: latest.clientName,
       status: latest.status,
       owner: latest.owner,

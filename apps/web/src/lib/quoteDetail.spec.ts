@@ -14,6 +14,8 @@ const legacyQuote: QuoteRecord = {
   title: "Legacy quote",
   clientId: null,
   clientName: "Example client",
+  contactId: null,
+  contact: null,
   status: "Draft",
   owner: "Sales User",
   total: 100,

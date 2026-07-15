@@ -1,5 +1,6 @@
 import type { LifecycleDocumentRecord } from "./documents";
 import type { QuoteItemRecord } from "./items";
+import type { ClientContact } from "./clients";
 import { serviceCategories, type RequestUpdate } from "./requests";
 
 export const quoteStatuses = [
@@ -66,6 +67,8 @@ export type QuoteRecord = {
   title: string;
   clientId: string | null;
   clientName: string;
+  contactId: string | null;
+  contact: ClientContact | null;
   status: QuoteStatus;
   owner: string;
   total: number;
@@ -109,7 +112,10 @@ export type QuoteDetailRecord = QuoteRecord & {
 export type QuoteRevisionDetailRecord = {
   quoteId: string;
   baseQuoteNumber: string;
+  clientId: string | null;
+  clientName: string;
   revision: QuoteVersionSummary;
+  contact: ClientContact | null;
   context: QuoteContextSnapshot;
   proposalNotes: string;
   proposalPreparedAt: string;
@@ -174,21 +180,30 @@ const id = z.string().trim().min(1);
 const optionalId = z.string().trim().optional().transform((value) => value || undefined);
 const optionalDate = z.string().trim().optional().transform((value) => value || undefined);
 const money = z.coerce.number().min(0).max(9999999999);
+const quoteTrades = z
+  .array(z.enum(serviceCategories))
+  .max(serviceCategories.length)
+  .transform((values) => Array.from(new Set(values)));
 
 export const createQuoteSchema = z.object({
   title: z.string().trim().min(1).max(200),
-  clientId: optionalId,
+  clientId: id,
+  contactId: id,
   owner: z.string().trim().max(120).default("Unassigned"),
   status: z.enum(quoteStatuses).default("Draft"),
   total: money.default(0),
-  trades: z
-    .array(z.enum(serviceCategories))
-    .max(serviceCategories.length)
-    .transform((values) => Array.from(new Set(values)))
-    .optional()
+  trades: quoteTrades.optional()
 });
 
-export const updateQuoteSchema = createQuoteSchema.partial();
+export const updateQuoteSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  clientId: id.optional(),
+  contactId: id.optional(),
+  owner: z.string().trim().max(120).optional(),
+  status: z.enum(quoteStatuses).optional(),
+  total: money.optional(),
+  trades: quoteTrades.optional()
+});
 
 export const createQuoteRevisionSchema = z.object({
   reason: z

@@ -23,6 +23,10 @@ describe("apiErrorPayload", () => {
       status: 404,
       body: { error: "Contact not found." }
     });
+    assert.deepEqual(apiErrorPayload(new Error("QUOTE_CONTACT_REQUIRED")), {
+      status: 400,
+      body: { error: "Select a point of contact from the quote client profile." }
+    });
     assert.deepEqual(apiErrorPayload(new Error("REQUEST_CONVERTED_LOCKED")), {
       status: 409,
       body: { error: "Converted requests cannot be reopened or closed again." }

@@ -1574,7 +1574,7 @@ async function main() {
 
   const coastalRequest = await prisma.request.findFirst({
     where: { requestNumber: "RQ-2026-1006" },
-    select: { id: true }
+    select: { id: true, contactId: true }
   });
 
   const quote = await prisma.quote.create({
@@ -1585,6 +1585,7 @@ async function main() {
       versionCreatedAt: new Date("2026-05-09T18:30:00.000Z"),
       title: "Coastal Hospitality network refresh",
       clientId: clientsByName.get("Coastal Hospitality Group")?.id,
+      contactId: coastalRequest?.contactId ?? null,
       clientName: "Coastal Hospitality Group",
       status: "Draft",
       owner: "Sales User",

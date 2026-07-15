@@ -147,12 +147,18 @@ function buildChecklistSummary(request: RequestWithRelations) {
     missingRequired.push("Service category selected");
   }
 
-  if (!request.companyName && !request.clientId) {
-    missingRequired.push("Client / company identified");
+  if (!request.clientId) {
+    missingRequired.push("Client profile selected");
   }
 
-  if (!request.contactName && !request.contactEmail && !request.contactPhone && !request.contactId) {
-    missingRequired.push("Contact information confirmed");
+  if (
+    !request.contactId ||
+    !request.contact ||
+    request.contact.clientId !== request.clientId ||
+    request.contact.ownerType !== "Client" ||
+    request.contact.ownerId !== request.clientId
+  ) {
+    missingRequired.push("Client point of contact selected");
   }
 
   if (request.siteVisitNeeded && !request.siteVisitCompleted) {
@@ -505,13 +511,13 @@ function toRequestRecord(request: RequestWithRelations, viewerId?: string): Requ
 }
 
 async function generateRequestNumber(tx: Prisma.TransactionClient) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:request'))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:request'))`;
   const count = await tx.request.count();
   return `RQ-${new Date().getUTCFullYear()}-${String(1001 + count).padStart(4, "0")}`;
 }
 
 async function generateQuoteNumber(tx: Prisma.TransactionClient) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:request-quote'))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:request-quote'))`;
   const count = await tx.quote.count();
   return `QM-${new Date().getUTCFullYear()}-${String(1001 + count).padStart(4, "0")}`;
 }
@@ -1117,6 +1123,7 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
       where: { clientId: client.id, archivedAt: null },
       include: {
         client: { select: { id: true, displayName: true } },
+        contact: { include: { site: { select: { siteName: true } } } },
         requests: {
           where: { archivedAt: null },
           orderBy: { updatedAt: "desc" },
@@ -1890,6 +1897,18 @@ export async function convertRequest(
     if (!buildChecklistSummary(existingRequest).readyForQuote) {
       throw new Error("REQUEST_NOT_READY_FOR_QUOTE");
     }
+    if (!existingRequest.clientId) {
+      throw new Error("QUOTE_POINT_OF_CONTACT_CLIENT_REQUIRED");
+    }
+    if (
+      !existingRequest.contactId ||
+      !existingRequest.contact ||
+      existingRequest.contact.clientId !== existingRequest.clientId ||
+      existingRequest.contact.ownerType !== "Client" ||
+      existingRequest.contact.ownerId !== existingRequest.clientId
+    ) {
+      throw new Error("QUOTE_CONTACT_REQUIRED");
+    }
 
     const quoteNumber = input.createQuote ? await generateQuoteNumber(tx) : null;
     const quote = input.createQuote
@@ -1901,6 +1920,7 @@ export async function convertRequest(
             versionCreatedAt: now,
             title: existingRequest.title,
             clientId: existingRequest.clientId,
+            contactId: existingRequest.contactId,
             clientName: existingRequest.companyName || existingRequest.client?.displayName || null,
             status: "Draft",
             owner: existingRequest.assignedTo?.name ?? "Unassigned",
@@ -1915,11 +1935,20 @@ export async function convertRequest(
                   .join(", ")
               : existingRequest.serviceCategory,
             contactNameSnapshot:
-              existingRequest.contactName || existingRequest.contact?.name || null,
+              existingRequest.contact.name?.trim() ||
+              [existingRequest.contact.firstName, existingRequest.contact.lastName]
+                .filter(Boolean)
+                .join(" ")
+                .trim() ||
+              existingRequest.contactName ||
+              null,
             contactEmailSnapshot:
-              existingRequest.contactEmail || existingRequest.contact?.email || null,
+              existingRequest.contact.email || existingRequest.contactEmail || null,
             contactPhoneSnapshot:
-              existingRequest.contactPhone || existingRequest.contact?.phone || null,
+              existingRequest.contact.phone ||
+              existingRequest.contact.mobile ||
+              existingRequest.contactPhone ||
+              null,
             siteNameSnapshot:
               existingRequest.siteName || existingRequest.site?.siteName || null,
             siteAddressSnapshot:

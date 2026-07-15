@@ -19112,6 +19112,14 @@ a {
   background: var(--pulse-muted-surface);
 }
 
+.quote-version-context article.quote-context-linked {
+  padding: 0;
+}
+
+.quote-version-context .quote-context-linked > a {
+  padding: 12px;
+}
+
 .quote-version-facts dt,
 .quote-version-context span,
 .quote-version-notes-grid span,

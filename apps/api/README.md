@@ -66,7 +66,16 @@ npm run db:seed
 ```
 
 `db:setup` generates the API client, applies the current schema with Prisma, and
-ensures repository constraints. First-time initialization is guarded:
+ensures repository constraints. It also idempotently reconciles legacy quote
+contact snapshots with the additional contacts on each client profile. Preview
+or apply that reconciliation directly with:
+
+```bash
+npm run db:quote-contacts:preview
+npm run db:quote-contacts:apply
+```
+
+First-time initialization is guarded:
 
 ```bash
 npm run db:initialize

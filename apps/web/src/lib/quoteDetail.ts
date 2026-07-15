@@ -30,6 +30,8 @@ export function normalizeQuoteDetailRecord(
 ): QuoteDetailRecord {
   return {
     ...quote,
+    contactId: quote.contactId ?? null,
+    contact: quote.contact ?? null,
     trades: quote.trades ?? categoriesFromContext(quote.context?.serviceCategory),
     context: {
       ...fallbackContext(quote),

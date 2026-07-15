@@ -203,6 +203,14 @@ const errorMap: Record<string, ErrorPayload> = {
     }
   },
   QUOTE_NOT_FOUND: { status: 404, body: { error: "Quote not found." } },
+  QUOTE_POINT_OF_CONTACT_CLIENT_REQUIRED: {
+    status: 400,
+    body: { error: "Select a client profile before choosing the quote point of contact." }
+  },
+  QUOTE_CONTACT_REQUIRED: {
+    status: 400,
+    body: { error: "Select a point of contact from the quote client profile." }
+  },
   QUOTE_REVISION_NOT_FOUND: { status: 404, body: { error: "Quote revision not found." } },
   QUOTE_REVISION_IS_CURRENT: { status: 409, body: { error: "This is the current editable quote version." } },
   QUOTE_REVISION_STATUS_INVALID: {

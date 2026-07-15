@@ -452,7 +452,27 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
             </>
           )}
         </article>
-        <article><span>Contact</span><strong>{quote.context.contactName || "Not captured"}</strong><p>{quote.context.contactEmail || quote.context.contactPhone || "No contact method"}</p></article>
+        <article className={quote.clientId && quote.contact ? "quote-context-linked" : undefined}>
+          {quote.clientId && quote.contact ? (
+            <Link href={`/clients/${quote.clientId}`} aria-label={`Open ${quote.contact.name} on the ${quote.clientName} client profile`}>
+              <span>Point of Contact</span>
+              <strong>{quote.contact.name || quote.context.contactName || "Not captured"}</strong>
+              <p>
+                {[
+                  quote.contact.title || quote.contact.role,
+                  quote.contact.department,
+                  quote.contact.email || quote.contact.phone || quote.contact.mobile
+                ].filter(Boolean).join(" · ") || "No contact details"}
+              </p>
+            </Link>
+          ) : (
+            <>
+              <span>Point of Contact</span>
+              <strong>{quote.context.contactName || "Not captured"}</strong>
+              <p>{quote.context.contactEmail || quote.context.contactPhone || "No linked client contact"}</p>
+            </>
+          )}
+        </article>
         <article className="quote-trades-card">
           <div className="quote-trades-heading">
             <span>{quote.trades.length === 1 ? "Trade" : "Trades"}</span>
@@ -692,7 +712,32 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
               <>
                 <section className="quote-version-context">
                   <article><span>Request</span><strong>{selectedVersion.context.requestNumber || "Manual quote"}</strong><p>{selectedVersion.context.requestTitle || selectedVersion.revision.title}</p></article>
-                  <article><span>Contact</span><strong>{selectedVersion.context.contactName || "Not captured"}</strong><p>{selectedVersion.context.contactEmail || selectedVersion.context.contactPhone || "No contact method"}</p></article>
+                  <article className={selectedVersion.clientId && selectedVersion.contact ? "quote-context-linked" : undefined}>
+                    {selectedVersion.clientId && selectedVersion.contact ? (
+                      <Link
+                        href={`/clients/${selectedVersion.clientId}`}
+                        aria-label={`Open ${selectedVersion.contact.name} on the ${selectedVersion.clientName} client profile`}
+                      >
+                        <span>Point of Contact</span>
+                        <strong>{selectedVersion.contact.name || selectedVersion.context.contactName || "Not captured"}</strong>
+                        <p>
+                          {[
+                            selectedVersion.contact.title || selectedVersion.contact.role,
+                            selectedVersion.contact.department,
+                            selectedVersion.contact.email ||
+                              selectedVersion.contact.phone ||
+                              selectedVersion.contact.mobile
+                          ].filter(Boolean).join(" · ") || "No contact method"}
+                        </p>
+                      </Link>
+                    ) : (
+                      <>
+                        <span>Point of Contact</span>
+                        <strong>{selectedVersion.context.contactName || "Not captured"}</strong>
+                        <p>{selectedVersion.context.contactEmail || selectedVersion.context.contactPhone || "No linked client contact"}</p>
+                      </>
+                    )}
+                  </article>
                   <article><span>Site</span><strong>{selectedVersion.context.siteName || "Not captured"}</strong><p>{[selectedVersion.context.siteAddress, selectedVersion.context.city, selectedVersion.context.state].filter(Boolean).join(", ") || "No site snapshot"}</p></article>
                 </section>
                 <section className="quote-version-notes-grid">

@@ -42,6 +42,7 @@ type Props = {
 type FormState = {
   title: string;
   clientId: string;
+  contactId: string;
   projectId: string;
   owner: string;
   value: string;
@@ -57,6 +58,7 @@ type WorkView = {
 const emptyForm: FormState = {
   title: "",
   clientId: "",
+  contactId: "",
   projectId: "",
   owner: "Unassigned",
   value: "0",
@@ -384,8 +386,12 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
 
   async function createRecord(event: FormEvent) {
     event.preventDefault();
-    if (!form.title || !form.clientId) {
-      setToast("Title and client are required.");
+    if (!form.title || !form.clientId || (kind === "quotes" && !form.contactId)) {
+      setToast(
+        kind === "quotes"
+          ? "Title, client, and point of contact are required."
+          : "Title and client are required."
+      );
       return;
     }
     setSaving(true);
@@ -422,6 +428,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
           ? {
               title: form.title,
               clientId: form.clientId,
+              contactId: form.contactId,
               owner: form.owner,
               status: "Draft",
               total: Number(form.value)
@@ -967,6 +974,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                     setForm({
                       ...form,
                       clientId: event.target.value,
+                      contactId: "",
                       projectId: ""
                     })
                   }
@@ -979,6 +987,34 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   ))}
                 </select>
               </label>
+              {kind === "quotes" ? (
+                <label>
+                  Point of contact
+                  <select
+                    required
+                    disabled={!form.clientId}
+                    value={form.contactId}
+                    onChange={(event) =>
+                      setForm({ ...form, contactId: event.target.value })
+                    }
+                  >
+                    <option value="">
+                      {!form.clientId
+                        ? "Select client first"
+                        : clients.find((client) => client.id === form.clientId)?.contacts.length
+                          ? "Select point of contact"
+                          : "No contacts on this client profile"}
+                    </option>
+                    {(clients.find((client) => client.id === form.clientId)?.contacts ?? []).map(
+                      (contact) => (
+                        <option key={contact.id} value={contact.id}>
+                          {contact.name}{contact.title ? ` - ${contact.title}` : ""}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </label>
+              ) : null}
               {kind === "invoices" ? (
                 <label>
                   Project

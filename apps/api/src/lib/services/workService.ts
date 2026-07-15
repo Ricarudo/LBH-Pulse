@@ -20,6 +20,7 @@ import type {
   UpdateQuoteProposalInput
 } from "@pulse/contracts/items";
 import type { LifecycleDocumentRecord } from "@pulse/contracts/documents";
+import type { ClientContact } from "@pulse/contracts/clients";
 import type {
   ConvertQuoteInput,
   CreateQuoteRevisionInput,
@@ -46,8 +47,32 @@ import {
   calculateQuoteLine
 } from "@/modules/quote-items/quote-calculations";
 
+const quoteContactSelect = {
+  id: true,
+  siteId: true,
+  role: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  title: true,
+  department: true,
+  email: true,
+  phone: true,
+  mobile: true,
+  preferredContactMethod: true,
+  isPrimary: true,
+  isBilling: true,
+  isPrimaryContact: true,
+  isBillingContact: true,
+  isTechnicalContact: true,
+  isDecisionMaker: true,
+  notes: true,
+  site: { select: { siteName: true } }
+} satisfies Prisma.PointOfContactSelect;
+
 const quoteInclude = {
   client: { select: { id: true, displayName: true } },
+  contact: { select: quoteContactSelect },
   requests: {
     where: { archivedAt: null },
     orderBy: { updatedAt: "desc" },
@@ -127,6 +152,9 @@ type QuoteRecordSource = Omit<QuoteWithRelations, "requests"> & {
 type QuoteDetailWithRelations = Prisma.QuoteGetPayload<{
   include: typeof quoteDetailInclude;
 }>;
+type QuoteContactWithSite = Prisma.PointOfContactGetPayload<{
+  select: typeof quoteContactSelect;
+}>;
 type ItemForQuote = Prisma.ItemGetPayload<{ include: typeof itemForQuoteInclude }>;
 type ProjectWithRelations = Prisma.ProjectGetPayload<{ include: typeof projectInclude }>;
 type InvoiceWithRelations = Prisma.InvoiceGetPayload<{ include: typeof invoiceInclude }>;
@@ -145,6 +173,42 @@ function dateTimeOutput(value?: Date | null) {
 
 function empty(value?: string | null) {
   return value ?? "";
+}
+
+function pointOfContactName(contact: {
+  name: string | null;
+  firstName: string;
+  lastName: string;
+}) {
+  return contact.name?.trim() ||
+    [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() ||
+    "Not captured";
+}
+
+function toQuoteContact(contact?: QuoteContactWithSite | null): ClientContact | null {
+  if (!contact) return null;
+  return {
+    id: contact.id,
+    siteId: contact.siteId ?? undefined,
+    siteName: contact.site?.siteName ?? undefined,
+    role: empty(contact.role),
+    firstName: contact.firstName,
+    lastName: contact.lastName,
+    name: pointOfContactName(contact),
+    title: empty(contact.title),
+    department: empty(contact.department),
+    email: empty(contact.email),
+    phone: empty(contact.phone),
+    mobile: empty(contact.mobile),
+    preferredContactMethod: empty(contact.preferredContactMethod),
+    isPrimary: contact.isPrimary,
+    isBilling: contact.isBilling,
+    isPrimaryContact: contact.isPrimary || contact.isPrimaryContact,
+    isBillingContact: contact.isBilling || contact.isBillingContact,
+    isTechnicalContact: contact.isTechnicalContact,
+    isDecisionMaker: contact.isDecisionMaker,
+    notes: empty(contact.notes)
+  };
 }
 
 function categoriesFromSnapshot(value?: string | null) {
@@ -244,6 +308,8 @@ export function toQuoteRecord(
     title: quote.title,
     clientId: quote.clientId,
     clientName: quote.client?.displayName ?? quote.clientName ?? "",
+    contactId: quote.contactId,
+    contact: toQuoteContact(quote.contact),
     status: quote.status as QuoteRecord["status"],
     owner: quote.owner,
     total: Number(quote.total),
@@ -274,13 +340,16 @@ function toQuoteContextSnapshot(
       quote.serviceCategorySnapshot ?? liveCategories
     ),
     contactName: empty(
-      quote.contactNameSnapshot ?? request?.contactName ?? request?.contact?.name
+      quote.contactNameSnapshot ??
+        (quote.contact ? pointOfContactName(quote.contact) : null) ??
+        request?.contactName ??
+        request?.contact?.name
     ),
     contactEmail: empty(
-      quote.contactEmailSnapshot ?? request?.contactEmail ?? request?.contact?.email
+      quote.contactEmailSnapshot ?? quote.contact?.email ?? request?.contactEmail ?? request?.contact?.email
     ),
     contactPhone: empty(
-      quote.contactPhoneSnapshot ?? request?.contactPhone ?? request?.contact?.phone
+      quote.contactPhoneSnapshot ?? quote.contact?.phone ?? quote.contact?.mobile ?? request?.contactPhone ?? request?.contact?.phone
     ),
     siteName: empty(
       quote.siteNameSnapshot ?? request?.siteName ?? request?.site?.siteName
@@ -396,11 +465,16 @@ function toQuoteRevisionDetailRecord(
   const items = Array.isArray(snapshot.items)
     ? snapshot.items as unknown as QuoteItemRecord[]
     : [];
+  const contact = snapshot.contact && typeof snapshot.contact === "object" && !Array.isArray(snapshot.contact)
+    ? snapshot.contact as unknown as ClientContact
+    : null;
   return {
     quoteId: revision.quoteId,
     baseQuoteNumber: typeof snapshot.baseQuoteNumber === "string"
       ? snapshot.baseQuoteNumber
       : parseQuoteVersionNumber(revision.quoteNumber).baseQuoteNumber,
+    clientId: revision.clientIdSnapshot,
+    clientName: revision.clientNameSnapshot ?? "",
     revision: {
       id: revision.id,
       revisionNumber: revision.revisionNumber,
@@ -418,6 +492,7 @@ function toQuoteRevisionDetailRecord(
       isCurrent: false,
       dataAvailable: revisionSnapshotAvailable(revision.snapshot)
     },
+    contact,
     context,
     proposalNotes: typeof snapshot.proposalNotes === "string" ? snapshot.proposalNotes : "",
     proposalPreparedAt: typeof snapshot.proposalPreparedAt === "string" ? snapshot.proposalPreparedAt : "",
@@ -477,11 +552,32 @@ async function clientOrThrow(clientId: string) {
   return client;
 }
 
+async function contactForClientOrThrow(contactId: string, clientId: string) {
+  const contact = await prisma.pointOfContact.findUnique({
+    where: { id: contactId },
+    select: {
+      ...quoteContactSelect,
+      clientId: true,
+      ownerType: true,
+      ownerId: true
+    }
+  });
+  if (!contact) throw new Error("CONTACT_NOT_FOUND");
+  if (
+    contact.clientId !== clientId ||
+    contact.ownerType !== "Client" ||
+    contact.ownerId !== clientId
+  ) {
+    throw new Error("WORK_CLIENT_MISMATCH");
+  }
+  return contact;
+}
+
 async function nextNumber(
   tx: Prisma.TransactionClient,
   kind: "quote" | "project" | "invoice"
 ) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`pulse-number:${kind}`}))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pulse-number:${kind}`}))`;
   const year = new Date().getUTCFullYear();
   const prefix = kind === "quote" ? "QT" : kind === "project" ? "PRJ" : "INV";
   const count =
@@ -1049,6 +1145,7 @@ function quoteRevisionSnapshot(quote: QuoteDetailWithRelations): Prisma.InputJso
   return JSON.parse(JSON.stringify({
     dataAvailable: true,
     baseQuoteNumber: version.baseQuoteNumber,
+    contact: toQuoteContact(quote.contact),
     context: toQuoteContextSnapshot(quote),
     proposalNotes: empty(quote.proposalNotes),
     proposalPreparedAt: dateTimeOutput(quote.proposalPreparedAt),
@@ -1070,7 +1167,8 @@ function mergedEventMetadata(
 
 
 export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedUser) {
-  const client = input.clientId ? await clientOrThrow(input.clientId) : null;
+  const client = await clientOrThrow(input.clientId);
+  const contact = await contactForClientOrThrow(input.contactId, client.id);
   const quote = await prisma.$transaction(async (tx) => {
     const quoteNumber = await nextNumber(tx, "quote");
     const versionCreatedAt = new Date();
@@ -1081,12 +1179,16 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
         revisionNumber: 0,
         versionCreatedAt,
         title: input.title,
-        clientId: client?.id,
-        clientName: client?.displayName,
+        clientId: client.id,
+        contactId: contact.id,
+        clientName: client.displayName,
         owner: input.owner || "Unassigned",
         status: input.status,
         total: input.total,
-        serviceCategorySnapshot: input.trades?.join(", ")
+        serviceCategorySnapshot: input.trades?.join(", "),
+        contactNameSnapshot: pointOfContactName(contact),
+        contactEmailSnapshot: contact.email,
+        contactPhoneSnapshot: contact.phone ?? contact.mobile
       },
       include: quoteInclude
     });
@@ -1116,6 +1218,16 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
   const statusChanged = input.status !== undefined && input.status !== existing.status;
   const statusChangedAt = new Date();
   const client = input.clientId ? await clientOrThrow(input.clientId) : null;
+  const effectiveClientId = client?.id ?? existing.clientId;
+  if (client && client.id !== existing.clientId && !input.contactId) {
+    throw new Error("QUOTE_CONTACT_REQUIRED");
+  }
+  if (input.contactId && !effectiveClientId) {
+    throw new Error("QUOTE_POINT_OF_CONTACT_CLIENT_REQUIRED");
+  }
+  const contact = input.contactId && effectiveClientId
+    ? await contactForClientOrThrow(input.contactId, effectiveClientId)
+    : null;
   if (client && existing.project?.id) {
     const project = await prisma.project.findUnique({ where: { id: existing.project.id }, select: { clientId: true } });
     if (project && project.clientId !== client.id) throw new Error("WORK_CLIENT_MISMATCH");
@@ -1126,6 +1238,14 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
       data: {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(client ? { clientId: client.id, clientName: client.displayName } : {}),
+        ...(contact
+          ? {
+              contactId: contact.id,
+              contactNameSnapshot: pointOfContactName(contact),
+              contactEmailSnapshot: contact.email,
+              contactPhoneSnapshot: contact.phone ?? contact.mobile
+            }
+          : {}),
         ...(input.owner !== undefined ? { owner: input.owner || "Unassigned" } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(statusChanged && input.status === "Sent"

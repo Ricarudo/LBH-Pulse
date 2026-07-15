@@ -464,6 +464,7 @@ model Quote {
   sentAtPrecision          LifecycleEventPrecision?
   title                    String
   clientId                 String?
+  contactId                String?
   clientName               String?
   status                   String                   @default("Draft")
   owner                    String                   @default("Unassigned")
@@ -489,6 +490,7 @@ model Quote {
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
   client                   Client?                  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contact                  PointOfContact?          @relation(fields: [contactId], references: [id], onDelete: SetNull)
   requests                 Request[]
   project                  Project?
   documents                LifecycleDocument[]
@@ -501,6 +503,7 @@ model Quote {
   @@index([revisionNumber])
   @@index([owner])
   @@index([clientId])
+  @@index([contactId])
   @@index([sourceRequestIdSnapshot])
   @@index([currentStepId])
   @@index([archivedAt])
@@ -812,6 +815,7 @@ model PointOfContact {
   client                 Client?     @relation(fields: [clientId], references: [id], onDelete: Cascade)
   site                   ClientSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
   requests               Request[]
+  quotes                 Quote[]
 
   @@index([ownerType, ownerId])
   @@index([clientId])
