@@ -238,6 +238,26 @@ const errorMap: Record<string, ErrorPayload> = {
   QUOTE_UPDATE_NOT_UNDOABLE: { status: 409, body: { error: "This update is no longer undoable." } },
   QUOTE_UPDATE_UNDO_CONFLICT: { status: 409, body: { error: "The quote changed before this update could be undone." } },
   QUOTE_ITEM_NOT_FOUND: { status: 404, body: { error: "Quote item not found." } },
+  QUOTE_ITEMS_REQUIRE_PULSE_MODE: {
+    status: 409,
+    body: { error: "Legacy Quotes cannot contain line items. Switch this draft to Pulse Quote first." }
+  },
+  QUOTE_LEGACY_FINANCIALS_REQUIRE_LEGACY_MODE: {
+    status: 409,
+    body: { error: "Legacy summary values can only be saved on a Legacy Quote." }
+  },
+  QUOTE_MODE_SWITCH_DRAFT_REQUIRED: {
+    status: 409,
+    body: { error: "Calculation mode can only be changed while the quote is a draft." }
+  },
+  QUOTE_MODE_SWITCH_PROJECT_EXISTS: {
+    status: 409,
+    body: { error: "A quote connected to a project cannot change calculation mode." }
+  },
+  QUOTE_MODE_SWITCH_CONFIRMATION_REQUIRED: {
+    status: 409,
+    body: { error: "Confirm that the existing financial data should be permanently removed." }
+  },
   QUOTE_ITEM_REORDER_STALE: {
     status: 409,
     body: { error: "The quote changed while lines were being reordered. Refresh and try again." }
@@ -292,6 +312,8 @@ const errorMap: Record<string, ErrorPayload> = {
     body: { error: "Required item relations contain a cycle." }
   },
   PROJECT_NOT_FOUND: { status: 404, body: { error: "Project not found." } },
+  PROJECT_TASK_NOT_FOUND: { status: 404, body: { error: "Project task not found." } },
+  PROJECT_TASK_ORDER_INVALID: { status: 409, body: { error: "The task list changed. Refresh before reordering it." } },
   INVOICE_NOT_FOUND: { status: 404, body: { error: "Invoice not found." } },
   WORK_ASSIGNEE_INVALID: {
     status: 400,
@@ -317,6 +339,7 @@ const errorMap: Record<string, ErrorPayload> = {
   QUOTE_NOT_APPROVED: { status: 400, body: { error: "Approve the quote before creating a project." } },
   QUOTE_CLIENT_REQUIRED: { status: 400, body: { error: "Select a client before creating a project from this quote." } },
   WORK_CLIENT_MISMATCH: { status: 400, body: { error: "The selected records must belong to the same client." } },
+  REQUEST_LINKED_RECORDS_REQUIRED: { status: 400, body: { error: "Select a linked client and point of contact for this request." } },
   PROJECT_CANCELLED: { status: 400, body: { error: "Cancelled projects cannot create invoices." } },
   DOCUMENT_NOT_FOUND: { status: 404, body: { error: "Document not found." } },
   DOCUMENT_NOT_AVAILABLE: { status: 409, body: { error: "This unverified document is not available for download." } },

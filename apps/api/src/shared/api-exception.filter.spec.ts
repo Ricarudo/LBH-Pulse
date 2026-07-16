@@ -37,6 +37,16 @@ describe("apiErrorPayload", () => {
         error: "The quote changed while lines were being reordered. Refresh and try again."
       }
     });
+    assert.deepEqual(apiErrorPayload(new Error("QUOTE_ITEMS_REQUIRE_PULSE_MODE")), {
+      status: 409,
+      body: { error: "Legacy Quotes cannot contain line items. Switch this draft to Pulse Quote first." }
+    });
+    assert.deepEqual(apiErrorPayload(new Error("QUOTE_MODE_SWITCH_CONFIRMATION_REQUIRED")), {
+      status: 409,
+      body: {
+        error: "Confirm that the existing financial data should be permanently removed."
+      }
+    });
   });
 
   it("requires reasons for terminal request outcomes", () => {

@@ -4,6 +4,8 @@ import type {
   ConvertQuoteInput,
   CreateQuoteRevisionInput,
   CreateQuoteInput,
+  ReplaceLegacyQuoteFinancialsInput,
+  SwitchQuoteCalculationModeInput,
   UpdateQuoteInput
 } from "@pulse/contracts/work";
 import {
@@ -14,6 +16,8 @@ import {
   getQuoteRevision,
   getQuoteById,
   listQuotes,
+  replaceLegacyQuoteFinancials,
+  switchQuoteCalculationMode,
   updateQuote
 } from "@/lib/services/workService";
 
@@ -37,6 +41,14 @@ export class QuotesService {
 
   update(id: string, input: UpdateQuoteInput, user: AuthenticatedUser) {
     return updateQuote(id, input, user);
+  }
+
+  replaceLegacyFinancials(id: string, input: ReplaceLegacyQuoteFinancialsInput, user: AuthenticatedUser) {
+    return replaceLegacyQuoteFinancials(id, input, user);
+  }
+
+  switchCalculationMode(id: string, input: SwitchQuoteCalculationModeInput, user: AuthenticatedUser) {
+    return switchQuoteCalculationMode(id, input, user);
   }
 
   archive(id: string, user: AuthenticatedUser) {

@@ -7,7 +7,19 @@ import {
 import { effectiveRolePermissions } from "@/lib/services/roleAccessService";
 import { recordActivity } from "@/lib/services/activityService";
 import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService";
-import { toInvoiceRecord, toProjectRecord, toQuoteRecord } from "@/lib/services/workService";
+import {
+  calculateLegacyQuoteFinancials,
+  calculatePulseQuoteFinancials,
+  exactFinancialSummarySnapshot
+} from "@/modules/quotes/quote-financials";
+import {
+  invoiceInclude,
+  projectInclude,
+  quoteInclude,
+  toInvoiceRecord,
+  toProjectRecord,
+  toQuoteRecord
+} from "@/lib/services/workService";
 import type {
   CreateRequestUpdateInput,
   RequestActivityType,
@@ -41,6 +53,7 @@ const requestInclude = {
   client: true,
   contact: true,
   site: true,
+  lifecycleContext: { include: { updatedBy: { include: { accessRole: true } } } },
   relatedQuote: true,
   checklistTemplate: true,
   trades: {
@@ -508,7 +521,40 @@ function toRequestRecord(request: RequestWithRelations, viewerId?: string): Requ
         }
       };
     }),
-    checklistSummary: buildChecklistSummary(request)
+    checklistSummary: buildChecklistSummary(request),
+    lifecycleContext: {
+      id: request.lifecycleContext?.id ?? "",
+      details: request.lifecycleContext?.details ?? request.description ?? "",
+      updatedAt: formatDateTime(request.lifecycleContext?.updatedAt),
+      updatedBy: toAssigneeSnapshot(request.lifecycleContext?.updatedBy),
+      updatedByName:
+        request.lifecycleContext?.updatedBy?.name ??
+        request.lifecycleContext?.updatedByNameSnapshot ??
+        "Pulse System"
+    },
+    relationshipWarnings: [
+      ...(!request.clientId && request.companyName
+        ? [{
+            field: "client" as const,
+            legacyValue: request.companyName,
+            message: "Legacy client could not be matched uniquely. Select a linked client to resolve it."
+          }]
+        : []),
+      ...(!request.contactId && request.contactName
+        ? [{
+            field: "contact" as const,
+            legacyValue: request.contactName,
+            message: "Legacy contact could not be matched uniquely. Select a linked contact to resolve it."
+          }]
+        : []),
+      ...(!request.siteId && (request.siteName || request.siteAddress)
+        ? [{
+            field: "site" as const,
+            legacyValue: request.siteName || request.siteAddress || "",
+            message: "Legacy site could not be matched uniquely. Select a linked site to resolve it."
+          }]
+        : [])
+    ]
   };
 }
 
@@ -538,6 +584,37 @@ async function getRequestOrThrow(id: string) {
 }
 
 type RequestDb = typeof prisma | Prisma.TransactionClient;
+
+async function validateRequestRelationships(
+  clientId: string,
+  contactId: string,
+  siteId?: string | null,
+  db: RequestDb = prisma
+) {
+  const client = await db.client.findFirst({
+    where: { id: clientId, archivedAt: null },
+    select: { id: true, displayName: true }
+  });
+  if (!client) throw new Error("CLIENT_NOT_FOUND");
+  const contact = await db.pointOfContact.findFirst({
+    where: {
+      id: contactId,
+      clientId,
+      ownerType: "Client",
+      ownerId: clientId
+    },
+    select: { id: true }
+  });
+  if (!contact) throw new Error("WORK_CLIENT_MISMATCH");
+  if (siteId) {
+    const site = await db.clientSite.findFirst({
+      where: { id: siteId, clientId },
+      select: { id: true }
+    });
+    if (!site) throw new Error("WORK_CLIENT_MISMATCH");
+  }
+  return client;
+}
 
 function updateActorFields(user?: AuthenticatedUser) {
   return {
@@ -1124,36 +1201,19 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
     prisma.quote.findMany({
       where: { clientId: client.id, archivedAt: null },
       include: {
-        client: { select: { id: true, displayName: true } },
-        contact: { include: { site: { select: { siteName: true } } } },
-        requests: {
-          where: { archivedAt: null },
-          orderBy: { updatedAt: "desc" },
-          take: 1,
-          select: { id: true, requestNumber: true }
-        },
-        project: { select: { id: true } },
+        ...quoteInclude,
         revisions: { select: { sentAt: true } }
       },
       orderBy: { updatedAt: "desc" }
     }),
     prisma.project.findMany({
       where: { clientId: client.id, archivedAt: null },
-      include: {
-        client: { select: { id: true, displayName: true } },
-        quote: { select: { id: true, quoteNumber: true } },
-        assignedTo: { include: { accessRole: true } },
-        invoices: { where: { archivedAt: null }, select: { id: true } }
-      },
+      include: projectInclude,
       orderBy: { updatedAt: "desc" }
     }),
     prisma.invoice.findMany({
       where: { clientId: client.id, archivedAt: null },
-      include: {
-        client: { select: { id: true, displayName: true } },
-        project: { select: { id: true, projectNumber: true } },
-        assignedTo: { include: { accessRole: true } }
-      },
+      include: invoiceInclude,
       orderBy: { updatedAt: "desc" }
     })
   ]);
@@ -1248,6 +1308,8 @@ export async function getRequestById(id: string, viewerId?: string) {
 }
 
 export async function createRequest(input: CreateRequestInput, user?: AuthenticatedUser) {
+  if (!input.clientId || !input.contactId) throw new Error("REQUEST_LINKED_RECORDS_REQUIRED");
+  await validateRequestRelationships(input.clientId, input.contactId, input.siteId || null);
   const assignedTo = await resolveRequestAssignee(input.assignedToId);
   const request = await prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -1259,6 +1321,13 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
     }
     const selectedTemplate = matches.find((match) => match.matchType === "TRADE")?.template ??
       matches.find((match) => match.matchType === "CORE")?.template;
+    const lifecycleContext = await tx.lifecycleContext.create({
+      data: {
+        details: input.lifecycleDetails ?? input.description,
+        updatedById: user?.id ?? null,
+        updatedByNameSnapshot: user?.name ?? "Pulse System"
+      }
+    });
 
     const created = await tx.request.create({
       data: {
@@ -1281,6 +1350,7 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
         contactId: input.contactId || null,
         siteId: input.siteId || null,
         assignedToId: assignedTo?.id ?? null,
+        lifecycleContextId: lifecycleContext.id,
         createdById: user?.id ?? null,
         receivedDate: parseDateInput(input.receivedDate) ?? now,
         dueDate: parseDateInput(input.dueDate),
@@ -1443,7 +1513,46 @@ export async function updateRequest(
     });
   }
 
+  const effectiveClientId = input.clientId !== undefined
+    ? input.clientId
+    : existingRequest.clientId ?? "";
+  const effectiveContactId = input.contactId !== undefined
+    ? input.contactId
+    : existingRequest.contactId ?? "";
+  const effectiveSiteId = input.siteId !== undefined
+    ? input.siteId
+    : input.clientId !== undefined
+      ? ""
+      : existingRequest.siteId ?? "";
+  if (input.clientId !== undefined && (!effectiveClientId || !effectiveContactId)) {
+    throw new Error("REQUEST_LINKED_RECORDS_REQUIRED");
+  }
+  if (effectiveClientId && effectiveContactId) {
+    await validateRequestRelationships(effectiveClientId, effectiveContactId, effectiveSiteId);
+  }
+
   const request = await prisma.$transaction(async (tx) => {
+    let lifecycleContextId = existingRequest.lifecycleContextId;
+    if (input.lifecycleDetails !== undefined) {
+      if (lifecycleContextId) {
+        await tx.lifecycleContext.update({
+          where: { id: lifecycleContextId },
+          data: {
+            details: input.lifecycleDetails,
+            updatedById: user?.id ?? null,
+            updatedByNameSnapshot: user?.name ?? "Pulse System"
+          }
+        });
+      } else {
+        lifecycleContextId = (await tx.lifecycleContext.create({
+          data: {
+            details: input.lifecycleDetails,
+            updatedById: user?.id ?? null,
+            updatedByNameSnapshot: user?.name ?? "Pulse System"
+          }
+        })).id;
+      }
+    }
     const updatedRequest = await tx.request.update({
       where: { id },
       data: {
@@ -1475,7 +1584,9 @@ export async function updateRequest(
       ...(input.state !== undefined ? { state: input.state || null } : {}),
       ...(input.clientId !== undefined ? { clientId: input.clientId || null } : {}),
       ...(input.contactId !== undefined ? { contactId: input.contactId || null } : {}),
+      ...(input.clientId !== undefined && input.siteId === undefined ? { siteId: null } : {}),
       ...(input.siteId !== undefined ? { siteId: input.siteId || null } : {}),
+      ...(lifecycleContextId !== existingRequest.lifecycleContextId ? { lifecycleContextId } : {}),
       ...(input.assignedToId !== undefined
         ? { assignedToId: assignedTo?.id ?? null }
         : {}),
@@ -1545,6 +1656,15 @@ export async function updateRequest(
       previousAssigneeName === "Unassigned"
         ? "Request lead was set."
         : `Reassigned from ${previousAssigneeName}.`,
+      user,
+      now
+    );
+  } else if (input.lifecycleDetails !== undefined) {
+    await createRequestSystemUpdate(
+      prisma,
+      request.id,
+      "Lifecycle details updated",
+      "The shared details for this lifecycle were updated.",
       user,
       now
     );
@@ -1916,6 +2036,16 @@ export async function convertRequest(
       throw new Error("QUOTE_CONTACT_REQUIRED");
     }
 
+    const lifecycleContextId = existingRequest.lifecycleContextId ?? (
+      await tx.lifecycleContext.create({
+        data: {
+          details: existingRequest.description ?? "",
+          updatedById: user?.id ?? null,
+          updatedByNameSnapshot: user?.name ?? "Pulse System"
+        }
+      })
+    ).id;
+
     const quoteNumber = input.createQuote ? await generateQuoteNumber(tx) : null;
     const quote = input.createQuote
       ? await tx.quote.create({
@@ -1927,9 +2057,13 @@ export async function convertRequest(
             title: existingRequest.title,
             clientId: existingRequest.clientId,
             contactId: existingRequest.contactId,
+            siteId: existingRequest.siteId,
+            assignedToId: existingRequest.assignedToId,
+            lifecycleContextId,
             clientName: existingRequest.companyName || existingRequest.client?.displayName || null,
             status: "Draft",
             owner: existingRequest.assignedTo?.name ?? "Unassigned",
+            calculationMode: input.calculationMode ?? "PULSE",
             total: 0,
             sourceRequestIdSnapshot: existingRequest.id,
             requestNumberSnapshot: existingRequest.requestNumber,
@@ -1972,6 +2106,7 @@ export async function convertRequest(
       data: {
         status: "Converted to Quote",
         relatedQuoteId: quote?.id ?? existingRequest.relatedQuoteId,
+        lifecycleContextId,
         lastActivityAt: now
       },
       include: requestInclude
@@ -1989,12 +2124,31 @@ export async function convertRequest(
       user
     });
     if (quote) {
+      const quoteSummary = quote.calculationMode === "LEGACY"
+        ? calculateLegacyQuoteFinancials({
+            materialSale: quote.legacyMaterialSale,
+            materialCost: quote.legacyMaterialCost,
+            laborSale: quote.legacyLaborSale,
+            laborCost: quote.legacyLaborCost,
+            taxAmount: quote.legacyTaxAmount,
+            estimatedDurationBusinessDays: quote.legacyEstimatedDurationBusinessDays
+          })
+        : calculatePulseQuoteFinancials([]);
       await recordLifecycleStatusEvent(tx, {
         entityType: LifecycleEntityType.QUOTE,
         entityId: quote.id,
         toStatus: quote.status,
         changedAt: quote.createdAt,
-        valueSnapshot: Number(quote.total),
+        valueSnapshot: quoteSummary.preTaxContractValue.toNumber(),
+        metadata: {
+          eventType: "quote_created",
+          calculationMode: quote.calculationMode,
+          revenueSnapshot: quoteSummary.preTaxContractValue.toNumber(),
+          costSnapshot: quoteSummary.totalEstimatedCost.toNumber(),
+          taxSnapshot: quoteSummary.taxAmount.toNumber(),
+          finalCustomerTotalSnapshot: quoteSummary.finalCustomerTotal.toNumber(),
+          financialSummary: exactFinancialSummarySnapshot(quoteSummary)
+        },
         user
       });
     }

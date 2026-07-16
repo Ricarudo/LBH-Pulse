@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, Req, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Express, Request } from "express";
 import { mkdirSync } from "node:fs";
@@ -8,6 +8,8 @@ import {
   convertQuoteSchema,
   createQuoteRevisionSchema,
   createQuoteSchema,
+  replaceLegacyQuoteFinancialsSchema,
+  switchQuoteCalculationModeSchema,
   updateQuoteSchema
 } from "@pulse/contracts/work";
 import {
@@ -61,6 +63,14 @@ export class QuotesController {
   @Patch(":id") async update(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, "quotes:write");
     return { quote: await this.quotes.update(id, updateQuoteSchema.parse(body), user) };
+  }
+  @Put(":id/legacy-financials") async replaceLegacyFinancials(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, "quotes:write");
+    return { quote: await this.quotes.replaceLegacyFinancials(id, replaceLegacyQuoteFinancialsSchema.parse(body), user) };
+  }
+  @Patch(":id/calculation-mode") async switchCalculationMode(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, "quotes:write");
+    return { quote: await this.quotes.switchCalculationMode(id, switchQuoteCalculationModeSchema.parse(body), user) };
   }
   @Delete(":id") async archive(@Req() request: Request, @Param("id") id: string) {
     const user = await this.auth.requireUser(request, "quotes:write"); return { quote: await this.quotes.archive(id, user) };

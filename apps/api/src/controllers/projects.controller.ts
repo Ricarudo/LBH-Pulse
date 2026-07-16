@@ -5,7 +5,20 @@ import { mkdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { diskStorage } from "multer";
 import { archiveProject, createInvoiceFromProject, createProject, getProjectById, listProjects, updateProject } from "@/lib/services/workService";
-import { createProjectInvoiceSchema, createProjectSchema, updateProjectSchema } from "@pulse/contracts/work";
+import {
+  createProjectInvoiceSchema,
+  createProjectSchema,
+  createProjectTaskSchema,
+  reorderProjectTasksSchema,
+  updateProjectSchema,
+  updateProjectTaskSchema
+} from "@pulse/contracts/work";
+import {
+  archiveProjectTask,
+  createProjectTask,
+  reorderProjectTasks,
+  updateProjectTask
+} from "@/lib/services/projectTaskService";
 import {
   createRequestUpdateSchema,
   requestUpdateCompleteSchema,
@@ -51,6 +64,31 @@ export class ProjectsController {
   @Post(":id/invoices") async invoice(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, { allOf: ["projects:write", "billing:write"] });
     return { invoice: await createInvoiceFromProject(id, createProjectInvoiceSchema.parse(body), user) };
+  }
+  @Post(":id/tasks") async createTask(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, "projects:write");
+    return createProjectTask(id, createProjectTaskSchema.parse(body), user);
+  }
+  @Patch(":id/tasks/reorder") async reorderTasks(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    await this.auth.requireUser(request, "projects:write");
+    return reorderProjectTasks(id, reorderProjectTasksSchema.parse(body));
+  }
+  @Patch(":id/tasks/:taskId") async updateTask(
+    @Req() request: Request,
+    @Param("id") id: string,
+    @Param("taskId") taskId: string,
+    @Body() body: unknown
+  ) {
+    const user = await this.auth.requireUser(request, "projects:write");
+    return updateProjectTask(id, taskId, updateProjectTaskSchema.parse(body), user);
+  }
+  @Delete(":id/tasks/:taskId") async archiveTask(
+    @Req() request: Request,
+    @Param("id") id: string,
+    @Param("taskId") taskId: string
+  ) {
+    const user = await this.auth.requireUser(request, "projects:write");
+    return archiveProjectTask(id, taskId, user);
   }
   @Get(":id/updates")
   async listUpdates(

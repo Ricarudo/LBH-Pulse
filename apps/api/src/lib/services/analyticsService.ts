@@ -1,5 +1,9 @@
 import { LifecycleEntityType, type LifecycleEventPrecision } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import {
+  calculateLegacyQuoteFinancials,
+  calculatePulseQuoteFinancials
+} from "@/modules/quotes/quote-financials";
 import { canUser, type AuthenticatedUser } from "@pulse/contracts/auth";
 import type {
   AnalyticsCalculation,
@@ -272,8 +276,10 @@ type BaseRecord = {
 
 type QuoteRecord = BaseRecord & {
   entityType: typeof LifecycleEntityType.QUOTE;
+  calculationMode: "LEGACY" | "PULSE";
   revisionNumber: number;
   items: MarginLine[];
+  marginParts: { revenue: number; cost: number } | null;
   revisions: Array<{
     id: string;
     revisionNumber: number;
@@ -373,7 +379,7 @@ async function loadAnalyticsData(
     canUser(user, "quotes:read") ? prisma.quote.findMany({
       include: {
         client: { select: { id: true, displayName: true } },
-        items: { select: { lineSubtotal: true, quantity: true, unitCost: true } },
+        items: { select: { itemType: true, lineSubtotal: true, lineTax: true, quantity: true, unitCost: true } },
         requests: {
           take: 1,
           include: { trades: { select: { serviceCategory: true } } }
@@ -458,6 +464,16 @@ async function loadAnalyticsData(
       : request?.trades.length
         ? request.trades.map((trade) => trade.serviceCategory)
         : tradesFromSnapshot(request?.serviceCategory);
+    const financialSummary = quote.calculationMode === "LEGACY"
+      ? calculateLegacyQuoteFinancials({
+          materialSale: quote.legacyMaterialSale,
+          materialCost: quote.legacyMaterialCost,
+          laborSale: quote.legacyLaborSale,
+          laborCost: quote.legacyLaborCost,
+          taxAmount: quote.legacyTaxAmount,
+          estimatedDurationBusinessDays: quote.legacyEstimatedDurationBusinessDays
+        })
+      : calculatePulseQuoteFinancials(quote.items);
     return {
       id: quote.id,
       kind: "Quote" as const,
@@ -473,15 +489,22 @@ async function loadAnalyticsData(
       updatedAt: quote.updatedAt,
       archivedAt: quote.archivedAt,
       dueDate: null,
-      value: valueOf(quote.total),
+      value: financialSummary.preTaxContractValue.toNumber(),
       requestReceivedAt: request?.receivedDate,
       quoteCreatedAt: quote.createdAt,
       revisionNumber: quote.revisionNumber,
+      calculationMode: quote.calculationMode,
       items: quote.items.map((line) => ({
         lineSubtotal: valueOf(line.lineSubtotal),
         quantity: valueOf(line.quantity),
         unitCost: valueOf(line.unitCost)
       })),
+      marginParts: financialSummary.preTaxContractValue.isZero()
+        ? null
+        : {
+            revenue: financialSummary.preTaxContractValue.toNumber(),
+            cost: financialSummary.totalEstimatedCost.toNumber()
+          },
       revisions: quote.revisions,
       href: `/quotes?record=${encodeURIComponent(quote.id)}`
     };
@@ -735,9 +758,12 @@ function decisionMargin(data: AnalyticsData, record: QuoteRecord, event: EventRe
   }
 
   const isCurrentVersion = !decisionSupersededAsOf(data, event, asOfTo);
-  if (asOfTo >= data.today && isCurrentVersion && canUseCurrentQuoteMarginFallback(event.source)) {
-    const parts = quotedMarginParts(record.items);
-    return { margin: parts, known: true };
+  if (
+    asOfTo >= data.today &&
+    isCurrentVersion &&
+    (record.calculationMode === "LEGACY" || canUseCurrentQuoteMarginFallback(event.source))
+  ) {
+    return { margin: record.marginParts, known: true };
   }
   return { margin: null, known: false };
 }
@@ -758,10 +784,16 @@ function decisionFacts(
     const event = candidates.at(-1);
     if (!event) return [];
     const margin = decisionMargin(data, record, event, asOfTo);
+    const canUseNormalizedCurrentValue =
+      asOfTo >= data.today &&
+      record.calculationMode === "LEGACY" &&
+      !decisionSupersededAsOf(data, event, asOfTo);
     return [{
       record,
       event,
-      value: event.valueSnapshot?.toNumber() ?? null,
+      value: canUseNormalizedCurrentValue
+        ? record.value
+        : event.valueSnapshot?.toNumber() ?? null,
       margin: margin.margin,
       marginKnown: margin.known
     }];
