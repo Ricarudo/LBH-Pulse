@@ -18,7 +18,66 @@ export const quoteStatuses = [
 ] as const;
 
 export type QuoteStatus = (typeof quoteStatuses)[number];
+export const quoteCalculationModes = ["LEGACY", "PULSE"] as const;
+export type QuoteCalculationMode = (typeof quoteCalculationModes)[number];
 export type LifecyclePrecision = "EXACT" | "ESTIMATED";
+export type LifecycleTab = "work" | "details" | "files" | "updates";
+
+export type LegacyQuoteFinancials = {
+  materialSale: number;
+  materialCost: number;
+  laborSale: number;
+  laborCost: number;
+  taxAmount: number;
+  estimatedDurationBusinessDays: number | null;
+};
+
+export type QuoteFinancialSummary = {
+  materialRevenue: number;
+  laborRevenue: number;
+  serviceRevenue: number;
+  preTaxContractValue: number;
+  taxAmount: number;
+  finalCustomerTotal: number;
+  materialCost: number;
+  laborCost: number;
+  serviceCost: number;
+  totalEstimatedCost: number;
+  grossProfit: number;
+  grossMarginPercent: number | null;
+  markupPercent: number | null;
+  estimatedDurationBusinessDays: number | null;
+};
+
+export type ProjectQuoteFinancialSnapshot = {
+  sourceQuoteId: string;
+  sourceQuoteNumber: string;
+  sourceQuoteRevisionNumber: number;
+  calculationMode: QuoteCalculationMode;
+  financialSummary: QuoteFinancialSummary;
+};
+
+export type LifecycleContextSummary = {
+  id: string;
+  details: string;
+  updatedAt: string;
+  updatedBy: RequestAssignee | null;
+  updatedByName: string;
+};
+
+export type LifecycleSiteSummary = {
+  id: string;
+  siteName: string;
+  address: string;
+  city: string;
+  state: string;
+};
+
+export type LifecycleRelationshipWarning = {
+  field: "client" | "contact" | "site" | "assignedTo";
+  legacyValue: string;
+  message: string;
+};
 
 export type QuoteVersionSummary = {
   id: string;
@@ -73,9 +132,17 @@ export type QuoteRecord = {
   clientName: string;
   contactId: string | null;
   contact: ClientContact | null;
+  siteId: string | null;
+  site: LifecycleSiteSummary | null;
+  assignedToId: string | null;
+  assignedTo: RequestAssignee | null;
   status: QuoteStatus;
+  /** Display-only compatibility value. Mutations use assignedToId. */
   owner: string;
+  calculationMode: QuoteCalculationMode;
   total: number;
+  legacyFinancials: LegacyQuoteFinancials;
+  financialSummary: QuoteFinancialSummary;
   requestId: string | null;
   requestNumber: string;
   trades: string[];
@@ -83,6 +150,8 @@ export type QuoteRecord = {
   createdAt: string;
   updatedAt: string;
   documents: LifecycleDocumentRecord[];
+  lifecycleContext: LifecycleContextSummary;
+  relationshipWarnings: LifecycleRelationshipWarning[];
 };
 
 export type QuoteContextSnapshot = {
@@ -123,6 +192,9 @@ export type QuoteRevisionDetailRecord = {
   context: QuoteContextSnapshot;
   proposalNotes: string;
   proposalPreparedAt: string;
+  calculationMode: QuoteCalculationMode;
+  legacyFinancials: LegacyQuoteFinancials;
+  financialSummary: QuoteFinancialSummary;
   items: QuoteItemRecord[];
 };
 
@@ -134,16 +206,25 @@ export type ProjectRecord = {
   clientName: string;
   quoteId: string | null;
   quoteNumber: string;
+  contactId: string | null;
+  contact: ClientContact | null;
+  siteId: string | null;
+  site: LifecycleSiteSummary | null;
   assignedToId: string | null;
   assignedTo: RequestAssignee | null;
   status: ProjectStatus;
   budget: number;
+  sourceQuoteRevisionNumber: number | null;
+  sourceQuoteCalculationMode: QuoteCalculationMode | null;
+  quoteFinancialSnapshot: ProjectQuoteFinancialSnapshot | null;
   startDate: string;
   dueDate: string;
   invoiceCount: number;
   createdAt: string;
   updatedAt: string;
   documents: LifecycleDocumentRecord[];
+  lifecycleContext: LifecycleContextSummary;
+  relationshipWarnings: LifecycleRelationshipWarning[];
 };
 
 export type InvoiceRecord = {
@@ -154,6 +235,10 @@ export type InvoiceRecord = {
   clientName: string;
   projectId: string | null;
   projectNumber: string;
+  contactId: string | null;
+  contact: ClientContact | null;
+  siteId: string | null;
+  site: LifecycleSiteSummary | null;
   assignedToId: string | null;
   assignedTo: RequestAssignee | null;
   status: InvoiceStatus;
@@ -163,6 +248,64 @@ export type InvoiceRecord = {
   createdAt: string;
   updatedAt: string;
   documents: LifecycleDocumentRecord[];
+  lifecycleContext: LifecycleContextSummary;
+  relationshipWarnings: LifecycleRelationshipWarning[];
+};
+
+export const projectTaskStatuses = [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "BLOCKED",
+  "DONE"
+] as const;
+
+export type ProjectTaskStatus = (typeof projectTaskStatuses)[number];
+
+export type ProjectTaskRecord = {
+  id: string;
+  projectId: string;
+  title: string;
+  status: ProjectTaskStatus;
+  weight: number;
+  assignedToId: string | null;
+  assignedTo: RequestAssignee | null;
+  dueDate: string;
+  notes: string;
+  sortOrder: number;
+  completedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectProgress = {
+  percent: number;
+  completedWeight: number;
+  totalWeight: number;
+  completedTasks: number;
+  totalTasks: number;
+};
+
+export type BillingMilestoneSummary = {
+  invoiceId: string;
+  invoiceNumber: string;
+  title: string;
+  status: InvoiceStatus;
+  amount: number;
+  issuedDate: string;
+  dueDate: string;
+  isCurrent: boolean;
+};
+
+export type BillingProjectSummary = {
+  projectId: string | null;
+  projectNumber: string;
+  projectBudget: number;
+  planned: number;
+  invoiced: number;
+  paid: number;
+  outstanding: number;
+  remaining: number;
+  milestones: BillingMilestoneSummary[];
 };
 
 export type WorkUpdateState = {
@@ -171,8 +314,13 @@ export type WorkUpdateState = {
   updates: RequestUpdate[];
 };
 
-export type ProjectDetailRecord = ProjectRecord & WorkUpdateState;
-export type InvoiceDetailRecord = InvoiceRecord & WorkUpdateState;
+export type ProjectDetailRecord = ProjectRecord & WorkUpdateState & {
+  tasks: ProjectTaskRecord[];
+  progress: ProjectProgress;
+};
+export type InvoiceDetailRecord = InvoiceRecord & WorkUpdateState & {
+  billingSummary: BillingProjectSummary;
+};
 
 export type ClientWorkSummary = {
   activeRequests: number;
@@ -191,6 +339,14 @@ export type ProjectResponse = { project: ProjectRecord };
 export type ProjectDetailResponse = { project: ProjectDetailRecord };
 export type InvoiceResponse = { invoice: InvoiceRecord };
 export type InvoiceDetailResponse = { invoice: InvoiceDetailRecord };
+export type ProjectTaskResponse = {
+  task: ProjectTaskRecord;
+  progress: ProjectProgress;
+};
+export type ProjectTasksResponse = {
+  tasks: ProjectTaskRecord[];
+  progress: ProjectProgress;
+};
 export type QuoteRevisionResponse = { revision: QuoteRevisionDetailRecord };
 
 import { z } from "zod";
@@ -204,30 +360,50 @@ const assignedToId = z
   .transform((value) => value || null);
 const optionalDate = z.string().trim().optional().transform((value) => value || undefined);
 const money = z.coerce.number().min(0).max(9999999999);
+const durationBusinessDays = z.coerce.number().int().min(0).max(100000).nullable();
 const quoteTrades = z
   .array(z.enum(serviceCategories))
   .max(serviceCategories.length)
   .transform((values) => Array.from(new Set(values)));
+const lifecycleDetails = z.string().trim().max(5000).optional();
 
 export const createQuoteSchema = z.object({
   title: z.string().trim().min(1).max(200),
   clientId: id,
   contactId: id,
-  owner: z.string().trim().max(120).default("Unassigned"),
+  siteId: assignedToId.default(null),
+  assignedToId: assignedToId.default(null),
+  lifecycleDetails,
   status: z.enum(quoteStatuses).default("Draft"),
-  total: money.default(0),
-  trades: quoteTrades.optional()
-});
+  calculationMode: z.enum(quoteCalculationModes),
+  trades: quoteTrades.optional(),
+  owner: z.unknown().optional()
+}).strict().transform(({ owner: _legacyOwner, ...quote }) => quote);
 
 export const updateQuoteSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   clientId: id.optional(),
-  contactId: id.optional(),
-  owner: z.string().trim().max(120).optional(),
+  contactId: assignedToId.optional(),
+  siteId: assignedToId.optional(),
+  assignedToId: assignedToId.optional(),
+  lifecycleDetails,
   status: z.enum(quoteStatuses).optional(),
-  total: money.optional(),
   trades: quoteTrades.optional()
-});
+}).strict();
+
+export const replaceLegacyQuoteFinancialsSchema = z.object({
+  materialSale: money,
+  materialCost: money,
+  laborSale: money,
+  laborCost: money,
+  taxAmount: money,
+  estimatedDurationBusinessDays: durationBusinessDays.default(null)
+}).strict();
+
+export const switchQuoteCalculationModeSchema = z.object({
+  calculationMode: z.enum(quoteCalculationModes),
+  discardFinancialData: z.boolean().default(false)
+}).strict();
 
 export const createQuoteRevisionSchema = z.object({
   reason: z
@@ -241,7 +417,10 @@ export const createProjectSchema = z.object({
   title: z.string().trim().min(1).max(200),
   clientId: id,
   quoteId: optionalId,
+  contactId: assignedToId.default(null),
+  siteId: assignedToId.default(null),
   assignedToId: assignedToId.default(null),
+  lifecycleDetails,
   status: z.enum(projectStatuses).default("Ready"),
   budget: money.default(0),
   startDate: optionalDate,
@@ -252,7 +431,10 @@ export const updateProjectSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   clientId: id.optional(),
   quoteId: optionalId.optional(),
+  contactId: assignedToId.optional(),
+  siteId: assignedToId.optional(),
   assignedToId: assignedToId.optional(),
+  lifecycleDetails,
   status: z.enum(projectStatuses).optional(),
   budget: money.optional(),
   startDate: optionalDate.optional(),
@@ -263,7 +445,10 @@ export const createInvoiceSchema = z.object({
   title: z.string().trim().min(1).max(200),
   clientId: id,
   projectId: optionalId,
+  contactId: assignedToId.default(null),
+  siteId: assignedToId.default(null),
   assignedToId: assignedToId.default(null),
+  lifecycleDetails,
   status: z.enum(invoiceStatuses).default("Draft"),
   amount: money.default(0),
   issuedDate: optionalDate,
@@ -274,7 +459,10 @@ export const updateInvoiceSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   clientId: id.optional(),
   projectId: optionalId.optional(),
+  contactId: assignedToId.optional(),
+  siteId: assignedToId.optional(),
   assignedToId: assignedToId.optional(),
+  lifecycleDetails,
   status: z.enum(invoiceStatuses).optional(),
   amount: money.optional(),
   issuedDate: optionalDate.optional(),
@@ -294,8 +482,28 @@ export const createProjectInvoiceSchema = z.object({
   dueDate: optionalDate
 });
 
+export const createProjectTaskSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  status: z.enum(projectTaskStatuses).default("NOT_STARTED"),
+  weight: z.coerce.number().int().min(1).max(1000).default(1),
+  assignedToId: assignedToId.default(null),
+  dueDate: optionalDate,
+  notes: z.string().trim().max(5000).optional()
+});
+
+export const updateProjectTaskSchema = createProjectTaskSchema.partial();
+
+export const reorderProjectTasksSchema = z.object({
+  taskIds: z.array(id).min(1).max(500).refine(
+    (values) => new Set(values).size === values.length,
+    "Task order contains duplicate IDs."
+  )
+});
+
 export type CreateQuoteInput = z.infer<typeof createQuoteSchema>;
 export type UpdateQuoteInput = z.infer<typeof updateQuoteSchema>;
+export type ReplaceLegacyQuoteFinancialsInput = z.infer<typeof replaceLegacyQuoteFinancialsSchema>;
+export type SwitchQuoteCalculationModeInput = z.infer<typeof switchQuoteCalculationModeSchema>;
 export type CreateQuoteRevisionInput = z.infer<typeof createQuoteRevisionSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
@@ -303,3 +511,6 @@ export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;
 export type ConvertQuoteInput = z.infer<typeof convertQuoteSchema>;
 export type CreateProjectInvoiceInput = z.infer<typeof createProjectInvoiceSchema>;
+export type CreateProjectTaskInput = z.infer<typeof createProjectTaskSchema>;
+export type UpdateProjectTaskInput = z.infer<typeof updateProjectTaskSchema>;
+export type ReorderProjectTasksInput = z.infer<typeof reorderProjectTasksSchema>;

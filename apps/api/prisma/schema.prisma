@@ -27,6 +27,11 @@ enum ItemRelationType {
   OPTIONAL
 }
 
+enum QuoteCalculationMode {
+  LEGACY
+  PULSE
+}
+
 enum LifecycleEntityType {
   REQUEST
   QUOTE
@@ -60,6 +65,7 @@ model Request {
   contactId                     String?
   siteId                        String?
   assignedToId                  String?
+  lifecycleContextId            String?
   currentStepId                 String?
   receivedDate                  DateTime                   @default(now())
   dueDate                       DateTime?
@@ -83,6 +89,7 @@ model Request {
   client                        Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
   contact                       PointOfContact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
   site                          ClientSite?                @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  lifecycleContext              LifecycleContext?          @relation(fields: [lifecycleContextId], references: [id], onDelete: SetNull)
   relatedQuote                  Quote?                     @relation(fields: [relatedQuoteId], references: [id], onDelete: SetNull)
   checklistTemplate             RequestChecklistTemplate?  @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
   activities                    RequestActivity[]
@@ -101,6 +108,7 @@ model Request {
   @@index([source])
   @@index([serviceCategory])
   @@index([assignedToId])
+  @@index([lifecycleContextId])
   @@index([currentStepId])
   @@index([clientId])
   @@index([contactId])
@@ -346,6 +354,9 @@ model LocalUser {
   assignedRequestUpdates         RequestUpdate[]        @relation("RequestUpdateAssignees")
   assignedProjects               Project[]              @relation("AssignedProjects")
   assignedInvoices               Invoice[]              @relation("AssignedInvoices")
+  assignedQuotes                 Quote[]                @relation("AssignedQuotes")
+  assignedProjectTasks           ProjectTask[]          @relation("AssignedProjectTasks")
+  updatedLifecycleContexts       LifecycleContext[]     @relation("LifecycleContextEditors")
   requestCollaborations          RequestCollaborator[]  @relation("RequestCollaboratorUsers")
   addedRequestCollaborators      RequestCollaborator[]  @relation("RequestCollaboratorAddedBy")
   requestUpdateMentions          RequestUpdateMention[] @relation("RequestUpdateMentions")
@@ -463,55 +474,79 @@ model Opportunity {
 }
 
 model Quote {
-  id                       String                   @id @default(cuid())
-  quoteNumber              String                   @unique
-  baseQuoteNumber          String?
-  revisionNumber           Int                      @default(0)
-  versionCreatedAt         DateTime?
-  sentAt                   DateTime?
-  sentAtPrecision          LifecycleEventPrecision?
-  title                    String
-  clientId                 String?
-  contactId                String?
-  clientName               String?
-  status                   String                   @default("Draft")
-  owner                    String                   @default("Unassigned")
-  total                    Decimal                  @default(0) @db.Decimal(12, 2)
-  sourceRequestIdSnapshot  String?
-  requestNumberSnapshot    String?
-  requestTitleSnapshot     String?
-  requestTypeSnapshot      String?
-  serviceCategorySnapshot  String?
-  contactNameSnapshot      String?
-  contactEmailSnapshot     String?
-  contactPhoneSnapshot     String?
-  siteNameSnapshot         String?
-  siteAddressSnapshot      String?
-  citySnapshot             String?
-  stateSnapshot            String?
-  scopeDescriptionSnapshot String?
-  internalNotesSnapshot    String?
-  proposalNotes            String?
-  proposalPreparedAt       DateTime?
-  currentStepId            String?
-  archivedAt               DateTime?
-  createdAt                DateTime                 @default(now())
-  updatedAt                DateTime                 @updatedAt
-  client                   Client?                  @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  contact                  PointOfContact?          @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  requests                 Request[]
-  project                  Project?
-  documents                LifecycleDocument[]
-  items                    QuoteItem[]
-  updates                  RequestUpdate[]          @relation("QuoteUpdates")
-  revisions                QuoteRevision[]
+  id                                  String                   @id @default(cuid())
+  quoteNumber                         String                   @unique
+  baseQuoteNumber                     String?
+  revisionNumber                      Int                      @default(0)
+  versionCreatedAt                    DateTime?
+  sentAt                              DateTime?
+  sentAtPrecision                     LifecycleEventPrecision?
+  title                               String
+  clientId                            String?
+  contactId                           String?
+  siteId                              String?
+  assignedToId                        String?
+  lifecycleContextId                  String?
+  clientName                          String?
+  status                              String                   @default("Draft")
+  owner                               String                   @default("Unassigned")
+  calculationMode                     QuoteCalculationMode     @default(PULSE)
+  total                               Decimal                  @default(0) @db.Decimal(12, 2)
+  legacyMaterialSale                  Decimal                  @default(0) @db.Decimal(12, 2)
+  legacyMaterialCost                  Decimal                  @default(0) @db.Decimal(12, 2)
+  legacyLaborSale                     Decimal                  @default(0) @db.Decimal(12, 2)
+  legacyLaborCost                     Decimal                  @default(0) @db.Decimal(12, 2)
+  legacyTaxAmount                     Decimal                  @default(0) @db.Decimal(12, 2)
+  legacyEstimatedDurationBusinessDays Int?
+  externalQuoteNumber                 String?
+  importBatchId                       String?
+  externalCreatedAt                   DateTime?
+  externalSentAt                      DateTime?
+  externalApprovedAt                  DateTime?
+  sourceRequestIdSnapshot             String?
+  requestNumberSnapshot               String?
+  requestTitleSnapshot                String?
+  requestTypeSnapshot                 String?
+  serviceCategorySnapshot             String?
+  contactNameSnapshot                 String?
+  contactEmailSnapshot                String?
+  contactPhoneSnapshot                String?
+  siteNameSnapshot                    String?
+  siteAddressSnapshot                 String?
+  citySnapshot                        String?
+  stateSnapshot                       String?
+  scopeDescriptionSnapshot            String?
+  internalNotesSnapshot               String?
+  proposalNotes                       String?
+  proposalPreparedAt                  DateTime?
+  currentStepId                       String?
+  archivedAt                          DateTime?
+  createdAt                           DateTime                 @default(now())
+  updatedAt                           DateTime                 @updatedAt
+  client                              Client?                  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contact                             PointOfContact?          @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  site                                ClientSite?              @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  assignedTo                          LocalUser?               @relation("AssignedQuotes", fields: [assignedToId], references: [id], onDelete: SetNull)
+  lifecycleContext                    LifecycleContext?        @relation(fields: [lifecycleContextId], references: [id], onDelete: SetNull)
+  requests                            Request[]
+  project                             Project?
+  documents                           LifecycleDocument[]
+  items                               QuoteItem[]
+  updates                             RequestUpdate[]          @relation("QuoteUpdates")
+  revisions                           QuoteRevision[]
 
   @@index([status])
+  @@index([calculationMode])
+  @@index([externalQuoteNumber])
+  @@index([importBatchId])
   @@index([baseQuoteNumber])
   @@index([revisionNumber])
   @@index([owner])
   @@index([clientId])
   @@index([contactId])
+  @@index([siteId])
+  @@index([assignedToId])
+  @@index([lifecycleContextId])
   @@index([sourceRequestIdSnapshot])
   @@index([currentStepId])
   @@index([archivedAt])
@@ -659,34 +694,87 @@ model ItemRelation {
   @@index([sortOrder])
 }
 
+model LifecycleContext {
+  id                    String     @id @default(cuid())
+  details               String     @default("")
+  updatedById           String?
+  updatedByNameSnapshot String     @default("Pulse System")
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  updatedBy             LocalUser? @relation("LifecycleContextEditors", fields: [updatedById], references: [id], onDelete: SetNull)
+  requests              Request[]
+  quotes                Quote[]
+  projects              Project[]
+  invoices              Invoice[]
+
+  @@index([updatedById])
+  @@index([updatedAt])
+}
+
 model Project {
-  id            String              @id @default(cuid())
-  projectNumber String              @unique
-  title         String
-  clientId      String
-  quoteId       String?             @unique
-  assignedToId  String?
-  ownerSnapshot String              @default("Unassigned") @map("owner")
-  currentStepId String?
-  status        String              @default("Ready")
-  budget        Decimal             @default(0) @db.Decimal(12, 2)
-  startDate     DateTime?
-  dueDate       DateTime?
-  archivedAt    DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  quote         Quote?              @relation(fields: [quoteId], references: [id], onDelete: SetNull)
-  assignedTo    LocalUser?          @relation("AssignedProjects", fields: [assignedToId], references: [id], onDelete: SetNull)
-  invoices      Invoice[]
-  documents     LifecycleDocument[]
-  updates       RequestUpdate[]     @relation("ProjectUpdates")
+  id                         String                @id @default(cuid())
+  projectNumber              String                @unique
+  title                      String
+  clientId                   String
+  quoteId                    String?               @unique
+  contactId                  String?
+  siteId                     String?
+  assignedToId               String?
+  lifecycleContextId         String?
+  ownerSnapshot              String                @default("Unassigned") @map("owner")
+  currentStepId              String?
+  status                     String                @default("Ready")
+  budget                     Decimal               @default(0) @db.Decimal(12, 2)
+  sourceQuoteRevisionNumber  Int?
+  sourceQuoteCalculationMode QuoteCalculationMode?
+  quoteFinancialSnapshot     Json?
+  startDate                  DateTime?
+  dueDate                    DateTime?
+  archivedAt                 DateTime?
+  createdAt                  DateTime              @default(now())
+  updatedAt                  DateTime              @updatedAt
+  client                     Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  quote                      Quote?                @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  contact                    PointOfContact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  site                       ClientSite?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  assignedTo                 LocalUser?            @relation("AssignedProjects", fields: [assignedToId], references: [id], onDelete: SetNull)
+  lifecycleContext           LifecycleContext?     @relation(fields: [lifecycleContextId], references: [id], onDelete: SetNull)
+  invoices                   Invoice[]
+  tasks                      ProjectTask[]
+  documents                  LifecycleDocument[]
+  updates                    RequestUpdate[]       @relation("ProjectUpdates")
 
   @@index([clientId])
+  @@index([contactId])
+  @@index([siteId])
   @@index([status])
   @@index([assignedToId])
+  @@index([lifecycleContextId])
   @@index([currentStepId])
   @@index([archivedAt])
+}
+
+model ProjectTask {
+  id           String     @id @default(cuid())
+  projectId    String
+  title        String
+  status       String     @default("NOT_STARTED")
+  weight       Int        @default(1)
+  assignedToId String?
+  dueDate      DateTime?
+  notes        String?
+  sortOrder    Int        @default(0)
+  completedAt  DateTime?
+  archivedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedTo   LocalUser? @relation("AssignedProjectTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, archivedAt, sortOrder])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([dueDate])
 }
 
 model LifecycleDocument {
@@ -729,31 +817,40 @@ model LifecycleDocument {
 }
 
 model Invoice {
-  id            String              @id @default(cuid())
-  invoiceNumber String              @unique
-  title         String
-  clientId      String
-  projectId     String?
-  assignedToId  String?
-  ownerSnapshot String              @default("Unassigned") @map("owner")
-  currentStepId String?
-  status        String              @default("Draft")
-  amount        Decimal             @default(0) @db.Decimal(12, 2)
-  issuedDate    DateTime?
-  dueDate       DateTime?
-  archivedAt    DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  project       Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  assignedTo    LocalUser?          @relation("AssignedInvoices", fields: [assignedToId], references: [id], onDelete: SetNull)
-  documents     LifecycleDocument[]
-  updates       RequestUpdate[]     @relation("InvoiceUpdates")
+  id                 String              @id @default(cuid())
+  invoiceNumber      String              @unique
+  title              String
+  clientId           String
+  projectId          String?
+  contactId          String?
+  siteId             String?
+  assignedToId       String?
+  lifecycleContextId String?
+  ownerSnapshot      String              @default("Unassigned") @map("owner")
+  currentStepId      String?
+  status             String              @default("Draft")
+  amount             Decimal             @default(0) @db.Decimal(12, 2)
+  issuedDate         DateTime?
+  dueDate            DateTime?
+  archivedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project            Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  contact            PointOfContact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  site               ClientSite?         @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  assignedTo         LocalUser?          @relation("AssignedInvoices", fields: [assignedToId], references: [id], onDelete: SetNull)
+  lifecycleContext   LifecycleContext?   @relation(fields: [lifecycleContextId], references: [id], onDelete: SetNull)
+  documents          LifecycleDocument[]
+  updates            RequestUpdate[]     @relation("InvoiceUpdates")
 
   @@index([clientId])
   @@index([projectId])
+  @@index([contactId])
+  @@index([siteId])
   @@index([status])
   @@index([assignedToId])
+  @@index([lifecycleContextId])
   @@index([currentStepId])
   @@index([archivedAt])
 }
@@ -838,6 +935,8 @@ model PointOfContact {
   site                   ClientSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
   requests               Request[]
   quotes                 Quote[]
+  projects               Project[]
+  invoices               Invoice[]
 
   @@index([ownerType, ownerId])
   @@index([clientId])
@@ -873,6 +972,9 @@ model ClientSite {
   client               Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   contacts             PointOfContact[]
   requests             Request[]
+  quotes               Quote[]
+  projects             Project[]
+  invoices             Invoice[]
 
   @@index([clientId])
   @@index([siteType])

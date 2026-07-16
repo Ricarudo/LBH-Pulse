@@ -241,6 +241,18 @@ export type RequestRecord = {
   checklistItems: RequestChecklistItem[];
   checklistInstances: RequestChecklistInstanceRecord[];
   checklistSummary: RequestChecklistSummary;
+  lifecycleContext: {
+    id: string;
+    details: string;
+    updatedAt: string;
+    updatedBy: RequestAssignee | null;
+    updatedByName: string;
+  };
+  relationshipWarnings: Array<{
+    field: "client" | "contact" | "site" | "assignedTo";
+    legacyValue: string;
+    message: string;
+  }>;
 };
 
 import { z } from "zod";
@@ -296,6 +308,7 @@ const requestFormFieldsSchema = z.object({
   siteVisitNeeded: z.boolean().default(false),
   siteVisitCompleted: z.boolean().default(false),
   description: optionalText,
+  lifecycleDetails: z.string().trim().max(5000).optional(),
   internalNotes: optionalText,
   relatedQuoteId: nullableIdSchema,
   createdById: nullableIdSchema
@@ -386,7 +399,16 @@ export const updateRequestChecklistItemSchema = z.object({
 });
 
 export const convertRequestSchema = z.object({
-  createQuote: z.boolean().default(true)
+  createQuote: z.boolean().default(true),
+  calculationMode: z.enum(["LEGACY", "PULSE"]).optional()
+}).strict().superRefine((input, context) => {
+  if (input.createQuote && !input.calculationMode) {
+    context.addIssue({
+      code: "custom",
+      path: ["calculationMode"],
+      message: "Choose Legacy Quote or Pulse Quote."
+    });
+  }
 });
 
 export const requestUpdateFilterSchema = z.enum(requestUpdateFilters);

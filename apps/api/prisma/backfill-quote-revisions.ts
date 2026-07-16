@@ -5,6 +5,11 @@ import {
   Prisma,
   PrismaClient
 } from "../src/generated/prisma/client";
+import {
+  calculateLegacyQuoteFinancials,
+  calculatePulseQuoteFinancials,
+  exactFinancialSummarySnapshot
+} from "../src/modules/quotes/quote-financials";
 
 const adapter = new PrismaPg(
   { connectionString: process.env.DATABASE_URL },
@@ -70,10 +75,25 @@ function itemSnapshot(item: LoadedQuote["items"][number]) {
   };
 }
 
-function quoteTotalFromItems(quote: Pick<LoadedQuote, "items" | "total">) {
-  return quote.items.length
-    ? quote.items.reduce((total, item) => total + Number(item.lineTotal), 0)
-    : Number(quote.total);
+function quoteSummary(quote: LoadedQuote) {
+  return quote.calculationMode === "LEGACY"
+    ? calculateLegacyQuoteFinancials({
+        materialSale: quote.legacyMaterialSale,
+        materialCost: quote.legacyMaterialCost,
+        laborSale: quote.legacyLaborSale,
+        laborCost: quote.legacyLaborCost,
+        taxAmount: quote.legacyTaxAmount,
+        estimatedDurationBusinessDays: quote.legacyEstimatedDurationBusinessDays
+      })
+    : calculatePulseQuoteFinancials(quote.items);
+}
+
+function quoteTotalFromItems(quote: LoadedQuote) {
+  return quoteSummary(quote).finalCustomerTotal.toNumber();
+}
+
+function quoteRevenue(quote: LoadedQuote) {
+  return quoteSummary(quote).preTaxContractValue.toNumber();
 }
 
 function snapshotItemTotal(snapshot: Prisma.JsonValue) {
@@ -114,9 +134,20 @@ function contactSnapshot(contact: LoadedQuote["contact"]) {
 }
 
 function quoteSnapshot(quote: LoadedQuote, baseQuoteNumber: string, dataAvailable = true) {
+  const summary = quoteSummary(quote);
   return JSON.parse(JSON.stringify({
     dataAvailable,
     baseQuoteNumber,
+    calculationMode: quote.calculationMode,
+    legacyFinancials: {
+      materialSale: Number(quote.legacyMaterialSale),
+      materialCost: Number(quote.legacyMaterialCost),
+      laborSale: Number(quote.legacyLaborSale),
+      laborCost: Number(quote.legacyLaborCost),
+      taxAmount: Number(quote.legacyTaxAmount),
+      estimatedDurationBusinessDays: quote.legacyEstimatedDurationBusinessDays
+    },
+    financialSummary: exactFinancialSummarySnapshot(summary),
     contact: contactSnapshot(quote.contact),
     context: {
       sourceRequestId: quote.sourceRequestIdSnapshot,
@@ -330,7 +361,7 @@ async function consolidateFamily(
           fromStatus: "Sent",
           toStatus: "Revision Requested",
           changedAt: requestedAt,
-          valueSnapshot: quoteTotalFromItems(historicalQuote),
+          valueSnapshot: quoteRevenue(historicalQuote),
           source: "LEGACY_IMPORT",
           precision: "ESTIMATED",
           metadata: {
@@ -354,7 +385,7 @@ async function consolidateFamily(
           toStatus: "Revision Requested",
           changedAt: requestedAt,
           actorNameSnapshot: "Pulse migration",
-          valueSnapshot: quoteTotalFromItems(historicalQuote),
+          valueSnapshot: quoteRevenue(historicalQuote),
           source: "LEGACY_IMPORT",
           precision: "ESTIMATED",
           metadata: {
@@ -375,7 +406,7 @@ async function consolidateFamily(
           toStatus: "Sent",
           changedAt: sentAt,
           actorNameSnapshot: "Pulse migration",
-          valueSnapshot: quoteTotalFromItems(historicalQuote),
+          valueSnapshot: quoteRevenue(historicalQuote),
           source: "LEGACY_IMPORT",
           precision: "ESTIMATED",
           metadata: {

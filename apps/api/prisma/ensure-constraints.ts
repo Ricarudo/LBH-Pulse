@@ -22,6 +22,31 @@ async function main() {
       ADD CONSTRAINT "RequestUpdate_lifecycle_parent_check" CHECK (
         num_nonnulls("requestId", "quoteId", "projectId", "invoiceId") = 1
       );
+
+    ALTER TABLE "pulse"."ProjectTask"
+      DROP CONSTRAINT IF EXISTS "ProjectTask_status_check";
+    ALTER TABLE "pulse"."ProjectTask"
+      ADD CONSTRAINT "ProjectTask_status_check" CHECK (
+        "status" IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE')
+      );
+    ALTER TABLE "pulse"."ProjectTask"
+      DROP CONSTRAINT IF EXISTS "ProjectTask_weight_check";
+    ALTER TABLE "pulse"."ProjectTask"
+      ADD CONSTRAINT "ProjectTask_weight_check" CHECK (
+        "weight" BETWEEN 1 AND 1000
+      );
+
+    ALTER TABLE "pulse"."Quote"
+      DROP CONSTRAINT IF EXISTS "Quote_legacy_financials_nonnegative_check";
+    ALTER TABLE "pulse"."Quote"
+      ADD CONSTRAINT "Quote_legacy_financials_nonnegative_check" CHECK (
+        "legacyMaterialSale" >= 0 AND
+        "legacyMaterialCost" >= 0 AND
+        "legacyLaborSale" >= 0 AND
+        "legacyLaborCost" >= 0 AND
+        "legacyTaxAmount" >= 0 AND
+        ("legacyEstimatedDurationBusinessDays" IS NULL OR "legacyEstimatedDurationBusinessDays" >= 0)
+      );
   `);
 }
 
