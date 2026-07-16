@@ -7,8 +7,13 @@ import type {
 import type {
   InvoiceDetailResponse,
   InvoiceResponse,
+  CreateProjectTaskInput,
   ProjectDetailResponse,
   ProjectResponse,
+  ProjectTaskResponse,
+  ProjectTasksResponse,
+  ReorderProjectTasksInput,
+  UpdateProjectTaskInput,
   UpdateInvoiceInput,
   UpdateProjectInput
 } from "@pulse/contracts/work";
@@ -126,5 +131,37 @@ export function undoWorkUpdate(
 export function markWorkMentionsRead(stage: WorkApiStage, recordId: string) {
   return apiRequest<{ marked: number }>(workPath(stage, recordId, "/mentions/read"), {
     method: "POST"
+  });
+}
+
+export function createProjectTask(recordId: string, input: CreateProjectTaskInput) {
+  return apiRequest<ProjectTaskResponse>(workPath("project", recordId, "/tasks"), {
+    method: "POST",
+    json: input
+  });
+}
+
+export function updateProjectTask(
+  recordId: string,
+  taskId: string,
+  input: UpdateProjectTaskInput
+) {
+  return apiRequest<ProjectTaskResponse>(
+    workPath("project", recordId, `/tasks/${encodeURIComponent(taskId)}`),
+    { method: "PATCH", json: input }
+  );
+}
+
+export function archiveProjectTask(recordId: string, taskId: string) {
+  return apiRequest<ProjectTasksResponse>(
+    workPath("project", recordId, `/tasks/${encodeURIComponent(taskId)}`),
+    { method: "DELETE" }
+  );
+}
+
+export function reorderProjectTasks(recordId: string, input: ReorderProjectTasksInput) {
+  return apiRequest<ProjectTasksResponse>(workPath("project", recordId, "/tasks/reorder"), {
+    method: "PATCH",
+    json: input
   });
 }

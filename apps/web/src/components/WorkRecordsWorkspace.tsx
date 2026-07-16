@@ -1,14 +1,12 @@
 "use client";
 
-import { FormEvent, Fragment, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
-  ArrowRight,
   ArrowUpDown,
   CalendarClock,
-  FileText,
   Plus,
   Save,
   Search,
@@ -16,7 +14,6 @@ import {
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
 import { ViewportPortal } from "@/components/ViewportPortal";
-import { convertQuoteToProject } from "@/lib/api/quotes";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ClientRecord } from "@pulse/contracts/clients";
@@ -25,6 +22,7 @@ import {
   invoiceStatuses,
   projectStatuses,
   quoteStatuses,
+  type QuoteCalculationMode,
   type InvoiceRecord,
   type ProjectRecord,
   type QuoteRecord
@@ -44,11 +42,12 @@ type FormState = {
   title: string;
   clientId: string;
   contactId: string;
+  siteId: string;
   projectId: string;
-  owner: string;
   assignedToId: string;
   value: string;
   dueDate: string;
+  calculationMode: QuoteCalculationMode | "";
 };
 
 type WorkView = {
@@ -61,11 +60,12 @@ const emptyForm: FormState = {
   title: "",
   clientId: "",
   contactId: "",
+  siteId: "",
   projectId: "",
-  owner: "Unassigned",
   assignedToId: "",
   value: "0",
-  dueDate: ""
+  dueDate: "",
+  calculationMode: ""
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -280,10 +280,14 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 cache: "no-store"
               })
             : Promise.resolve({ projects: [] }),
-          kind !== "quotes" && canWrite
-            ? requestJson<{ assignees: RequestAssignee[] }>(`/api/${kind}/team-members`, {
-                cache: "no-store"
-              })
+          canWrite
+            ? kind === "quotes"
+              ? requestJson<{ teamMembers: RequestAssignee[] }>("/api/quotes/team-members", {
+                  cache: "no-store"
+                }).then((data) => ({ assignees: data.teamMembers }))
+              : requestJson<{ assignees: RequestAssignee[] }>(`/api/${kind}/team-members`, {
+                  cache: "no-store"
+                })
             : Promise.resolve({ assignees: [] }),
           canCreateBilling
             ? requestJson<{ assignees: RequestAssignee[] }>("/api/invoices/team-members", {
@@ -413,8 +417,9 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       ...emptyForm,
       title: project ? `${project.title} milestone invoice` : "",
       clientId: project?.clientId ?? "",
+      contactId: project?.contactId ?? "",
+      siteId: project?.siteId ?? "",
       projectId: project?.id ?? "",
-      owner: user?.name ?? "Unassigned",
       assignedToId: inheritedAssigneeId ?? currentUserId,
       value: project ? String(project.budget) : "0"
     });
@@ -428,10 +433,14 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
 
   async function createRecord(event: FormEvent) {
     event.preventDefault();
-    if (!form.title || !form.clientId || (kind === "quotes" && !form.contactId)) {
+    if (
+      !form.title ||
+      !form.clientId ||
+      (kind === "quotes" && (!form.contactId || !form.calculationMode))
+    ) {
       setToast(
         kind === "quotes"
-          ? "Title, client, and point of contact are required."
+          ? "Title, client, point of contact, and calculation mode are required."
           : "Title and client are required."
       );
       return;
@@ -471,14 +480,17 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
               title: form.title,
               clientId: form.clientId,
               contactId: form.contactId,
-              owner: form.owner,
+              siteId: form.siteId || null,
+              assignedToId: form.assignedToId || null,
               status: "Draft",
-              total: Number(form.value)
+              calculationMode: form.calculationMode
             }
           : kind === "projects"
             ? {
                 title: form.title,
                 clientId: form.clientId,
+                contactId: form.contactId || null,
+                siteId: form.siteId || null,
                 assignedToId: form.assignedToId || null,
                 status: "Ready",
                 budget: Number(form.value),
@@ -488,6 +500,8 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 title: form.title,
                 clientId: form.clientId,
                 projectId: form.projectId || undefined,
+                contactId: form.contactId || null,
+                siteId: form.siteId || null,
                 assignedToId: form.assignedToId || null,
                 status: "Draft",
                 amount: Number(form.value),
@@ -529,20 +543,6 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     }
   }
 
-  async function convertQuote(quote: QuoteRecord) {
-    try {
-      const data = await convertQuoteToProject(quote.id);
-      setRecords((current) =>
-        current.map((record) =>
-          record.id === quote.id ? { ...quote, projectId: data.project.id } : record
-        )
-      );
-      setToast(`${quote.quoteNumber} created ${data.project.projectNumber}.`);
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : "Unable to create project.");
-    }
-  }
-
   function renderStatus(record: WorkRecord, compact = false) {
     return canWrite ? (
       <select
@@ -565,65 +565,6 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     );
   }
 
-  function renderActions(record: WorkRecord, mobile = false) {
-    const canShowFiles = kind !== "quotes";
-    const canCreateProject =
-      kind === "quotes" &&
-      canUser(user, "projects:write") &&
-      "projectId" in record &&
-      record.status === "Approved" &&
-      !record.projectId;
-    const canCreateInvoice = kind === "projects" && canUser(user, "billing:write") && "budget" in record;
-
-    return (
-      <div
-        className={mobile ? "work-queue-card-actions" : "work-queue-actions"}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <Link href={recordHref(kind, record.id)}>
-          Open workspace
-          <ArrowRight size={14} />
-        </Link>
-        {canShowFiles ? (
-          <Link href={recordHref(kind, record.id, "files")}>
-            <FileText size={14} />
-            Files
-          </Link>
-        ) : null}
-        {canCreateProject ? (
-          <button
-            className="primary"
-            type="button"
-            onClick={() => void convertQuote(record as QuoteRecord)}
-            disabled={!canWrite}
-          >
-            Create project
-            <ArrowRight size={14} />
-          </button>
-        ) : null}
-        {canCreateInvoice ? (
-          <button
-            className="primary"
-            type="button"
-            onClick={() => openCreate(record as ProjectRecord)}
-            disabled={!canWrite}
-          >
-            Create invoice
-            <ArrowRight size={14} />
-          </button>
-        ) : null}
-        {kind === "quotes" && "projectId" in record && record.projectId ? (
-          <span>Project created</span>
-        ) : null}
-        {kind === "projects" && "invoiceCount" in record && record.invoiceCount ? (
-          <span>
-            {record.invoiceCount} invoice{record.invoiceCount === 1 ? "" : "s"}
-          </span>
-        ) : null}
-      </div>
-    );
-  }
-
   return (
     <section className="work-queue">
       <header className="work-queue-heading">
@@ -640,12 +581,12 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             {copy.summary}
           </p>
         </div>
-        {kind === "quotes" && canUser(user, "requests:write") ? (
-          <Link className="primary-button compact" href="/requests">
-            <Plus size={17} />
-            Create from request
-          </Link>
-        ) : (
+        <div className="work-queue-heading-actions">
+          {kind === "quotes" && canUser(user, "requests:write") ? (
+            <Link className="secondary-button compact" href="/requests">
+              Create from request
+            </Link>
+          ) : null}
           <button
             className="primary-button compact"
             type="button"
@@ -655,7 +596,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             <Plus size={17} />
             New {copy.singular.toLowerCase()}
           </button>
-        )}
+        </div>
       </header>
 
       <nav className="work-queue-views" aria-label={`${title} views`}>
@@ -739,14 +680,13 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 <th>{kind === "quotes" ? "Owner" : "Assigned to"}</th>
                 <th>Timing</th>
                 <th>{valueLabel}</th>
-                {kind !== "quotes" ? <th>Actions</th> : null}
               </tr>
             </thead>
             <tbody>
               {isLoading
                 ? Array.from({ length: 5 }, (_, rowIndex) => (
                     <tr className="work-queue-skeleton-row" key={rowIndex}>
-                      {Array.from({ length: kind === "quotes" ? 6 : 7 }, (__, cellIndex) => (
+                      {Array.from({ length: 6 }, (__, cellIndex) => (
                         <td key={cellIndex}>
                           <span />
                         </td>
@@ -756,8 +696,8 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 : visibleRecords.map((record) => {
                     const dueDate = recordDue(record);
                     return (
-                      <Fragment key={record.id}>
                         <tr
+                          key={record.id}
                           data-work-record={record.id}
                           tabIndex={0}
                           role="link"
@@ -817,9 +757,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                           <td>
                             <strong>{formatMoney(recordValue(record))}</strong>
                           </td>
-                          {kind !== "quotes" ? <td>{renderActions(record)}</td> : null}
                         </tr>
-                      </Fragment>
                     );
                   })}
             </tbody>
@@ -887,7 +825,6 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                         <strong>{recordAssignedName(record)}</strong>
                       </div>
                     </div>
-                    {kind !== "quotes" ? renderActions(record, true) : null}
                   </article>
                 );
               })}
@@ -965,6 +902,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                       ...form,
                       clientId: event.target.value,
                       contactId: "",
+                      siteId: "",
                       projectId: ""
                     })
                   }
@@ -977,11 +915,10 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   ))}
                 </select>
               </label>
-              {kind === "quotes" ? (
-                <label>
-                  Point of contact
+              <label>
+                  Point of contact {kind === "quotes" ? "" : "(optional)"}
                   <select
-                    required
+                    required={kind === "quotes"}
                     disabled={!form.clientId}
                     value={form.contactId}
                     onChange={(event) =>
@@ -1004,7 +941,17 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                     )}
                   </select>
                 </label>
-              ) : null}
+              <label>
+                Site (optional)
+                <select
+                  disabled={!form.clientId}
+                  value={form.siteId}
+                  onChange={(event) => setForm({ ...form, siteId: event.target.value })}
+                >
+                  <option value="">{form.clientId ? "No site" : "Select client first"}</option>
+                  {(clients.find((client) => client.id === form.clientId)?.sites ?? []).map((site) => <option key={site.id} value={site.id}>{site.siteName}</option>)}
+                </select>
+              </label>
               {kind === "invoices" ? (
                 <label>
                   Project
@@ -1022,6 +969,8 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                         ...form,
                         projectId: event.target.value,
                         clientId: project?.clientId ?? form.clientId,
+                        contactId: project?.contactId ?? "",
+                        siteId: project?.siteId ?? "",
                         assignedToId: inheritedAssigneeId
                       });
                     }}
@@ -1040,18 +989,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   </select>
                 </label>
               ) : null}
-              {kind === "quotes" ? (
-                <label>
-                  Owner
-                  <input
-                    value={form.owner}
-                    onChange={(event) =>
-                      setForm({ ...form, owner: event.target.value })
-                    }
-                  />
-                </label>
-              ) : (
-                <label>
+              <label>
                   Assigned person
                   <select
                     value={form.assignedToId}
@@ -1067,19 +1005,47 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                     ))}
                   </select>
                 </label>
+              {kind === "quotes" ? (
+                <fieldset className="quote-mode-fieldset">
+                  <legend>Calculation mode</legend>
+                  <div className="quote-mode-options">
+                    {([
+                      ["LEGACY", "Legacy Quote", "Enter summarized values calculated outside Pulse."],
+                      ["PULSE", "Pulse Quote", "Build and calculate the quote using Pulse line items."]
+                    ] as const).map(([mode, label, description]) => (
+                      <label
+                        className={`quote-mode-option${form.calculationMode === mode ? " selected" : ""}`}
+                        key={mode}
+                      >
+                        <input
+                          type="radio"
+                          name="calculationMode"
+                          required
+                          checked={form.calculationMode === mode}
+                          onChange={() => setForm({ ...form, calculationMode: mode })}
+                        />
+                        <span>
+                          <strong>{label}</strong>
+                          <small>{description}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ) : (
+                <label>
+                  {valueLabel}
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.value}
+                    onChange={(event) =>
+                      setForm({ ...form, value: event.target.value })
+                    }
+                  />
+                </label>
               )}
-              <label>
-                {valueLabel}
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.value}
-                  onChange={(event) =>
-                    setForm({ ...form, value: event.target.value })
-                  }
-                />
-              </label>
               {kind !== "quotes" || invoiceSource ? (
                 <label>
                   Due date

@@ -2,8 +2,10 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  AlertTriangle,
   Boxes,
   Clock3,
   Eye,
@@ -19,15 +21,20 @@ import {
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
 import { ViewportPortal } from "@/components/ViewportPortal";
+import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { searchItems } from "@/lib/api/items";
 import {
   addAdHocQuoteItem,
   addCatalogQuoteItem,
   addQuoteKit,
   createQuoteRevision,
+  convertQuoteToProject,
   fetchQuote,
   fetchQuoteRevision,
+  fetchQuoteUpdateTeamMembers,
   removeQuoteItem,
+  replaceLegacyQuoteFinancials,
+  switchQuoteCalculationMode,
   updateQuote,
   updateQuoteItem,
   updateQuoteProposal
@@ -45,18 +52,24 @@ import {
 } from "@pulse/contracts/items";
 import type {
   QuoteDetailRecord,
+  LifecycleTab,
+  LegacyQuoteFinancials,
+  QuoteCalculationMode,
+  QuoteFinancialSummary,
   QuoteRecord,
   QuoteRevisionDetailRecord,
   QuoteVersionSummary
 } from "@pulse/contracts/work";
 import {
   serviceCategories,
+  type RequestAssignee,
   type ServiceCategory
 } from "@pulse/contracts/requests";
 import { QuoteUpdatesPanel } from "./QuoteUpdatesPanel";
 
 type QuoteWorkspaceProps = {
   quoteId: string;
+  initialTab?: LifecycleTab;
 };
 
 type AdHocDraft = {
@@ -92,6 +105,43 @@ const revisionEligibleStatuses = new Set<QuoteRecord["status"]>([
   "Cancelled"
 ]);
 
+type LegacyFinancialDraft = Record<
+  "materialSale" | "materialCost" | "laborSale" | "laborCost" | "taxAmount" | "estimatedDurationBusinessDays",
+  string
+>;
+
+function legacyDraft(financials: LegacyQuoteFinancials): LegacyFinancialDraft {
+  return {
+    materialSale: String(financials.materialSale),
+    materialCost: String(financials.materialCost),
+    laborSale: String(financials.laborSale),
+    laborCost: String(financials.laborCost),
+    taxAmount: String(financials.taxAmount),
+    estimatedDurationBusinessDays: financials.estimatedDurationBusinessDays === null
+      ? ""
+      : String(financials.estimatedDurationBusinessDays)
+  };
+}
+
+function SummaryMetrics({ summary }: { summary: QuoteFinancialSummary }) {
+  const percent = (value: number | null) => value === null ? "—" : `${value.toFixed(2)}%`;
+  return (
+    <dl className="quote-financial-summary">
+      <div><dt>Material revenue</dt><dd>{formatMoney(summary.materialRevenue)}</dd></div>
+      <div><dt>Labor revenue</dt><dd>{formatMoney(summary.laborRevenue)}</dd></div>
+      {summary.serviceRevenue !== 0 ? <div><dt>Service revenue</dt><dd>{formatMoney(summary.serviceRevenue)}</dd></div> : null}
+      <div className="summary-emphasis"><dt>Pre-tax contract value</dt><dd>{formatMoney(summary.preTaxContractValue)}</dd></div>
+      <div><dt>Estimated cost</dt><dd>{formatMoney(summary.totalEstimatedCost)}</dd></div>
+      <div><dt>Gross profit</dt><dd>{formatMoney(summary.grossProfit)}</dd></div>
+      <div><dt>Gross margin</dt><dd>{percent(summary.grossMarginPercent)}</dd></div>
+      <div><dt>Markup</dt><dd>{percent(summary.markupPercent)}</dd></div>
+      <div><dt>Tax</dt><dd>{formatMoney(summary.taxAmount)}</dd></div>
+      <div className="summary-total"><dt>Final customer total</dt><dd>{formatMoney(summary.finalCustomerTotal)}</dd></div>
+      {summary.estimatedDurationBusinessDays !== null ? <div><dt>Estimated duration</dt><dd>{summary.estimatedDurationBusinessDays} business days</dd></div> : null}
+    </dl>
+  );
+}
+
 function lineMargin(item: QuoteItemRecord) {
   if (item.unitPrice <= 0) return 0;
   return ((item.unitPrice - item.unitCost) / item.unitPrice) * 100;
@@ -101,11 +151,15 @@ function compactDate(value: string) {
   return formatWorkspaceDate(value) || "Not set";
 }
 
-export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
+export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceProps) {
   const { user } = useCurrentUser();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const canWrite = canUser(user, "quotes:write");
   const canWriteUpdates = canUser(user, "activity:write");
   const [quote, setQuote] = useState<QuoteDetailRecord | null>(null);
+  const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [loading, setLoading] = useState(true);
@@ -118,11 +172,18 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
   const [addQuantity, setAddQuantity] = useState("1");
   const [adHocDraft, setAdHocDraft] = useState<AdHocDraft>(blankAdHoc);
   const [proposalNotes, setProposalNotes] = useState("");
+  const [activeTab, setActiveTab] = useState<LifecycleTab>(initialTab);
+  const [detailsEditing, setDetailsEditing] = useState(false);
+  const [detailsDraft, setDetailsDraft] = useState("");
   const [tradeEditorOpen, setTradeEditorOpen] = useState(false);
   const [tradeDraft, setTradeDraft] = useState<ServiceCategory[]>([]);
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
   const [revisionReason, setRevisionReason] = useState("");
   const [revisionBusy, setRevisionBusy] = useState(false);
+  const [legacyFinancialDraft, setLegacyFinancialDraft] = useState<LegacyFinancialDraft | null>(null);
+  const [modeDialogOpen, setModeDialogOpen] = useState(false);
+  const [targetMode, setTargetMode] = useState<QuoteCalculationMode | null>(null);
+  const [projectConversionOpen, setProjectConversionOpen] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<QuoteRevisionDetailRecord | null>(null);
   const [historyLoadingVersion, setHistoryLoadingVersion] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -134,10 +195,16 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
       try {
         setLoading(true);
         setLoadError("");
-        const data = await fetchQuote(quoteId, { cache: "no-store" });
+        const [data, teamData] = await Promise.all([
+          fetchQuote(quoteId, { cache: "no-store" }),
+          fetchQuoteUpdateTeamMembers({ cache: "no-store" })
+        ]);
         const nextQuote = normalizeQuoteDetailRecord(data.quote);
         setQuote(nextQuote);
+        setAssignees(teamData.teamMembers);
         setProposalNotes(nextQuote.proposalNotes);
+        setLegacyFinancialDraft(legacyDraft(nextQuote.legacyFinancials));
+        setDetailsDraft(nextQuote.lifecycleContext.details);
         setTradeDraft(nextQuote.trades as ServiceCategory[]);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Unable to load quote.");
@@ -198,6 +265,7 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
         ...nextQuote
       });
       setProposalNotes(normalizedQuote.proposalNotes);
+      setLegacyFinancialDraft(legacyDraft(normalizedQuote.legacyFinancials));
       setTradeDraft(normalizedQuote.trades as ServiceCategory[]);
       return normalizedQuote;
     });
@@ -234,6 +302,43 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Unable to update quote.");
       return false;
+    }
+  }
+
+  function selectTab(tab: LifecycleTab) {
+    setActiveTab(tab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  async function saveLifecycleDetails() {
+    setBusy(true);
+    const saved = await patchQuote({ lifecycleDetails: detailsDraft });
+    setBusy(false);
+    if (saved) {
+      setQuote((current) => current ? {
+        ...current,
+        lifecycleContext: {
+          ...current.lifecycleContext,
+          details: detailsDraft,
+          updatedAt: new Date().toISOString(),
+          updatedByName: user?.name ?? "Pulse System"
+        }
+      } : current);
+      setDetailsEditing(false);
+      setToast("Details saved for the full lifecycle.");
+    }
+  }
+
+  async function assignQuotePerson(assignedToId: string) {
+    if (!quote || !canWrite || busy) return;
+    setBusy(true);
+    const saved = await patchQuote({ assignedToId: assignedToId || null });
+    setBusy(false);
+    if (saved) {
+      const assignedName = assignees.find((assignee) => assignee.id === assignedToId)?.name ?? "Unassigned";
+      setToast(`${quote.quoteNumber} assigned to ${assignedName}.`);
     }
   }
 
@@ -371,6 +476,100 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     }
   }
 
+  async function saveLegacyFinancials(event: FormEvent) {
+    event.preventDefault();
+    if (!quote || !legacyFinancialDraft || busy) return;
+    if ([
+      legacyFinancialDraft.materialSale,
+      legacyFinancialDraft.materialCost,
+      legacyFinancialDraft.laborSale,
+      legacyFinancialDraft.laborCost,
+      legacyFinancialDraft.taxAmount
+    ].some((value) => value.trim() === "")) {
+      setToast("Complete every sale, cost, and tax field. Use zero when none applies.");
+      return;
+    }
+    const values = {
+      materialSale: Number(legacyFinancialDraft.materialSale),
+      materialCost: Number(legacyFinancialDraft.materialCost),
+      laborSale: Number(legacyFinancialDraft.laborSale),
+      laborCost: Number(legacyFinancialDraft.laborCost),
+      taxAmount: Number(legacyFinancialDraft.taxAmount),
+      estimatedDurationBusinessDays: legacyFinancialDraft.estimatedDurationBusinessDays === ""
+        ? null
+        : Number(legacyFinancialDraft.estimatedDurationBusinessDays)
+    };
+    if (
+      Object.entries(values).some(([key, value]) =>
+        key === "estimatedDurationBusinessDays"
+          ? value !== null && (!Number.isInteger(value) || value < 0)
+          : value === null || !Number.isFinite(value) || value < 0
+      )
+    ) {
+      setToast("Enter nonnegative monetary values and a whole number of business days.");
+      return;
+    }
+    try {
+      setBusy(true);
+      const data = await replaceLegacyQuoteFinancials(quote.id, values);
+      updateQuoteState(data.quote);
+      setToast("Legacy financial summary saved.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to save the financial summary.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function requestModeChange(mode: QuoteCalculationMode) {
+    if (!quote || mode === quote.calculationMode) return;
+    setTargetMode(mode);
+    const summary = quote.financialSummary;
+    const financiallyEmpty = quote.items.length === 0 &&
+      summary.preTaxContractValue === 0 &&
+      summary.totalEstimatedCost === 0 &&
+      summary.taxAmount === 0 &&
+      (summary.estimatedDurationBusinessDays === null || summary.estimatedDurationBusinessDays === 0);
+    if (financiallyEmpty) {
+      void changeCalculationModeFor(mode, false);
+      return;
+    }
+    setModeDialogOpen(true);
+  }
+
+  async function changeCalculationModeFor(mode: QuoteCalculationMode, discardFinancialData: boolean) {
+    if (!quote || mode === quote.calculationMode || busy) return;
+    try {
+      setBusy(true);
+      const data = await switchQuoteCalculationMode(quote.id, {
+        calculationMode: mode,
+        discardFinancialData
+      });
+      updateQuoteState(data.quote);
+      setModeDialogOpen(false);
+      setTargetMode(null);
+      setToast(`Changed to ${mode === "LEGACY" ? "Legacy Quote" : "Pulse Quote"}.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to change calculation mode.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function convertToProject() {
+    if (!quote || busy) return;
+    try {
+      setBusy(true);
+      const data = await convertQuoteToProject(quote.id);
+      setProjectConversionOpen(false);
+      router.push(`/projects/${data.project.id}`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to convert this quote.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function openHistoricalVersion(version: QuoteVersionSummary) {
     if (!quote || version.isCurrent || historyLoadingVersion !== null) return;
     try {
@@ -394,19 +593,32 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
     return <section className="quote-workspace"><div className="work-queue-state error">{loadError || "Quote not found."}</div></section>;
   }
 
+  const financiallyEmpty = quote.items.length === 0 &&
+    quote.financialSummary.preTaxContractValue === 0 &&
+    quote.financialSummary.totalEstimatedCost === 0 &&
+    quote.financialSummary.taxAmount === 0 &&
+    (quote.financialSummary.estimatedDurationBusinessDays === null ||
+      quote.financialSummary.estimatedDurationBusinessDays === 0);
+
   return (
     <section className="quote-workspace">
-      <header className="quote-workspace-header">
-        <div>
-          <Link className="toolbar-button compact" href="/quotes"><ArrowLeft size={16} />Quotes</Link>
-          <nav className="breadcrumb" aria-label="Breadcrumb">
-            <Link href="/hub">Home</Link><span>/</span><Link href="/quotes">Quotes</Link><span>/</span><span>{quote.quoteNumber}</span>
-          </nav>
+      <header className="quote-workspace-header lifecycle-record-header">
+        <Link
+          className="lifecycle-record-back"
+          href="/quotes"
+          aria-label="Back to quotes queue"
+          title="Back to quotes queue"
+        >
+          <ArrowLeft size={17} />
+        </Link>
+        <div className="lifecycle-record-identity">
+          <span>{quote.quoteNumber} <em className={`quote-mode-badge mode-${quote.calculationMode.toLowerCase()}`}>{quote.calculationMode === "LEGACY" ? "Legacy Quote" : "Pulse Quote"}</em></span>
           <h1>{quote.title}</h1>
-          <p>{quote.quoteNumber} · {quote.clientName || "Unlinked client"} · {quote.context.requestNumber || "Manual quote"}</p>
+          <p>{quote.clientName || "Unlinked client"} · {quote.context.requestNumber || "Manual quote"}</p>
         </div>
-        <div className="quote-header-actions">
+        <div className="quote-header-actions lifecycle-record-actions">
           <select
+            className="lifecycle-record-status"
             value={quote.status}
             disabled={!canWrite}
             onChange={(event) =>
@@ -428,14 +640,29 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
               <RotateCcw size={16} />Request revision
             </button>
           ) : null}
-          <button className="toolbar-button compact" type="button" onClick={() => setAdHocOpen(true)} disabled={!canWrite}><Plus size={16} />Ad hoc line</button>
-          <button className="primary-button compact" type="button" onClick={() => setAddOpen(true)} disabled={!canWrite}><PackagePlus size={16} />Add Item</button>
+          {quote.status === "Draft" && !quote.projectId ? (
+            <button
+              className="toolbar-button compact"
+              type="button"
+              disabled={!canWrite || busy}
+              onClick={() => requestModeChange(quote.calculationMode === "LEGACY" ? "PULSE" : "LEGACY")}
+            >
+              Switch to {quote.calculationMode === "LEGACY" ? "Pulse" : "Legacy"}
+            </button>
+          ) : null}
+          {quote.status === "Approved" && !quote.projectId ? (
+            <button className="primary-button compact" type="button" disabled={!canWrite || busy} onClick={() => setProjectConversionOpen(true)}>Convert to project</button>
+          ) : null}
+          {quote.calculationMode === "PULSE" ? <>
+            <button className="toolbar-button compact" type="button" onClick={() => setAdHocOpen(true)} disabled={!canWrite}><Plus size={16} />Ad hoc line</button>
+            <button className="primary-button compact" type="button" onClick={() => setAddOpen(true)} disabled={!canWrite}><PackagePlus size={16} />Add Item</button>
+          </> : null}
         </div>
       </header>
 
-      <section className="quote-context-grid" aria-label="Quote context">
+      <section className="quote-context-grid lifecycle-key-details" aria-label="Quote context">
         <article><span>Request</span><strong>{quote.context.requestNumber || "Manual quote"}</strong><p>{quote.context.requestTitle || quote.title}</p></article>
-        <article className={quote.clientId ? "quote-context-linked" : undefined}>
+        <article className={quote.clientId ? "quote-context-linked lifecycle-client-key" : undefined}>
           {quote.clientId ? (
             <Link
               href={`/clients/${quote.clientId}`}
@@ -522,7 +749,42 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
         </article>
       </section>
 
-      <section className="quote-version-history" aria-labelledby="quote-version-history-heading">
+      {quote.relationshipWarnings.map((warning) => (
+        <div key={`${warning.field}:${warning.legacyValue}`} className="request-record-alert" role="status">
+          <AlertTriangle size={18} />
+          <span>{warning.message} <strong>{warning.legacyValue}</strong></span>
+        </div>
+      ))}
+
+      <div className="request-supporting-tabs work-record-tabs lifecycle-tabs quote-lifecycle-tabs" role="tablist" aria-label="Quote workspace sections">
+        {(["work", "details", "files", "updates"] as LifecycleTab[]).map((tab) => (
+          <button key={tab} type="button" role="tab" aria-selected={activeTab === tab} tabIndex={activeTab === tab ? 0 : -1} onClick={() => selectTab(tab)}>
+            {tab[0].toUpperCase() + tab.slice(1)}
+            {tab === "files" && quote.documents.length ? <span>{quote.documents.length}</span> : null}
+            {tab === "updates" && quote.unreadMentionCount ? <span>{quote.unreadMentionCount}</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "details" ? (
+        <section className="lifecycle-details-panel quote-lifecycle-details">
+          <div className="panel-header">
+            <div><h2>Details</h2><p className="panel-note">Stage links, request context, and one shared note across the lifecycle.</p></div>
+            {detailsEditing ? (
+              <div className="settings-inline-actions"><button className="toolbar-button compact" type="button" onClick={() => { setDetailsEditing(false); setDetailsDraft(quote.lifecycleContext.details); }}>Cancel</button><button className="primary-button compact" type="button" disabled={busy} onClick={() => void saveLifecycleDetails()}><Save size={15} />Save</button></div>
+            ) : <button className="toolbar-button compact" type="button" disabled={!canWrite} onClick={() => setDetailsEditing(true)}>Edit note</button>}
+          </div>
+          <div className="request-details-grid lifecycle-linked-grid">
+            <section><span>Client</span><h3>{quote.clientId ? <Link href={`/clients/${quote.clientId}`}>{quote.clientName}</Link> : quote.clientName || "Not linked"}</h3><p>Linked for this quote stage</p></section>
+            <section><span>Point of contact</span><h3>{quote.contact?.name || quote.context.contactName || "Not linked"}</h3><p>{quote.contact?.email || quote.context.contactEmail || "No contact method"}</p></section>
+            <section><span>Site</span><h3>{quote.site?.siteName || quote.context.siteName || "Not linked"}</h3><p>{quote.site ? [quote.site.address, quote.site.city, quote.site.state].filter(Boolean).join(", ") : quote.context.siteAddress || "No site"}</p></section>
+            <section className="lifecycle-assignee-card"><span>Assigned person</span><select aria-label="Assigned person" value={quote.assignedToId ?? ""} disabled={!canWrite || busy} onChange={(event) => void assignQuotePerson(event.target.value)}><option value="">Unassigned</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name} · {assignee.roleLabel}</option>)}</select><p>Changes apply immediately to this quote.</p></section>
+          </div>
+          <label className="material-field lifecycle-details-note"><span>Shared lifecycle details</span>{detailsEditing ? <textarea maxLength={5000} value={detailsDraft} onChange={(event) => setDetailsDraft(event.target.value)} /> : <p>{quote.lifecycleContext.details || "No shared details have been added."}</p>}<small>{detailsEditing ? `${detailsDraft.length}/5,000` : `Last updated by ${quote.lifecycleContext.updatedByName}`}</small></label>
+        </section>
+      ) : null}
+
+      {activeTab === "details" ? <section className="quote-version-history" aria-labelledby="quote-version-history-heading">
         <div className="panel-header">
           <div>
             <h2 id="quote-version-history-heading">Version history</h2>
@@ -565,9 +827,9 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
             </li>
           ))}
         </ol>
-      </section>
+      </section> : null}
 
-      <QuoteUpdatesPanel
+      {activeTab === "updates" ? <QuoteUpdatesPanel
         quoteId={quote.id}
         initialUpdates={quote.updates}
         initialCurrentStep={quote.currentStep}
@@ -580,9 +842,72 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
           currentStep: state.currentStep,
           unreadMentionCount: state.unreadMentionCount
         } : current)}
-      />
+      /> : null}
 
-      <div className="quote-workspace-grid">
+      {activeTab === "work" && quote.status === "Draft" && !quote.projectId && financiallyEmpty ? (
+        <section className="quote-empty-mode-selector" aria-labelledby="empty-quote-mode-heading">
+          <div><span>Calculation setup</span><h2 id="empty-quote-mode-heading">How should this quote be built?</h2><p>You can switch freely while this draft remains financially empty.</p></div>
+          <div className="quote-mode-options">
+            {([
+              ["LEGACY", "Legacy Quote", "Enter summarized values calculated outside Pulse."],
+              ["PULSE", "Pulse Quote", "Build and calculate the quote using Pulse line items."]
+            ] as const).map(([mode, label, description]) => (
+              <button
+                className={`quote-mode-option${quote.calculationMode === mode ? " selected" : ""}`}
+                type="button"
+                key={mode}
+                disabled={!canWrite || busy || quote.calculationMode === mode}
+                onClick={() => requestModeChange(mode)}
+              >
+                <span><strong>{label}</strong><small>{description}</small></span>
+                {quote.calculationMode === mode ? <em>Selected</em> : null}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "work" ? <div className="quote-workspace-grid lifecycle-work-grid">
+        {quote.calculationMode === "LEGACY" && legacyFinancialDraft ? (
+          <form className="quote-bom-panel quote-legacy-panel" onSubmit={saveLegacyFinancials}>
+            <div className="panel-header">
+              <div><h2>Legacy financial summary</h2><p className="panel-note">Enter the summarized sale and cost values calculated outside Pulse.</p></div>
+              <span className="quote-mode-badge mode-legacy">Business days</span>
+            </div>
+            <div className="legacy-financial-groups">
+              {([
+                ["Sales", [["materialSale", "Material sale"], ["laborSale", "Labor sale"]]],
+                ["Costs", [["materialCost", "Material cost"], ["laborCost", "Labor cost"]]],
+                ["Tax", [["taxAmount", "Tax amount"]]],
+                ["Schedule", [["estimatedDurationBusinessDays", "Estimated duration"]]]
+              ] as const).map(([group, fields]) => (
+                <fieldset key={group}>
+                  <legend>{group}</legend>
+                  {fields.map(([field, label]) => (
+                    <label className="material-field" key={field}>
+                      <span>{label}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step={field === "estimatedDurationBusinessDays" ? "1" : "0.01"}
+                        inputMode={field === "estimatedDurationBusinessDays" ? "numeric" : "decimal"}
+                        value={legacyFinancialDraft[field]}
+                        disabled={!canWrite || busy}
+                        required={field !== "estimatedDurationBusinessDays"}
+                        onChange={(event) => setLegacyFinancialDraft({ ...legacyFinancialDraft, [field]: event.target.value })}
+                      />
+                      {field === "estimatedDurationBusinessDays" ? <small>Optional whole business days</small> : <small>USD</small>}
+                    </label>
+                  ))}
+                </fieldset>
+              ))}
+            </div>
+            <div className="legacy-financial-actions">
+              <p>Markup and margin are calculated from sale and cost values. Tax remains separate.</p>
+              <button className="primary-button compact" type="submit" disabled={!canWrite || busy}><Save size={15} />{busy ? "Saving…" : "Save financials"}</button>
+            </div>
+          </form>
+        ) : (
         <section className="quote-bom-panel" aria-labelledby="quote-bom-heading">
           <div className="panel-header">
             <div><h2 id="quote-bom-heading">Bill of Materials</h2><p className="panel-note">Build the quote from reusable Directory Items or one-off BOM lines.</p></div>
@@ -628,12 +953,14 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
             </section>
           ))}
         </section>
+        )}
 
         <aside className="quote-summary-rail">
           <section className="quote-total-card">
-            <span>Quote Total</span>
-            <strong>{formatMoney(quote.total)}</strong>
-            <p>{quote.items.length} BOM line{quote.items.length === 1 ? "" : "s"}</p>
+            <span>Financial summary</span>
+            <strong>{formatMoney(quote.financialSummary.finalCustomerTotal)}</strong>
+            <p>{quote.calculationMode === "PULSE" ? `${quote.items.length} BOM line${quote.items.length === 1 ? "" : "s"}` : "Summary-based quote"}</p>
+            <SummaryMetrics summary={quote.financialSummary} />
           </section>
           <section className="quote-proposal-panel">
             <div className="settings-section-title">
@@ -653,7 +980,19 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
             </button>
           </section>
         </aside>
-      </div>
+      </div> : null}
+
+      {activeTab === "files" ? (
+        <section className="work-record-surface request-supporting-panel">
+          <LifecycleDocuments
+            stage="quote"
+            recordId={quote.id}
+            documents={quote.documents}
+            canWrite={canWrite}
+            onChange={(documents) => setQuote((current) => current ? { ...current, documents } : current)}
+          />
+        </section>
+      ) : null}
 
       {revisionDialogOpen ? (
         <ViewportPortal>
@@ -748,22 +1087,77 @@ export function QuoteWorkspace({ quoteId }: QuoteWorkspaceProps) {
                   <article><span>Scope snapshot</span><p>{selectedVersion.context.scopeDescription || "No scope was captured."}</p></article>
                   <article><span>Proposal notes</span><p>{selectedVersion.proposalNotes || "No proposal notes were captured."}</p></article>
                 </section>
-                <section className="quote-version-bom">
-                  <div className="panel-header"><div><h2>Bill of Materials</h2><p className="panel-note">Snapshot at the time the client returned this version.</p></div><strong>{formatMoney(selectedVersion.revision.total)}</strong></div>
-                  <div className="quote-version-table-frame">
-                    <table className="data-table">
-                      <thead><tr><th>Item</th><th>Section</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead>
-                      <tbody>
-                        {selectedVersion.items.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><br /><span className="table-muted">{item.sku || item.partNumber || item.description || item.itemType}</span></td><td>{item.section}</td><td>{item.quantity} {item.unitOfMeasure}</td><td>{formatMoney(item.unitPrice)}</td><td><strong>{formatMoney(item.lineTotal)}</strong></td></tr>)}
-                        {!selectedVersion.items.length ? <tr><td colSpan={5}><div className="quote-empty-section"><Boxes size={18} />No BOM lines were captured for this version.</div></td></tr> : null}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                {selectedVersion.calculationMode === "LEGACY" ? (
+                  <section className="quote-version-bom">
+                    <div className="panel-header"><div><h2>Legacy financial summary</h2><p className="panel-note">Immutable values captured for this version.</p></div><span className="quote-mode-badge mode-legacy">Legacy Quote</span></div>
+                    <SummaryMetrics summary={selectedVersion.financialSummary} />
+                  </section>
+                ) : (
+                  <section className="quote-version-bom">
+                    <div className="panel-header"><div><h2>Bill of Materials</h2><p className="panel-note">Snapshot at the time the client returned this version.</p></div><strong>{formatMoney(selectedVersion.revision.total)}</strong></div>
+                    <div className="quote-version-table-frame">
+                      <table className="data-table">
+                        <thead><tr><th>Item</th><th>Section</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead>
+                        <tbody>
+                          {selectedVersion.items.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><br /><span className="table-muted">{item.sku || item.partNumber || item.description || item.itemType}</span></td><td>{item.section}</td><td>{item.quantity} {item.unitOfMeasure}</td><td>{formatMoney(item.unitPrice)}</td><td><strong>{formatMoney(item.lineTotal)}</strong></td></tr>)}
+                          {!selectedVersion.items.length ? <tr><td colSpan={5}><div className="quote-empty-section"><Boxes size={18} />No BOM lines were captured for this version.</div></td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
               </>
             )}
             <div className="client-create-dialog-actions"><button className="primary-button compact" type="button" onClick={() => setSelectedVersion(null)}>Close history</button></div>
           </section>
+          </div>
+        </ViewportPortal>
+      ) : null}
+
+      {modeDialogOpen && targetMode ? (
+        <ViewportPortal>
+          <div className="record-dialog-backdrop">
+            <section className="record-dialog" role="alertdialog" aria-modal="true" aria-labelledby="quote-mode-change-title">
+              <div className="record-dialog-heading">
+                <span><AlertTriangle size={19} /></span>
+                <div>
+                  <h2 id="quote-mode-change-title">Discard quote financial data?</h2>
+                  <p>Switching to {targetMode === "LEGACY" ? "Legacy Quote" : "Pulse Quote"} removes {quote.calculationMode === "PULSE" ? "all QuoteItems" : "the Legacy sale, cost, tax, and duration values"}.</p>
+                </div>
+                <button type="button" aria-label="Close dialog" onClick={() => setModeDialogOpen(false)}><X size={19} /></button>
+              </div>
+              <div className="record-conversion-summary">
+                <strong>No automatic conversion will be attempted.</strong>
+                <span>This action is available only while the quote is a draft and is not connected to a project.</span>
+              </div>
+              <div className="record-dialog-actions">
+                <button type="button" onClick={() => setModeDialogOpen(false)}>Keep current mode</button>
+                <button className="danger" type="button" disabled={busy} onClick={() => void changeCalculationModeFor(targetMode, true)}>{busy ? "Switching…" : "Discard data and switch"}</button>
+              </div>
+            </section>
+          </div>
+        </ViewportPortal>
+      ) : null}
+
+      {projectConversionOpen ? (
+        <ViewportPortal>
+          <div className="record-dialog-backdrop">
+            <section className="record-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-project-conversion-title">
+              <div className="record-dialog-heading">
+                <span className="success"><FileText size={19} /></span>
+                <div><h2 id="quote-project-conversion-title">Convert approved quote?</h2><p>The project will use the pre-tax contract value as its operating budget.</p></div>
+                <button type="button" aria-label="Close dialog" onClick={() => setProjectConversionOpen(false)}><X size={19} /></button>
+              </div>
+              <div className="record-conversion-summary">
+                <strong>{formatMoney(quote.financialSummary.preTaxContractValue)} project budget</strong>
+                <span>{formatMoney(quote.financialSummary.taxAmount)} tax remains separate · {formatMoney(quote.financialSummary.finalCustomerTotal)} customer total</span>
+                <p>No due date is inferred from estimated duration without a confirmed start date.</p>
+              </div>
+              <div className="record-dialog-actions">
+                <button type="button" onClick={() => setProjectConversionOpen(false)}>Cancel</button>
+                <button className="primary" type="button" disabled={busy} onClick={() => void convertToProject()}>{busy ? "Converting…" : "Create project"}</button>
+              </div>
+            </section>
           </div>
         </ViewportPortal>
       ) : null}

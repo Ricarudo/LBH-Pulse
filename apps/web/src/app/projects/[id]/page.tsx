@@ -9,9 +9,9 @@ type ProjectPageProps = {
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
   const { id } = await params;
   const query = await searchParams;
-  const initialTab = query?.tab === "files" || query?.tab === "updates"
+  const initialTab = query?.tab === "details" || query?.tab === "files" || query?.tab === "updates"
     ? query.tab
-    : "overview";
+    : "work";
 
   return (
     <PulseShell

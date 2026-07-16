@@ -35,7 +35,7 @@ export default async function RequestPage({
       <RequestRecordWorkspace
         requestId={id}
         returnTo={safeReturnTo(query?.returnTo)}
-        initialTab={query?.tab === "updates" ? "updates" : "checklist"}
+        initialTab={query?.tab === "details" || query?.tab === "files" || query?.tab === "updates" ? query.tab : "work"}
         focusUpdateId={query?.update}
       />
     </PulseShell>

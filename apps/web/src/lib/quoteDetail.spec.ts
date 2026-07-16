@@ -16,16 +16,53 @@ const legacyQuote: QuoteRecord = {
   clientName: "Example client",
   contactId: null,
   contact: null,
+  siteId: null,
+  site: null,
+  assignedToId: null,
+  assignedTo: null,
   status: "Draft",
   owner: "Sales User",
+  calculationMode: "LEGACY",
   total: 100,
+  legacyFinancials: {
+    materialSale: 100,
+    materialCost: 0,
+    laborSale: 0,
+    laborCost: 0,
+    taxAmount: 0,
+    estimatedDurationBusinessDays: null
+  },
+  financialSummary: {
+    materialRevenue: 100,
+    laborRevenue: 0,
+    serviceRevenue: 0,
+    preTaxContractValue: 100,
+    taxAmount: 0,
+    finalCustomerTotal: 100,
+    materialCost: 0,
+    laborCost: 0,
+    serviceCost: 0,
+    totalEstimatedCost: 0,
+    grossProfit: 100,
+    grossMarginPercent: 100,
+    markupPercent: null,
+    estimatedDurationBusinessDays: null
+  },
   requestId: "request-1",
   requestNumber: "RQ-1001",
   trades: [],
   projectId: null,
   createdAt: "2026-07-09",
   updatedAt: "2026-07-09T12:00:00.000Z",
-  documents: []
+  documents: [],
+  lifecycleContext: {
+    id: "",
+    details: "",
+    updatedAt: "",
+    updatedBy: null,
+    updatedByName: "Pulse System"
+  },
+  relationshipWarnings: []
 };
 
 test("quote detail normalization accepts a legacy list-shaped quote", () => {

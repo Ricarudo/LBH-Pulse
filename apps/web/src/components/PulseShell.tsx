@@ -313,8 +313,8 @@ function PulseShellFrame({
     pathname.startsWith("/clients") ||
     pathname.startsWith("/contacts") ||
     pathname.startsWith("/quotes") ||
-    pathname === "/projects" ||
-    pathname === "/billing" ||
+    pathname.startsWith("/projects") ||
+    pathname.startsWith("/billing") ||
     pathname === "/statistics" ||
     pathname === "/settings" ||
     pathname.startsWith("/settings/");

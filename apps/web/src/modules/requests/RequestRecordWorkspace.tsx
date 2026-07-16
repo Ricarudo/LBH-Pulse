@@ -24,7 +24,7 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   type KeyboardEvent,
   useCallback,
@@ -40,6 +40,7 @@ import { convertRequestToQuote } from "@/lib/api/requests";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { formatWorkspaceDate } from "@/lib/formatting";
 import { RequestChecklistSignature } from "./RequestChecklistSignature";
+import type { QuoteCalculationMode } from "@pulse/contracts/work";
 import {
   requestUpdateFilters,
   type RequestAssignee,
@@ -57,11 +58,11 @@ type RequestListResponse = {
   assignees: RequestAssignee[];
   teamMembers?: RequestAssignee[];
 };
-type RequestRecordTab = "checklist" | "details" | "files" | "updates";
+type RequestRecordTab = "work" | "details" | "files" | "updates";
 
 const terminalStatuses: RequestStatus[] = ["No Bid", "Cancelled", "Duplicate"];
 const requestRecordTabs: Array<{ id: RequestRecordTab; label: string }> = [
-  { id: "checklist", label: "Checklist" },
+  { id: "work", label: "Work" },
   { id: "details", label: "Details" },
   { id: "files", label: "Files" },
   { id: "updates", label: "Updates" }
@@ -128,7 +129,7 @@ function groupItems(items: RequestChecklistItem[]) {
 export function RequestRecordWorkspace({
   requestId,
   returnTo,
-  initialTab = "checklist",
+  initialTab = "work",
   focusUpdateId
 }: {
   requestId: string;
@@ -137,6 +138,8 @@ export function RequestRecordWorkspace({
   focusUpdateId?: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user } = useCurrentUser();
   const canWriteCrm = canUser(user, "requests:write");
   const canWriteActivity = canUser(user, "activity:write");
@@ -172,9 +175,12 @@ export function RequestRecordWorkspace({
   const [closeReason, setCloseReason] = useState("");
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [conversionOpen, setConversionOpen] = useState(false);
+  const [conversionMode, setConversionMode] = useState<QuoteCalculationMode | "">("");
   const [isConverting, setIsConverting] = useState(false);
+  const [detailsEditing, setDetailsEditing] = useState(false);
+  const [detailsDraft, setDetailsDraft] = useState("");
   const tabRefs = useRef<Record<RequestRecordTab, HTMLButtonElement | null>>({
-    checklist: null,
+    work: null,
     details: null,
     files: null,
     updates: null
@@ -222,6 +228,7 @@ export function RequestRecordWorkspace({
           })
         ]);
         setRequest(requestData.request);
+        setDetailsDraft(requestData.request.lifecycleContext.details);
         setUpdates(requestData.request.updates);
         setAssignees(listData.assignees);
         setTeamMembers(listData.teamMembers ?? listData.assignees);
@@ -605,11 +612,12 @@ export function RequestRecordWorkspace({
   }
 
   async function convertRequest() {
-    if (!request || !request.checklistSummary.readyForQuote) return;
+    if (!request || !request.checklistSummary.readyForQuote || !conversionMode) return;
     try {
       setIsConverting(true);
       const data = await convertRequestToQuote(request.id, {
-        createQuote: true
+        createQuote: true,
+        calculationMode: conversionMode
       });
       replaceRequest(data.request);
       setConversionOpen(false);
@@ -635,7 +643,7 @@ export function RequestRecordWorkspace({
   function handleQuoteAction() {
     if (!request) return;
     if (!request.checklistSummary.readyForQuote) {
-      setActiveTab("checklist");
+      selectTab("work");
       window.setTimeout(() => {
         const firstBlocker =
           document.querySelector<HTMLElement>("[data-request-blocker]") ??
@@ -645,12 +653,32 @@ export function RequestRecordWorkspace({
       }, 0);
       return;
     }
+    setConversionMode("");
     setConversionOpen(true);
   }
 
   function selectTab(tab: RequestRecordTab) {
     setActiveTab(tab);
-    tabRefs.current[tab]?.focus();
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    window.setTimeout(() => tabRefs.current[tab]?.focus(), 0);
+  }
+
+  async function saveLifecycleDetails() {
+    if (!request || !canWriteCrm) return;
+    try {
+      const data = await requestJson<RequestResponse>(`/api/requests/${request.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ lifecycleDetails: detailsDraft })
+      });
+      setRequest(data.request);
+      setDetailsDraft(data.request.lifecycleContext.details);
+      setDetailsEditing(false);
+      setToast("Details saved for the full lifecycle.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save details.");
+    }
   }
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tab: RequestRecordTab) {
@@ -953,12 +981,16 @@ export function RequestRecordWorkspace({
 
   return (
     <section className="request-record-page">
-      <header className="request-record-header">
-        <Link className="request-back-link" href={returnTo}>
+      <header className="request-record-header lifecycle-record-header">
+        <Link
+          className="request-back-link lifecycle-record-back"
+          href={returnTo}
+          aria-label="Back to requests queue"
+          title="Back to requests queue"
+        >
           <ArrowLeft size={17} />
-          Queue
         </Link>
-        <div className="request-record-identity">
+        <div className="request-record-identity lifecycle-record-identity">
           <span>{request.requestNumber}</span>
           <h1>{request.title}</h1>
           <div>
@@ -971,7 +1003,7 @@ export function RequestRecordWorkspace({
             {request.serviceCategories.map((category) => <span className="record-category" key={category}>{category}</span>)}
           </div>
         </div>
-        <div className="request-record-actions">
+        <div className="request-record-actions lifecycle-record-actions">
           <Link className="record-secondary-action" href={editHref}>
             <Edit3 size={16} />
             Edit details
@@ -1039,12 +1071,24 @@ export function RequestRecordWorkspace({
         </div>
       </header>
 
-      <section className="request-highlight-panel" aria-label="Request highlights">
-        <div>
-          <span>Client / site</span>
-          <strong>{request.companyName || "New prospect"}</strong>
-          <small><MapPin size={14} /> {siteSummary(request)}</small>
-        </div>
+      <section className="request-highlight-panel lifecycle-key-details" aria-label="Request highlights">
+        {request.clientId ? (
+          <Link
+            className="lifecycle-client-key"
+            href={`/clients/${request.clientId}`}
+            aria-label={`Open client workspace for ${request.companyName || "client"}`}
+          >
+            <span>Client / site</span>
+            <strong>{request.companyName || "Client"}</strong>
+            <small><MapPin size={14} /> {siteSummary(request)}</small>
+          </Link>
+        ) : (
+          <div>
+            <span>Client / site</span>
+            <strong>{request.companyName || "New prospect"}</strong>
+            <small><MapPin size={14} /> {siteSummary(request)}</small>
+          </div>
+        )}
         <div>
           <span>Contact</span>
           <strong>{request.contactName || "Not captured"}</strong>
@@ -1075,11 +1119,18 @@ export function RequestRecordWorkspace({
         </div>
       ) : null}
 
-      {renderCurrentStepCard("request-mobile-current-step")}
+      {request.relationshipWarnings.map((warning) => (
+        <div key={`${warning.field}:${warning.legacyValue}`} className="request-record-alert" role="status">
+          <AlertTriangle size={18} />
+          <span>{warning.message} <strong>{warning.legacyValue}</strong></span>
+        </div>
+      ))}
 
-      <div className="request-record-workspace">
+      {activeTab === "updates" ? renderCurrentStepCard("request-mobile-current-step") : null}
+
+      <div className={`request-record-workspace${activeTab === "details" || activeTab === "files" ? " lifecycle-single-column" : ""}`}>
         <section className="request-supporting-panel request-record-primary-panel">
-          <div className="request-supporting-tabs request-record-tabs" role="tablist" aria-label="Request sections">
+          <div className="request-supporting-tabs request-record-tabs lifecycle-tabs" role="tablist" aria-label="Request sections">
             {requestRecordTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -1096,7 +1147,7 @@ export function RequestRecordWorkspace({
                 onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
               >
                 {tab.label}
-                {tab.id === "checklist" && blockerCount ? (
+                {tab.id === "work" && blockerCount ? (
                   <span>{blockerCount}</span>
                 ) : null}
                 {tab.id === "files" && request.documents.length ? (
@@ -1115,12 +1166,12 @@ export function RequestRecordWorkspace({
             aria-labelledby={`request-tab-${activeTab}`}
             tabIndex={0}
             className={
-              activeTab === "checklist"
+              activeTab === "work"
                 ? "request-supporting-content request-checklist-tab-content"
                 : "request-supporting-content"
             }
           >
-            {activeTab === "checklist" ? (
+            {activeTab === "work" ? (
               <div className="request-progress-workspace request-progress-tab" id="request-blockers">
                 <div className="request-progress-heading">
                   <div>
@@ -1220,34 +1271,20 @@ export function RequestRecordWorkspace({
             ) : null}
 
             {activeTab === "details" ? (
-              <div className="request-details-grid">
-                <section>
-                  <span>Client and site</span>
-                  <h3>{request.companyName || "New prospect"}</h3>
-                  <p>{siteSummary(request)}</p>
-                  <small>{request.requestType} · {request.source}</small>
-                </section>
-                <section>
-                  <span>Contact</span>
-                  <h3>{request.contactName || "Not captured"}</h3>
-                  <p>{request.contactEmail || "No email"}</p>
-                  <small>{request.contactPhone || "No phone"}</small>
-                </section>
-                <section className="wide">
-                  <span>Intake description</span>
-                  <p>{request.description || "No intake description has been added."}</p>
-                </section>
-                <section className="wide">
-                  <span>Internal summary</span>
-                  <p>{request.internalNotes || "No internal summary has been added."}</p>
-                </section>
-                {request.missingInfo ? (
-                  <section className="wide warning">
-                    <span>Additional missing information</span>
-                    <p>{request.missingInfo}</p>
-                  </section>
-                ) : null}
-              </div>
+              <section className="lifecycle-details-panel">
+                <div className="panel-header">
+                  <div><h2>Details</h2><p className="panel-note">Linked request data and one shared note across the lifecycle.</p></div>
+                  {detailsEditing ? <div className="settings-inline-actions"><button type="button" className="toolbar-button compact" onClick={() => { setDetailsEditing(false); setDetailsDraft(request.lifecycleContext.details); }}><X size={15} />Cancel</button><button type="button" className="primary-button compact" onClick={() => void saveLifecycleDetails()}><Save size={15} />Save</button></div> : <div className="settings-inline-actions"><Link className="toolbar-button compact" href={editHref}><Edit3 size={15} />Linked records</Link><button type="button" className="toolbar-button compact" disabled={!canWriteCrm} onClick={() => setDetailsEditing(true)}>Edit note</button></div>}
+                </div>
+                <div className="request-details-grid lifecycle-linked-grid">
+                  <section><span>Client</span><h3>{request.clientId ? <Link href={`/clients/${request.clientId}`}>{request.companyName || "Client"}</Link> : request.companyName || "Not linked"}</h3><p>Linked for this request stage</p><small>{request.requestType} · {request.source}</small></section>
+                  <section><span>Point of contact</span><h3>{request.contactName || "Not linked"}</h3><p>{request.contactEmail || "No email"}</p><small>{request.contactPhone || "No phone"}</small></section>
+                  <section><span>Site</span><h3>{request.siteName || "Not linked"}</h3><p>{siteSummary(request)}</p><small>Linked for this request stage</small></section>
+                  <section className="lifecycle-assignee-card"><span>Assigned person</span><select aria-label="Assigned person" value={request.lead?.id ?? ""} disabled={!canWriteCrm || isConverted} onChange={(event) => void changeLead(event.target.value)}><option value="">Unassigned</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name} · {assignee.roleLabel}</option>)}</select><p>{isConverted ? "Assignment is locked after conversion." : "Changes apply immediately to this request."}</p><small>{request.collaborators.length} collaborator{request.collaborators.length === 1 ? "" : "s"}</small></section>
+                </div>
+                <label className="material-field lifecycle-details-note"><span>Shared lifecycle details</span>{detailsEditing ? <textarea maxLength={5000} value={detailsDraft} onChange={(event) => setDetailsDraft(event.target.value)} /> : <p>{request.lifecycleContext.details || "No shared details have been added."}</p>}<small>{detailsEditing ? `${detailsDraft.length}/5,000` : `Last updated by ${request.lifecycleContext.updatedByName}`}</small></label>
+                <div className="request-details-grid"><section className="wide"><span>Intake description snapshot</span><p>{request.description || "No intake description has been added."}</p></section><section className="wide"><span>Internal summary</span><p>{request.internalNotes || "No internal summary has been added."}</p></section>{request.missingInfo ? <section className="wide warning"><span>Additional missing information</span><p>{request.missingInfo}</p></section> : null}</div>
+              </section>
             ) : null}
 
             {activeTab === "files" ? (
@@ -1321,11 +1358,13 @@ export function RequestRecordWorkspace({
           </div>
         </section>
 
-        <aside className="request-action-rail">
-          {renderCurrentStepCard()}
-          {renderUpdateComposer("desktop")}
-          {renderTeamPanel()}
-        </aside>
+        {activeTab === "updates" ? (
+          <aside className="request-action-rail">
+            {renderCurrentStepCard()}
+            {renderUpdateComposer("desktop")}
+            {renderTeamPanel()}
+          </aside>
+        ) : activeTab === "work" ? <aside className="request-action-rail">{renderTeamPanel()}</aside> : null}
       </div>
 
       <div className="request-mobile-action-bar">
@@ -1453,13 +1492,35 @@ export function RequestRecordWorkspace({
               <span>{request.serviceCategory} · Owner: {request.assignedToName || "Unassigned"}</span>
               <p>The checklist and Updates remain attached to this request.</p>
             </div>
+            <fieldset className="quote-mode-fieldset dialog-mode-fieldset">
+              <legend>Choose how this quote will be calculated</legend>
+              <div className="quote-mode-options">
+                {([
+                  ["LEGACY", "Legacy Quote", "Enter summarized values calculated outside Pulse."],
+                  ["PULSE", "Pulse Quote", "Build and calculate the quote using Pulse line items."]
+                ] as const).map(([mode, label, description]) => (
+                  <label
+                    className={`quote-mode-option${conversionMode === mode ? " selected" : ""}`}
+                    key={mode}
+                  >
+                    <input
+                      type="radio"
+                      name="requestQuoteCalculationMode"
+                      checked={conversionMode === mode}
+                      onChange={() => setConversionMode(mode)}
+                    />
+                    <span><strong>{label}</strong><small>{description}</small></span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <div className="record-dialog-actions">
               <button type="button" onClick={() => setConversionOpen(false)}>Cancel</button>
               <button
                 className="primary"
                 type="button"
                 onClick={() => void convertRequest()}
-                disabled={isConverting}
+                disabled={isConverting || !conversionMode}
               >
                 {isConverting ? "Creating..." : "Create draft quote"}
               </button>

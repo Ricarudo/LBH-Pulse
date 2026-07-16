@@ -99,7 +99,10 @@ test("domain clients target the NestJS API and encode payloads", async () => {
 
   try {
     await fetchItems({ q: "PoE switch", includeInactive: true });
-    await convertRequestToQuote("request/1", { createQuote: true });
+    await convertRequestToQuote("request/1", {
+      createQuote: true,
+      calculationMode: "PULSE"
+    });
 
     assert.equal(
       calls[0]?.input,
@@ -110,7 +113,7 @@ test("domain clients target the NestJS API and encode payloads", async () => {
     assert.equal(calls[1]?.init?.method, "POST");
     assert.equal(
       calls[1]?.init?.body,
-      JSON.stringify({ createQuote: true })
+      JSON.stringify({ createQuote: true, calculationMode: "PULSE" })
     );
   } finally {
     globalThis.fetch = originalFetch;

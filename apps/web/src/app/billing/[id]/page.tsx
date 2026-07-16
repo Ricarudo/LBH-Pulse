@@ -9,9 +9,9 @@ type InvoicePageProps = {
 export default async function InvoicePage({ params, searchParams }: InvoicePageProps) {
   const { id } = await params;
   const query = await searchParams;
-  const initialTab = query?.tab === "files" || query?.tab === "updates"
+  const initialTab = query?.tab === "details" || query?.tab === "files" || query?.tab === "updates"
     ? query.tab
-    : "overview";
+    : "work";
 
   return (
     <PulseShell

@@ -14,6 +14,8 @@ import type {
   QuoteRecord,
   QuoteRevisionResponse,
   QuoteResponse,
+  ReplaceLegacyQuoteFinancialsInput,
+  SwitchQuoteCalculationModeInput,
   UpdateQuoteInput
 } from "@pulse/contracts/work";
 import type {
@@ -131,6 +133,26 @@ export async function updateQuote(quoteId: string, input: UpdateQuoteInput) {
   }
 
   return fetchQuote(quoteId, { cache: "no-store" });
+}
+
+export function replaceLegacyQuoteFinancials(
+  quoteId: string,
+  input: ReplaceLegacyQuoteFinancialsInput
+) {
+  return apiRequest<QuoteResponse>(quotePath(quoteId, "/legacy-financials"), {
+    method: "PUT",
+    json: input
+  });
+}
+
+export function switchQuoteCalculationMode(
+  quoteId: string,
+  input: SwitchQuoteCalculationModeInput
+) {
+  return apiRequest<QuoteResponse>(quotePath(quoteId, "/calculation-mode"), {
+    method: "PATCH",
+    json: input
+  });
 }
 
 export function updateQuoteItem(
