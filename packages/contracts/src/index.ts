@@ -3,6 +3,7 @@ export * from "./analytics";
 export * from "./audit";
 export * from "./access-control";
 export * from "./auth";
+export * from "./bulk-import";
 export * from "./client-bulk";
 export * from "./clients";
 export * from "./dashboard";
