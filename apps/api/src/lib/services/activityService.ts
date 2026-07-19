@@ -36,7 +36,9 @@ export function canAccessActivity(
   if (activity.relatedEntityType === "Client" || activity.relatedEntityType === "ClientImport") {
     return canUser(user, "clients:read");
   }
-  if (activity.relatedEntityType === "Quote") return canUser(user, "quotes:read");
+  if (activity.relatedEntityType === "Quote" || activity.relatedEntityType === "QuoteImport") {
+    return canUser(user, "quotes:read");
+  }
   if (activity.relatedEntityType === "Project") return canUser(user, "projects:read");
   if (activity.relatedEntityType === "Invoice") return canUser(user, "billing:read");
   if (

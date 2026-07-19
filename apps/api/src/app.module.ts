@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AuditController } from "@/controllers/audit.controller";
 import { AnalyticsController } from "@/controllers/analytics.controller";
 import { AuthController } from "@/controllers/auth.controller";
+import { BulkImportController } from "@/controllers/bulkImport.controller";
 import { ClientBulkController } from "@/controllers/clientBulk.controller";
 import { ClientsController } from "@/controllers/clients.controller";
 import { HealthController } from "@/controllers/health.controller";
@@ -33,6 +34,7 @@ import { ActivityRetentionService } from "@/lib/services/activityRetentionServic
     AnalyticsController,
     AuditController,
     AuthController,
+    BulkImportController,
     ClientBulkController,
     ClientsController,
     DashboardController,

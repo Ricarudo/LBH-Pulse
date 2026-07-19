@@ -202,6 +202,20 @@ const errorMap: Record<string, ErrorPayload> = {
         "The file or an existing client changed after preview. Review the CSV again before importing."
     }
   },
+  BULK_IMPORTER_NOT_FOUND: { status: 404, body: { error: "Importer not found." } },
+  BULK_IMPORT_FILE_REQUIRED: { status: 400, body: { error: "Select a CSV file to upload." } },
+  BULK_IMPORT_FILE_TYPE: { status: 400, body: { error: "Only files with the .csv extension are supported." } },
+  BULK_IMPORT_FILE_TOO_LARGE: { status: 413, body: { error: "CSV files may be up to 5 MB." } },
+  BULK_IMPORT_INVALID_ENCODING: { status: 400, body: { error: "Save the CSV using UTF-8 encoding and upload it again." } },
+  BULK_IMPORT_INVALID_CSV: { status: 400, body: { error: "The file is not valid CSV." } },
+  BULK_IMPORT_INVALID_HEADERS: { status: 400, body: { error: "The CSV headers do not match the selected importer template." } },
+  BULK_IMPORT_ROW_LIMIT: { status: 413, body: { error: "CSV files may contain up to 2,000 data rows." } },
+  BULK_IMPORT_EMPTY_SELECTION: { status: 400, body: { error: "Select at least one new or changed row." } },
+  BULK_IMPORT_INVALID_SELECTION: { status: 400, body: { error: "The selected import rows are invalid." } },
+  BULK_IMPORT_PREVIEW_STALE: {
+    status: 409,
+    body: { error: "The file or an existing record changed after preview. Review the CSV again before importing." }
+  },
   QUOTE_NOT_FOUND: { status: 404, body: { error: "Quote not found." } },
   QUOTE_POINT_OF_CONTACT_CLIENT_REQUIRED: {
     status: 400,
