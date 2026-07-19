@@ -212,6 +212,7 @@ export function canAccessPath(
   if (
     pathname.startsWith("/settings/general") ||
     pathname.startsWith("/settings/request-checklists") ||
+    pathname.startsWith("/settings/import-export") ||
     pathname.startsWith("/settings/roadmap")
   ) {
     return canUser(user, "settings:read");

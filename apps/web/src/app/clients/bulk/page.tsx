@@ -1,14 +1,5 @@
-import { PulseShell } from "@/components/PulseShell";
-import { ClientBulkWorkspace } from "@/modules/clients/ClientBulkWorkspace";
+import { redirect } from "next/navigation";
 
 export default function ClientBulkPage() {
-  return (
-    <PulseShell
-      activePage="directory"
-      title="Directory"
-      subtitle="Review and apply client CSV imports."
-    >
-      <ClientBulkWorkspace />
-    </PulseShell>
-  );
+  redirect("/settings/import-export");
 }

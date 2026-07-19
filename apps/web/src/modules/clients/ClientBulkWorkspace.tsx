@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   AlertTriangle,
-  ArrowLeft,
   Check,
   ChevronRight,
   Download,
@@ -22,16 +21,30 @@ import {
 } from "react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { ViewportPortal } from "@/components/ViewportPortal";
-import { canUser } from "@pulse/contracts/auth";
+import { canUser, type Permission } from "@pulse/contracts/auth";
 import type {
-  ClientBulkCommitResult,
-  ClientBulkFieldDiff,
-  ClientBulkPreview,
-  ClientBulkPreviewRow,
-  ClientBulkRowStatus
-} from "@pulse/contracts/client-bulk";
+  BulkImportCommitResult,
+  BulkImportPreview,
+  BulkImportPreviewRow,
+  BulkImportRowStatus
+} from "@pulse/contracts/bulk-import";
 
-const statusOrder: ClientBulkRowStatus[] = [
+export type BulkImportWorkspaceConfig = {
+  key: string;
+  label: string;
+  singular: string;
+  plural: string;
+  readPermission: Permission;
+  writePermission: Permission;
+  sampleDescription: string;
+  exportTitle: string;
+  exportDescription: string;
+  exportButton: string;
+  dropLabel: string;
+  previewDescription: string;
+};
+
+const statusOrder: BulkImportRowStatus[] = [
   "new",
   "changed",
   "unchanged",
@@ -39,7 +52,7 @@ const statusOrder: ClientBulkRowStatus[] = [
   "invalid"
 ];
 
-const statusLabels: Record<ClientBulkRowStatus, string> = {
+const statusLabels: Record<BulkImportRowStatus, string> = {
   new: "New",
   changed: "Changed",
   unchanged: "Unchanged",
@@ -47,13 +60,7 @@ const statusLabels: Record<ClientBulkRowStatus, string> = {
   invalid: "Invalid"
 };
 
-const groupOrder: ClientBulkFieldDiff["group"][] = [
-  "Client",
-  "Primary Contact",
-  "Primary Site"
-];
-
-function isSelectable(row: ClientBulkPreviewRow) {
+function isSelectable(row: BulkImportPreviewRow) {
   return row.status === "new" || row.status === "changed";
 }
 
@@ -81,7 +88,7 @@ function RowDiff({
   row,
   showUnchanged
 }: {
-  row: ClientBulkPreviewRow;
+  row: BulkImportPreviewRow;
   showUnchanged: boolean;
 }) {
   return (
@@ -101,14 +108,14 @@ function RowDiff({
         <div className="client-bulk-candidates">
           {row.candidates.map((candidate) => (
             <span key={candidate.id}>
-              {candidate.clientNumber} · {candidate.displayName}
+              {candidate.recordNumber} · {candidate.displayName}
               {candidate.archived ? " · Archived" : ""}
             </span>
           ))}
         </div>
       ) : null}
 
-      {groupOrder.map((group) => {
+      {Array.from(new Set(row.diffs.map((diff) => diff.group))).map((group) => {
         const diffs = row.diffs.filter(
           (diff) => diff.group === group && (showUnchanged || diff.changed)
         );
@@ -147,12 +154,12 @@ function RowDiff({
   );
 }
 
-export function ClientBulkWorkspace() {
+export function ClientBulkWorkspace({ config }: { config: BulkImportWorkspaceConfig }) {
   const { user } = useCurrentUser();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<ClientBulkPreview | null>(null);
-  const [activeStatus, setActiveStatus] = useState<ClientBulkRowStatus | "all">(
+  const [preview, setPreview] = useState<BulkImportPreview | null>(null);
+  const [activeStatus, setActiveStatus] = useState<BulkImportRowStatus | "all">(
     "all"
   );
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
@@ -162,8 +169,9 @@ export function ClientBulkWorkspace() {
   const [isCommitting, setIsCommitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<ClientBulkCommitResult | null>(null);
-  const canImport = canUser(user, "clients:write");
+  const [result, setResult] = useState<BulkImportCommitResult | null>(null);
+  const canImport = canUser(user, config.writePermission);
+  const endpoint = `/api/importers/${config.key}`;
 
   const visibleRows = useMemo(() => {
     if (!preview) return [];
@@ -197,7 +205,7 @@ export function ClientBulkWorkspace() {
     }
     if (nextFile.size > 5 * 1024 * 1024) {
       setFile(null);
-      setError("Client CSV files may be up to 5 MB.");
+      setError("CSV files may be up to 5 MB.");
       return;
     }
     setFile(nextFile);
@@ -225,11 +233,11 @@ export function ClientBulkWorkspace() {
       setResult(null);
       const form = new FormData();
       form.append("file", file);
-      const response = await fetch("/api/clients/bulk/preview", {
+      const response = await fetch(`${endpoint}/preview`, {
         method: "POST",
         body: form
       });
-      const body = await responseJson<{ preview: ClientBulkPreview }>(
+      const body = await responseJson<{ preview: BulkImportPreview }>(
         response,
         "Unable to preview this CSV."
       );
@@ -272,20 +280,20 @@ export function ClientBulkWorkspace() {
         .map((row) => ({
           rowNumber: row.rowNumber,
           action: row.status === "new" ? "create" : "update",
-          targetClientId: row.targetClientId,
+          targetId: row.targetId,
           expectedUpdatedAt: row.expectedUpdatedAt
         }));
       const form = new FormData();
       form.append("file", file);
       form.append("fileDigest", preview.fileDigest);
       form.append("selections", JSON.stringify(selections));
-      const response = await fetch("/api/clients/bulk/commit", {
+      const response = await fetch(`${endpoint}/commit`, {
         method: "POST",
         body: form
       });
-      const body = await responseJson<{ result: ClientBulkCommitResult }>(
+      const body = await responseJson<{ result: BulkImportCommitResult }>(
         response,
-        "Unable to import the selected clients."
+        `Unable to import the selected ${config.plural.toLowerCase()}.`
       );
       setResult(body.result);
       setPreview(null);
@@ -296,7 +304,7 @@ export function ClientBulkWorkspace() {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Unable to import the selected clients."
+          : `Unable to import the selected ${config.plural.toLowerCase()}.`
       );
     } finally {
       setIsCommitting(false);
@@ -305,28 +313,6 @@ export function ClientBulkWorkspace() {
 
   return (
     <div className="client-bulk-workspace">
-      <section className="clients-command-bar">
-        <div className="clients-command-primary">
-          <Link className="toolbar-button compact" href="/clients">
-            <ArrowLeft size={16} />
-            Clients
-          </Link>
-          <div>
-            <nav className="breadcrumb" aria-label="Breadcrumb">
-              <Link href="/hub">Home</Link>
-              <span>/</span>
-              <Link href="/directory">Directory</Link>
-              <span>/</span>
-              <Link href="/clients">Clients</Link>
-              <span>/</span>
-              <span>CSV tools</span>
-            </nav>
-            <h1>Client CSV import and export</h1>
-            <p>Prepare, compare, and apply client directory changes safely.</p>
-          </div>
-        </div>
-      </section>
-
       <section className="client-bulk-actions" aria-label="CSV downloads">
         <article>
           <div className="client-bulk-action-icon">
@@ -334,12 +320,9 @@ export function ClientBulkWorkspace() {
           </div>
           <div>
             <h3>Start with the sample</h3>
-            <p>
-              Download the supported columns and one example row. Replace or
-              remove the sample company before uploading.
-            </p>
+            <p>{config.sampleDescription}</p>
           </div>
-          <a className="primary-button" href="/api/clients/bulk/template">
+          <a className="primary-button" href={`${endpoint}/template`}>
             <Download size={17} />
             Download Sample CSV
           </a>
@@ -349,15 +332,12 @@ export function ClientBulkWorkspace() {
             <FileDown size={22} />
           </div>
           <div>
-            <h3>Export the directory</h3>
-            <p>
-              Export all active clients with their primary contact and primary
-              site.
-            </p>
+            <h3>{config.exportTitle}</h3>
+            <p>{config.exportDescription}</p>
           </div>
-          <a className="toolbar-button" href="/api/clients/bulk/export">
+          <a className="toolbar-button" href={`${endpoint}/export`}>
             <Download size={17} />
-            Export Clients
+            {config.exportButton}
           </a>
         </article>
       </section>
@@ -367,8 +347,7 @@ export function ClientBulkWorkspace() {
           <div>
             <h3>Upload and review</h3>
             <p>
-              Previewing never changes the directory. Blank update cells keep
-              their existing values.
+              {config.previewDescription}
             </p>
           </div>
         </div>
@@ -384,7 +363,7 @@ export function ClientBulkWorkspace() {
           onDrop={handleDrop}
         >
           <Upload size={28} />
-          <strong>{file ? file.name : "Drop a client CSV here"}</strong>
+          <strong>{file ? file.name : config.dropLabel}</strong>
           <span>
             {file
               ? `${Math.max(1, Math.round(file.size / 1024))} KB selected`
@@ -447,9 +426,9 @@ export function ClientBulkWorkspace() {
               {result.batchId}.
             </p>
             <div className="client-bulk-result-links">
-              {result.clients.map((client) => (
-                <Link href={`/clients/${client.id}`} key={client.id}>
-                  {client.clientNumber} · {client.displayName}
+              {result.records.map((record) => (
+                <Link href={record.href} key={record.id}>
+                  {record.recordNumber} · {record.displayName}
                 </Link>
               ))}
             </div>
@@ -521,7 +500,7 @@ export function ClientBulkWorkspace() {
               </button>
             ) : (
               <span className="client-bulk-read-only">
-                Client management access is required to apply an import.
+                {config.label} management access is required to apply an import.
               </span>
             )}
           </div>
@@ -550,8 +529,8 @@ export function ClientBulkWorkspace() {
                       <strong>{row.displayName}</strong>
                       <small>
                         CSV row {row.rowNumber}
-                        {row.targetClientNumber
-                          ? ` · ${row.targetClientNumber}`
+                        {row.targetNumber
+                          ? ` · ${row.targetNumber}`
                           : ""}
                         {row.matchedBy.length
                           ? ` · Matched by ${row.matchedBy.join(", ")}`
@@ -579,7 +558,7 @@ export function ClientBulkWorkspace() {
               className="client-bulk-confirm-dialog"
               role="dialog"
             >
-            <h3 id="client-bulk-confirm-title">Apply this client import?</h3>
+            <h3 id="client-bulk-confirm-title">Apply this {config.singular.toLowerCase()} import?</h3>
             <p>
               {selectedRows.size} selected row
               {selectedRows.size === 1 ? "" : "s"} will be applied together. If

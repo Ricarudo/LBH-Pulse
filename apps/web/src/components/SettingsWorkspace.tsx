@@ -8,6 +8,7 @@ import {
   Check,
   ClipboardCheck,
   Database,
+  FileSpreadsheet,
   KeyRound,
   Palette,
   Plug,
@@ -25,6 +26,7 @@ import { SettingsChecklistsSection } from "@/components/SettingsChecklistsSectio
 import { SettingsRolesSection } from "@/components/SettingsRolesSection";
 import { SettingsAuditSection } from "@/components/SettingsAuditSection";
 import { SettingsPrivacySection } from "@/components/SettingsPrivacySection";
+import { ImportExportWorkspace } from "@/components/ImportExportWorkspace";
 import { roleColorForeground } from "@pulse/contracts/access-control";
 import type {
   ThemeMode,
@@ -41,6 +43,7 @@ export type SettingsSection =
   | "users"
   | "roles"
   | "request-checklists"
+  | "import-export"
   | "audit"
   | "roadmap";
 
@@ -53,6 +56,7 @@ const personalTabs = [
 const adminTabs = [
   { key: "general", label: "General", icon: Building2 },
   { key: "request-checklists", label: "Request checklists", icon: ClipboardCheck },
+  { key: "import-export", label: "Import / Export", icon: FileSpreadsheet },
   { key: "roadmap", label: "Roadmap", icon: Plug }
 ] as const;
 
@@ -354,6 +358,7 @@ export function SettingsWorkspace({ section }: { section: SettingsSection }) {
         {active === "roles" ? <SettingsRolesSection /> : null}
         {active === "audit" ? <SettingsAuditSection /> : null}
         {active === "request-checklists" ? <SettingsChecklistsSection readOnly={!canUser(user, "settings:write")} /> : null}
+        {active === "import-export" ? <ImportExportWorkspace /> : null}
         {active === "roadmap" ? <RoadmapSection /> : null}
       </div>
     </section>

@@ -13,6 +13,7 @@ const sections = new Set<SettingsSection>([
   "roles",
   "audit",
   "request-checklists",
+  "import-export",
   "roadmap"
 ]);
 

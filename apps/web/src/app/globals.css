@@ -10975,6 +10975,37 @@ a {
   gap: 18px;
 }
 
+.import-export-workspace {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.import-export-selector {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  align-items: center;
+  gap: 20px;
+}
+
+.import-export-selector label {
+  display: grid;
+  gap: 7px;
+  color: var(--pulse-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.import-export-selector select {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 10px;
+  background: var(--pulse-surface-soft);
+  color: var(--pulse-text);
+  font: inherit;
+}
+
 .client-bulk-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -11428,6 +11459,10 @@ a {
 }
 
 @media (max-width: 767px) {
+  .import-export-selector {
+    grid-template-columns: 1fr;
+  }
+
   .client-bulk-workspace,
   .client-bulk-workspace > *,
   .client-bulk-actions article > div {

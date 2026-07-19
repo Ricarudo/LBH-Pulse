@@ -109,3 +109,10 @@ test("the security audit log requires both its protected grant and Administrator
   assert.equal(canAccessPath(administrator, "/settings/audit"), true);
   assert.equal(canAccessPath(forgedGrant, "/settings/privacy"), true);
 });
+
+test("import and export is part of workspace administration", () => {
+  const clientManager = userWith(["clients:read", "clients:write"]);
+  const workspaceAdministrator = userWith(["settings:read", "clients:read"]);
+  assert.equal(canAccessPath(clientManager, "/settings/import-export"), false);
+  assert.equal(canAccessPath(workspaceAdministrator, "/settings/import-export"), true);
+});
