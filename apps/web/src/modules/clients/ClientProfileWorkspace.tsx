@@ -26,6 +26,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
+import { apiFetch } from "@/lib/api/client";
 import type { RequestRecord, RequestStatus } from "@pulse/contracts/requests";
 import type {
   ClientWorkSummary,
@@ -155,7 +156,7 @@ function matchesSearch(values: Array<string | number | null | undefined>, search
 }
 
 async function requestJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",

@@ -1,6 +1,10 @@
 import { LifecycleEntityType, type LifecycleEventPrecision } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import {
+  resolveLifecycleLedger,
+  type LifecycleLedgerResolution
+} from "@/lib/lifecycleLedger";
+import {
   calculateLegacyQuoteFinancials,
   calculatePulseQuoteFinancials
 } from "@/modules/quotes/quote-financials";
@@ -178,6 +182,9 @@ type EventRecord = {
   precision: LifecycleEventPrecision;
   valueSnapshot: { toNumber(): number } | null;
   metadata: unknown;
+  actorUserId?: string | null;
+  actorNameSnapshot?: string;
+  disposition?: { status: string } | null;
 };
 
 function metadataObject(value: unknown) {
@@ -341,6 +348,7 @@ type AnalyticsData = {
   today: string;
   events: EventRecord[];
   eventsByEntity: Map<string, EventRecord[]>;
+  ledgerResolutions: Map<string, LifecycleLedgerResolution<EventRecord>>;
   clients: Array<{ id: string; displayName: string }>;
   requestRecords: BaseRecord[];
   quoteRecords: QuoteRecord[];
@@ -421,6 +429,7 @@ async function loadAnalyticsData(
     }) : [],
     prisma.lifecycleStatusEvent.findMany({
       where: { entityType: { in: allowedEventTypes } },
+      include: { disposition: { select: { status: true } } },
       orderBy: [{ changedAt: "asc" }, { id: "asc" }]
     }),
     canUser(user, "clients:read")
@@ -432,7 +441,20 @@ async function loadAnalyticsData(
       : []
   ]);
 
-  const eventsByEntity = eventMap(events);
+  const currentStatuses = new Map<string, string>([
+    ...requests.map((record) => [`${LifecycleEntityType.REQUEST}:${record.id}`, record.status] as const),
+    ...quotes.map((record) => [`${LifecycleEntityType.QUOTE}:${record.id}`, record.status] as const),
+    ...projects.map((record) => [`${LifecycleEntityType.PROJECT}:${record.id}`, record.status] as const),
+    ...invoices.map((record) => [`${LifecycleEntityType.INVOICE}:${record.id}`, record.status] as const)
+  ]);
+  const rawEventsByEntity = eventMap(events);
+  const ledgerResolutions = new Map<string, LifecycleLedgerResolution<EventRecord>>();
+  for (const [key, entityEvents] of rawEventsByEntity) {
+    const currentStatus = currentStatuses.get(key) ?? entityEvents.at(-1)?.toStatus ?? "Unknown";
+    ledgerResolutions.set(key, resolveLifecycleLedger(entityEvents, currentStatus));
+  }
+  const canonicalEvents = [...ledgerResolutions.values()].flatMap((resolution) => resolution.canonicalEvents);
+  const eventsByEntity = eventMap(canonicalEvents);
   const requestRecords: BaseRecord[] = requests.map((request) => ({
     id: request.id,
     kind: "Request" as const,
@@ -634,8 +656,9 @@ async function loadAnalyticsData(
     range,
     timeZone,
     today: analyticsLocalDate(new Date(), timeZone),
-    events,
+    events: canonicalEvents,
     eventsByEntity,
+    ledgerResolutions,
     clients,
     requestRecords,
     quoteRecords,
@@ -679,6 +702,20 @@ function snapshotAt(data: AnalyticsData, record: BaseRecord, to: string): Snapsh
     };
   }
   const events = data.eventsByEntity.get(`${record.entityType}:${record.id}`) ?? [];
+  const resolution = data.ledgerResolutions.get(`${record.entityType}:${record.id}`);
+  if (resolution?.unreliableFrom && onOrBefore(resolution.unreliableFrom, to, data.timeZone)) {
+    return {
+      record,
+      status: null,
+      value: null,
+      dueDate: undefined,
+      startDate: undefined,
+      event: null,
+      precision: null,
+      statusKnown: false,
+      valueKnown: false
+    };
+  }
   const event = events.filter((candidate) => onOrBefore(candidate.changedAt, to, data.timeZone)).at(-1) ?? null;
   if (!event) {
     return {
@@ -2264,14 +2301,20 @@ export async function getAnalytics(user: AuthenticatedUser, query: AnalyticsQuer
     scopedRecordKeys.has(`${event.entityType}:${event.entityId}`) &&
     inRange(event.changedAt, data.range, data.timeZone)
   );
+  const unreliableEntityCount = [...data.ledgerResolutions.entries()].filter(([key, resolution]) =>
+    scopedRecordKeys.has(key) && Boolean(resolution.unreliableFrom)
+  ).length;
   const partialMetricCount = presentation.kpis.filter((item) =>
     item.quality.status === "partial" || item.quality.status === "unavailable"
   ).length;
   const dataQuality: AnalyticsDataQuality = {
     exactLifecycleEvents: scopedEvents.filter((event) => event.precision === "EXACT").length,
     estimatedLifecycleEvents: scopedEvents.filter((event) => event.precision === "ESTIMATED").length,
+    unreliableEntityCount,
     partialMetricCount,
-    message: partialMetricCount
+    message: unreliableEntityCount
+      ? `${unreliableEntityCount} lifecycle ledger${unreliableEntityCount === 1 ? " is" : "s are"} unreliable; affected historical states are excluded rather than inferred.`
+      : partialMetricCount
       ? `${partialMetricCount} metric${partialMetricCount === 1 ? " is" : "s are"} partial or unavailable; each KPI explains its own coverage.`
       : scopedEvents.some((event) => event.precision === "ESTIMATED")
         ? "Imported lifecycle dates are marked as estimated; newer application transitions are exact."

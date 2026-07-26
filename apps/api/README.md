@@ -1,118 +1,45 @@
 # Pulse API
 
-`@pulse/api` is the NestJS backend for Pulse. It is the only owner of business
-logic, authorization, Prisma access, PostgreSQL schema changes, MinIO document
-storage, and ClamAV upload inspection.
+`@pulse/api` is the sole owner of authentication, authorization, business logic, Prisma/PostgreSQL, MinIO document storage, and ClamAV inspection. Controllers stay thin; validate contracts and authorization before service calls, keep database work in services/transactions, and never leak database/storage errors or secrets.
 
-The supported runtime is the repository-level Docker Compose stack:
+## Development
 
-```bash
-docker compose up -d --build --remove-orphans
-docker compose logs -f api
-```
+Use the root development Compose workflow, or Node.js 24+ with services already running:
 
-The host-only health endpoint is `http://localhost:3000/api/health`.
-
-## Ownership and structure
-
-- `src/controllers` contains established HTTP adapters.
-- `src/items`, `src/item-relations`, and `src/modules` contain feature modules,
-  controllers, and focused services for newer domains.
-- `src/lib/services` owns shared business rules and database/storage
-  orchestration.
-- `src/shared` contains cross-cutting NestJS concerns such as authentication and
-  consistent exception responses.
-- `prisma` is the sole schema, migration-history, constraint, and seed location.
-- `@pulse/contracts` supplies framework-independent payloads, enums, constants,
-  and the Zod schemas used to validate external input.
-
-Controllers should stay thin. Authenticate and authorize access before loading
-or mutating protected records, validate every external payload, keep Prisma
-queries inside API services, and use transactions for multi-record operations.
-Map expected failures through the shared API exception format instead of
-leaking Prisma or storage errors.
-
-The web application must never import API services, Prisma clients, or generated
-database types. Public response shapes should remain compatible; intentional
-breaking changes require documentation and coordinated web updates.
-
-## Local development
-
-Use Node.js 24 or newer and install dependencies once from the repository root:
-
-```bash
+```sh
 npm ci
-DATABASE_URL="postgresql://pulse:pulse_dev_password@localhost:5432/pulse?schema=pulse" \
-  npm run dev:api
+npm run dev:api
 ```
 
-PostgreSQL and any storage services used by the endpoint must already be
-available. Docker Compose remains the preferred way to run the complete stack.
+Production uses the compiled `dist/main.js` image target and never `tsx watch`.
 
-Activity retention is enforced when the API starts and once every 24 hours.
-`PULSE_AUDIT_RETENTION_DAYS` controls authentication and administration-event
-retention (365 days by default). `PULSE_OPERATIONAL_RETENTION_DAYS` controls
-record and dashboard history retention (730 days by default). Both values must
-be whole days between 30 and 3650.
+## Database commands
 
-## Database and seed commands
+- `db:init:dev` / `db:init:test`: guarded initialization of a proven-empty local/test database, migrations followed by explicitly enabled demo seed.
+- `db:migrate:deploy`: deterministic production migration deployment with the migration role.
+- `db:reference-data:preview` / `db:reference-data:apply`: idempotent system checklist defaults; creates no user or business record.
+- `db:baseline:preview` / `db:baseline:apply`: exact-catalog adoption for validated pre-0.1 databases; the apply marks the baseline as resolved and never replays it.
+- `db:roles:preview` / `db:roles:apply` / `db:roles:verify`: least-privilege provisioning and verification.
+- `db:seed:preview` / `db:seed:apply`: non-production-only demo data; requires explicit environment flags and supplied passwords.
+- `data:*`, `lifecycle:*`, and `compatibility:*`: report-first maintenance; write commands require `--apply`, and sensitive repairs require the reviewed `PULSE_REPAIR_REPORT_DIGEST`.
+- `db:reset:demo`: destructive and permitted only for disposable development data. Before Prisma runs, it requires development mode, both demo/destructive seed flags, `PULSE_ALLOW_DEMO_RESET=I_UNDERSTAND_THIS_DELETES_DISPOSABLE_DATA`, and `PULSE_DEMO_RESET_DATABASE` exactly matching the URL database name.
 
-Run database commands from the repository root so the API workspace owns every
-Prisma invocation:
+Never run `prisma db push`, a reset, `db:setup`, or files under `prisma/legacy-migrations-pre-0.1` against an existing production database. Follow the root [migration guide](../../docs/production/migrations.md).
 
-```bash
-npm run db:setup
-npm run db:seed
-```
+## Security conventions
 
-`db:setup` generates the API client, applies the current schema with Prisma, and
-ensures repository constraints. It also idempotently reconciles legacy quote
-contact snapshots with the additional contacts on each client profile. Preview
-or apply that reconciliation directly with:
-
-```bash
-npm run db:quote-contacts:preview
-npm run db:quote-contacts:apply
-```
-
-First-time initialization is guarded:
-
-```bash
-npm run db:initialize
-```
-
-For the supported container workflow, use the initialization and recovery
-commands in the root README. The following command is destructive and is only
-for disposable demo data:
-
-```bash
-npm run db:reset-demo --workspace @pulse/api
-```
-
-Migration folders under `apps/api/prisma/migrations` are compatibility history.
-Do not edit an already-applied migration; add an ordered corrective migration
-instead. Do not introduce a second Prisma schema, seed, or migration directory.
-
-## Module conventions
-
-- Register controllers and injectable services through NestJS modules.
-- Keep calculation, authorization, transaction, and integration logic out of
-  controllers.
-- Use shared contracts at the HTTP boundary and API-local types only for
-  backend implementation details.
-- Keep MinIO and ClamAV credentials and clients server-side.
-- Add focused service tests for calculations and transaction planning, plus
-  integration coverage for authorization and rollback behavior.
+- Browser sessions are opaque database-backed tokens; only HMAC digests are stored.
+- All cookie-authenticated mutations require same-origin/session-bound CSRF validation.
+- Login and first-run protection persist account/token-identity and pseudonymous-IP buckets; responses are generic and logs contain no password/setup-code/token/cookie/secret.
+- Production proxy trust is an exact hop count, never blanket forwarded-header trust.
+- Production startup validates runtime environment, restricted database role, reference data, setup/Administrator state, demo-account absence, and provenance before listening. An empty database listens only when a strong one-time setup code enables the locked browser setup flow.
 
 ## Checks
 
-Run all checks from the repository root:
-
-```bash
-npm run typecheck --workspace @pulse/api
-npm test --workspace @pulse/api
-npm run build --workspace @pulse/api
+```sh
+npm run typecheck -w @pulse/api
+npm test -w @pulse/api
+npm run build -w @pulse/api
 ```
 
-Run `npm run typecheck`, `npm test`, and `npm run build` without a workspace
-selector before merging to verify shared-contract and web compatibility too.
+Database integration tests run when `PULSE_RUN_DB_TESTS=1`; the release CI sets it and supplies an isolated restricted-role database.

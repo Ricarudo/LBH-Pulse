@@ -29,6 +29,7 @@ import type {
   WorkspaceSettingsRecord
 } from "@pulse/contracts/settings";
 import { setWorkspaceFormatting } from "@/lib/formatting";
+import { apiFetch, setCsrfToken } from "@/lib/api/client";
 import { responsiveBreakpoints } from "@/lib/responsive";
 import {
   getMobileActiveKey,
@@ -277,7 +278,15 @@ function PulseShellFrame({
   children
 }: PulseShellProps) {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
-  const [loginEmail, setLoginEmail] = useState("admin@r2.local");
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [setupToken, setSetupToken] = useState("");
+  const [setupName, setSetupName] = useState("");
+  const [setupEmail, setSetupEmail] = useState("");
+  const [setupPassword, setSetupPassword] = useState("");
+  const [setupPasswordConfirmation, setSetupPasswordConfirmation] = useState("");
+  const [setupError, setSetupError] = useState("");
+  const [setupSubmitting, setSetupSubmitting] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -325,15 +334,22 @@ function PulseShellFrame({
 
   const refreshCurrentUser = useCallback(async () => {
     try {
-      const response = await fetch("/api/auth/session", { cache: "no-store" });
+      const response = await apiFetch("/api/auth/session", { cache: "no-store" });
       if (response.status === 401) {
+        setCsrfToken(null);
         setCurrentUser(null);
         return;
       }
       if (!response.ok) return;
 
-      const data = (await response.json()) as { user: AuthenticatedUser | null };
+      const data = (await response.json()) as {
+        user: AuthenticatedUser | null;
+        csrfToken: string | null;
+        setupRequired: boolean;
+      };
+      setCsrfToken(data.csrfToken);
       setCurrentUser(data.user);
+      setSetupRequired(Boolean(data.setupRequired));
     } catch {
       // Mobile file pickers temporarily background the page and can interrupt
       // the focus-triggered session request. Keep the last authenticated user
@@ -399,8 +415,8 @@ function PulseShellFrame({
     async function loadSettingsContext() {
       try {
         const [preferencesResponse, workspaceResponse] = await Promise.all([
-          fetch("/api/settings/preferences", { cache: "no-store" }),
-          fetch("/api/settings/workspace", { cache: "no-store" })
+          apiFetch("/api/settings/preferences", { cache: "no-store" }),
+          apiFetch("/api/settings/workspace", { cache: "no-store" })
         ]);
         if (preferencesResponse.ok) {
           const data = await preferencesResponse.json() as { preferences: UserPreferencesRecord };
@@ -566,7 +582,7 @@ function PulseShellFrame({
     window.localStorage.setItem(themeModeStorageKey, preferences.themeMode);
     window.localStorage.setItem(accentStorageKey, preferences.accentTheme);
     window.localStorage.setItem(motionModeStorageKey, preferences.motionMode);
-    const response = await fetch("/api/settings/preferences", {
+    const response = await apiFetch("/api/settings/preferences", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(preferences)
@@ -600,12 +616,64 @@ function PulseShellFrame({
   const breadcrumbLabel = pageTitle;
   const pageIntro = shellCompactHeader ? "" : shellSubtitle;
 
+  async function completeInitialSetup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSetupError("");
+    if (setupPassword !== setupPasswordConfirmation) {
+      setSetupError("Administrator passwords do not match.");
+      return;
+    }
+    if (setupPassword.length < 20) {
+      setSetupError("The Administrator password must contain at least 20 characters.");
+      return;
+    }
+
+    try {
+      setSetupSubmitting(true);
+      const response = await apiFetch("/api/auth/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          setupToken,
+          name: setupName,
+          email: setupEmail,
+          password: setupPassword
+        })
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        user?: AuthenticatedUser;
+        csrfToken?: string;
+        error?: string;
+        fields?: Record<string, string>;
+      };
+      if (!response.ok || !data.user) {
+        setSetupError(
+          data.fields?.password || data.fields?.email || data.fields?.name ||
+          data.error || "Setup could not be completed."
+        );
+        return;
+      }
+
+      setCsrfToken(data.csrfToken);
+      setCurrentUser(data.user);
+      setSetupRequired(false);
+      setSetupToken("");
+      setSetupPassword("");
+      setSetupPasswordConfirmation("");
+      window.location.assign("/settings/users");
+    } catch {
+      setSetupError("Unable to reach the Pulse setup service.");
+    } finally {
+      setSetupSubmitting(false);
+    }
+  }
+
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoginError("");
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await apiFetch("/api/auth/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -617,6 +685,7 @@ function PulseShellFrame({
       });
       const data = (await response.json()) as {
         user?: AuthenticatedUser;
+        csrfToken?: string;
         error?: string;
       };
 
@@ -625,6 +694,7 @@ function PulseShellFrame({
         return;
       }
 
+      setCsrfToken(data.csrfToken);
       setCurrentUser(data.user);
       setLoginPassword("");
       setCurrentPassword("");
@@ -637,7 +707,8 @@ function PulseShellFrame({
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    setCsrfToken(null);
     setCurrentUser(null);
     setCurrentPassword("");
     setNewPassword("");
@@ -655,7 +726,7 @@ function PulseShellFrame({
     }
 
     try {
-      const response = await fetch("/api/auth/change-password", {
+      const response = await apiFetch("/api/auth/change-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -667,6 +738,7 @@ function PulseShellFrame({
       });
       const data = (await response.json()) as {
         user?: AuthenticatedUser;
+        csrfToken?: string;
         error?: string;
       };
 
@@ -675,6 +747,7 @@ function PulseShellFrame({
         return;
       }
 
+      setCsrfToken(data.csrfToken);
       setCurrentUser(data.user);
       setCurrentPassword("");
       setNewPassword("");
@@ -705,6 +778,81 @@ function PulseShellFrame({
     return null;
   }
 
+  if (setupRequired && !currentUser) {
+    return (
+      <main className="login-page">
+        <form className="login-card setup-card" aria-labelledby="setup-title" onSubmit={completeInitialSetup}>
+          <div className="brand-mark">
+            <img src="/pulse-mark.svg" alt="" />
+          </div>
+          <h1 id="setup-title">Set up Pulse</h1>
+          <p>Create the only account permitted during first-run setup. You will add every other user from Settings.</p>
+
+          <label className="field-label" htmlFor="setup-token">Setup code</label>
+          <input
+            id="setup-token"
+            className="select-field"
+            type="password"
+            autoComplete="one-time-code"
+            value={setupToken}
+            onChange={(event) => setSetupToken(event.target.value)}
+            required
+          />
+
+          <label className="field-label login-password-label" htmlFor="setup-name">Administrator name</label>
+          <input
+            id="setup-name"
+            className="select-field"
+            autoComplete="name"
+            value={setupName}
+            onChange={(event) => setSetupName(event.target.value)}
+            required
+          />
+
+          <label className="field-label login-password-label" htmlFor="setup-email">Administrator email</label>
+          <input
+            id="setup-email"
+            className="select-field"
+            type="email"
+            autoComplete="email"
+            value={setupEmail}
+            onChange={(event) => setSetupEmail(event.target.value)}
+            required
+          />
+
+          <label className="field-label login-password-label" htmlFor="setup-password">Administrator password</label>
+          <input
+            id="setup-password"
+            className="select-field"
+            type="password"
+            autoComplete="new-password"
+            value={setupPassword}
+            onChange={(event) => setSetupPassword(event.target.value)}
+            required
+          />
+
+          <label className="field-label login-password-label" htmlFor="setup-password-confirmation">Confirm password</label>
+          <input
+            id="setup-password-confirmation"
+            className="select-field"
+            type="password"
+            autoComplete="new-password"
+            value={setupPasswordConfirmation}
+            onChange={(event) => setSetupPasswordConfirmation(event.target.value)}
+            required
+          />
+          <p className="setup-password-guidance">Use at least 20 characters with upper-case, lower-case, and numeric characters.</p>
+
+          {setupError ? <div className="form-alert error" role="alert">{setupError}</div> : null}
+
+          <button className="primary-button" type="submit" disabled={setupSubmitting}>
+            {setupSubmitting ? "Creating Administrator…" : "Create Administrator"}
+          </button>
+        </form>
+      </main>
+    );
+  }
+
   if (!currentUser) {
     return (
       <main className="login-page">
@@ -713,7 +861,7 @@ function PulseShellFrame({
             <img src="/pulse-mark.svg" alt="" />
           </div>
           <h1 id="login-title">Pulse</h1>
-          <p>Local development login for the Pulse workstation.</p>
+          <p>Sign in to your Pulse workspace.</p>
 
           <label className="field-label" htmlFor="local-email">
             Email

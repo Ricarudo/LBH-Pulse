@@ -2,6 +2,7 @@ import type { AuditEventCategory } from "@pulse/contracts/audit";
 
 export const securityAuditEntityTypes = [
   "User",
+  "Authentication",
   "AccessRole",
   "WorkspaceSettings",
   "AuditLog"
@@ -10,6 +11,10 @@ export const securityAuditEntityTypes = [
 export const authenticationAuditTypes = [
   "Login",
   "Logout",
+  "LOGIN_FAILED",
+  "LOGIN_LOCKED",
+  "LOGIN_BLOCKED",
+  "CSRF_REJECTED",
   "Password Changed",
   "Password Reset",
   "Permission Denied"
@@ -50,7 +55,7 @@ export function auditCategoryFor(
   relatedEntityType: string,
   type: string
 ): Exclude<AuditEventCategory, "all"> {
-  if (relatedEntityType === "User" && authenticationTypeSet.has(type)) {
+  if ((relatedEntityType === "User" || relatedEntityType === "Authentication") && authenticationTypeSet.has(type)) {
     return "authentication";
   }
   if (relatedEntityType === "AccessRole" || type === "Role Changed") {

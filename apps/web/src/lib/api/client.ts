@@ -11,6 +11,37 @@ export type ApiRequestOptions = Omit<RequestInit, "body"> & {
   json?: unknown;
 };
 
+let browserCsrfToken: string | null = null;
+
+export function setCsrfToken(token: string | null | undefined) {
+  if (typeof window !== "undefined") {
+    browserCsrfToken = token || null;
+  }
+}
+
+export function getCsrfToken() {
+  return typeof window === "undefined" ? null : browserCsrfToken;
+}
+
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {}
+) {
+  const headers = new Headers(init.headers);
+  const method = (init.method || "GET").toUpperCase();
+  if (!new Set(["GET", "HEAD", "OPTIONS"]).has(method)) {
+    headers.set("X-Pulse-Request", "browser");
+    const token = getCsrfToken();
+    if (token) headers.set("X-Pulse-CSRF", token);
+  }
+
+  return fetch(input, {
+    ...init,
+    credentials: init.credentials ?? "same-origin",
+    headers
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -83,7 +114,7 @@ export async function apiRequest<T>(
     body = JSON.stringify(json);
   }
 
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     ...requestOptions,
     body,
     credentials: requestOptions.credentials ?? "same-origin",

@@ -6,10 +6,14 @@ coverage/
 *.tsbuildinfo
 
 .pnpm-store/
+pnpm-lock.yaml
 
 apps/api/src/generated/prisma/
 
 .env
+.env.*
+!.env.example
+!**/.env.example
 *.log
 
 database/local-backups/
@@ -17,6 +21,12 @@ database/local-backups/
 *.bak
 *.dump
 client-list-cleaned.csv
+private-reports/
+production-backups/
+*.age
+*.manifest.json
+*.password
+*.secret
 
 pulse-local-ca.crt
 *.local.crt

@@ -7,6 +7,8 @@ const adapter = new PrismaPg(
   { schema: "pulse" }
 );
 const prisma = new PrismaClient({ adapter });
+const apply = process.argv.includes("--apply");
+const createPlaceholderSites = process.argv.includes("--create-placeholder-sites");
 
 async function context(details = "") {
   return prisma.lifecycleContext.create({ data: { details } });
@@ -22,13 +24,14 @@ async function ensureLegacyMainSites() {
     await prisma.clientSite.create({
       data: {
         clientId: client.id,
-        name: "Main Office",
-        siteName: "Main Office",
-        siteType: "Main Office",
+        name: "[Placeholder] Main Office",
+        siteName: "[Placeholder] Main Office",
+        siteType: "Legacy Placeholder",
         state: "PR",
         country: "Puerto Rico",
         status: "Active",
         isPrimarySite: true,
+        isPlaceholder: true,
         createdAt: client.createdAt
       }
     });
@@ -38,8 +41,40 @@ async function ensureLegacyMainSites() {
 }
 
 async function main() {
+  const [clientsWithoutSites, requestsWithoutContexts, quotesWithoutContexts, quoteWithoutSiteCount, projectsWithoutContexts, invoicesWithoutContexts] = await Promise.all([
+    prisma.client.findMany({ where: { sites: { none: {} } }, select: { id: true, clientNumber: true, displayName: true } }),
+    prisma.request.count({ where: { lifecycleContextId: null } }),
+    prisma.quote.count({ where: { lifecycleContextId: null } }),
+    prisma.quote.count({ where: { siteId: null, clientId: { not: null } } }),
+    prisma.project.count({ where: { lifecycleContextId: null } }),
+    prisma.invoice.count({ where: { lifecycleContextId: null } })
+  ]);
+  console.log(JSON.stringify({
+    mode: apply ? "APPLY" : "PREVIEW",
+    placeholderSiteCreationOptIn: createPlaceholderSites,
+    clientsWithoutSites: clientsWithoutSites.map((client) => ({
+      entityId: client.id,
+      clientNumber: client.clientNumber,
+      currentValue: "no site",
+      proposedRepair: createPlaceholderSites ? "create a clearly marked placeholder site" : "human review and creation of a real site",
+      confidence: createPlaceholderSites ? "low" : "not-applicable",
+      automaticRepairSafe: false,
+      humanReviewRequired: true
+    })),
+    lifecycleContexts: {
+      requests: requestsWithoutContexts,
+      quotes: quotesWithoutContexts,
+      projects: projectsWithoutContexts,
+      invoices: invoicesWithoutContexts
+    },
+    quotesWithoutSites: quoteWithoutSiteCount
+  }, null, 2));
+  if (!apply) {
+    console.log("No changes made. Add --apply for deterministic context links; placeholder sites also require --create-placeholder-sites.");
+    return;
+  }
   let linked = 0;
-  const sitesCreated = await ensureLegacyMainSites();
+  const sitesCreated = createPlaceholderSites ? await ensureLegacyMainSites() : 0;
   const requests = await prisma.request.findMany({
     where: { lifecycleContextId: null },
     select: { id: true, description: true }

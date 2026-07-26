@@ -1,16 +1,25 @@
-name: lbh-pulse
+name: lbh-pulse-dev
+
+# Development-only stack. Generate an ignored environment file first with:
+#   ./scripts/development/create-env.sh
+#   docker compose --env-file .env.development up -d --build
 
 x-api-environment: &api-environment
   NODE_ENV: development
-  DATABASE_URL: postgresql://pulse:pulse_dev_password@postgres:5432/pulse?schema=pulse
-  PULSE_SESSION_SECRET: pulse-local-dev-session-secret
+  DATABASE_URL: postgresql://${PULSE_DEV_DB_USER:?Generate .env.development}:${PULSE_DEV_DB_PASSWORD:?Generate .env.development}@postgres:5432/pulse?schema=pulse
+  PULSE_PUBLIC_URL: https://${PULSE_HOSTNAME:-pulse.localhost}
+  PULSE_SESSION_SECRET: ${PULSE_SESSION_SECRET:?Generate .env.development}
+  PULSE_SECURITY_PEPPER: ${PULSE_SECURITY_PEPPER:?Generate .env.development}
   PULSE_COOKIE_SECURE: "true"
-  FRONTEND_ORIGINS: https://pulse.lbh.app,https://192.168.1.253
+  PULSE_COOKIE_SAME_SITE: lax
+  PULSE_TRUST_PROXY_HOPS: "2"
+  PULSE_ALLOWED_ORIGINS: https://${PULSE_HOSTNAME:-pulse.localhost},https://${PULSE_LAN_IP:-127.0.0.1}
+  PULSE_AUTH_RATE_LIMIT_ENABLED: "true"
   S3_ENDPOINT: http://minio:9000
   S3_REGION: us-east-1
   S3_BUCKET: pulse-documents
-  S3_ACCESS_KEY: pulse_minio
-  S3_SECRET_KEY: pulse_minio_local_password
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Generate .env.development}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?Generate .env.development}
   S3_FORCE_PATH_STYLE: "true"
   CLAMAV_HOST: clamav
   CLAMAV_PORT: "3310"
@@ -21,16 +30,16 @@ x-api-environment: &api-environment
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16.14-alpine}
     restart: unless-stopped
     ports:
       - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: pulse
-      POSTGRES_PASSWORD: pulse_dev_password
+      POSTGRES_USER: ${PULSE_DEV_DB_USER:?Generate .env.development}
+      POSTGRES_PASSWORD: ${PULSE_DEV_DB_PASSWORD:?Generate .env.development}
       POSTGRES_DB: pulse
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -45,10 +54,11 @@ services:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     environment:
-      MINIO_ROOT_USER: pulse_minio
-      MINIO_ROOT_PASSWORD: pulse_minio_local_password
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Generate .env.development}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Generate .env.development}
     volumes:
       - minio-data:/data
+    networks: [default, backend]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
@@ -57,12 +67,21 @@ services:
 
   minio-init:
     image: minio/mc:RELEASE.2025-04-16T18-13-26Z
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set pulse http://minio:9000 pulse_minio pulse_minio_local_password &&
-      mc mb --ignore-existing pulse/pulse-documents &&
-      mc anonymous set none pulse/pulse-documents
-      "
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set pulse http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "pulse/$$S3_BUCKET"
+        mc anonymous set none "pulse/$$S3_BUCKET"
+        mc admin user add pulse "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" || true
+        mc admin policy attach pulse readwrite --user "$$S3_ACCESS_KEY"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Generate .env.development}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Generate .env.development}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Generate .env.development}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Generate .env.development}
+      S3_BUCKET: pulse-documents
     depends_on:
       minio:
         condition: service_healthy
@@ -96,7 +115,7 @@ services:
       - ./packages/contracts:/workspace/packages/contracts
       - api-workspace-node-modules:/workspace/apps/api/node_modules
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health/live"]
       interval: 10s
       timeout: 5s
       retries: 18
@@ -115,10 +134,16 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
       target: dev
-    command: npm run db:initialize -w @pulse/api
+    command: npm run db:init:dev -w @pulse/api
     environment:
-      DATABASE_URL: postgresql://pulse:pulse_dev_password@postgres:5432/pulse?schema=pulse
-      PULSE_SESSION_SECRET: pulse-local-dev-session-secret
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${PULSE_DEV_DB_USER:?Generate .env.development}:${PULSE_DEV_DB_PASSWORD:?Generate .env.development}@postgres:5432/pulse?schema=pulse
+      PULSE_ENABLE_DEMO_SEED: ${PULSE_ENABLE_DEMO_SEED:-false}
+      PULSE_ALLOW_DESTRUCTIVE_SEED: ${PULSE_ALLOW_DESTRUCTIVE_SEED:-0}
+      PULSE_DEMO_ADMIN_PASSWORD: ${PULSE_DEMO_ADMIN_PASSWORD:-}
+      PULSE_DEMO_SALES_PASSWORD: ${PULSE_DEMO_SALES_PASSWORD:-}
+      PULSE_DEMO_PROJECT_MANAGER_PASSWORD: ${PULSE_DEMO_PROJECT_MANAGER_PASSWORD:-}
+      PULSE_DEMO_TECHNICIAN_PASSWORD: ${PULSE_DEMO_TECHNICIAN_PASSWORD:-}
     volumes:
       - ./apps/api:/workspace/apps/api
       - ./packages/contracts:/workspace/packages/contracts
@@ -139,14 +164,14 @@ services:
     environment:
       NODE_ENV: development
       PULSE_API_URL: http://api:3000
-      PULSE_ALLOWED_DEV_ORIGINS: localhost,127.0.0.1,pulse.lbh.app,192.168.1.253
+      PULSE_ALLOWED_DEV_ORIGINS: localhost,127.0.0.1,${PULSE_HOSTNAME:-pulse.localhost},${PULSE_LAN_IP:-127.0.0.1}
     volumes:
       - ./apps/web:/workspace/apps/web
       - ./packages/contracts:/workspace/packages/contracts
       - web-workspace-node-modules:/workspace/apps/web/node_modules
       - web-next:/workspace/apps/web/.next
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4300/api/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4300/api/health/live"]
       interval: 10s
       timeout: 5s
       retries: 18
@@ -163,8 +188,8 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      PULSE_HOSTNAME: ${PULSE_HOSTNAME:-pulse.lbh.app}
-      PULSE_LAN_IP: ${PULSE_LAN_IP:-192.168.1.253}
+      PULSE_HOSTNAME: ${PULSE_HOSTNAME:-pulse.localhost}
+      PULSE_LAN_IP: ${PULSE_LAN_IP:-127.0.0.1}
     volumes:
       - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -187,3 +212,6 @@ volumes:
   web-next:
   caddy-data:
   caddy-config:
+
+networks:
+  backend:

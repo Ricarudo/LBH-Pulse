@@ -1,0 +1,187 @@
+x-maintenance-environment: &maintenance-environment
+  NODE_ENV: production
+  PULSE_PUBLIC_URL: ${PULSE_PUBLIC_URL:?Public URL is required}
+  PULSE_SESSION_SECRET: ${PULSE_SESSION_SECRET:?Session secret is required}
+  PULSE_SECURITY_PEPPER: ${PULSE_SECURITY_PEPPER:?Security pepper is required}
+  PULSE_MAINTENANCE_ACTOR_EMAIL: ${PULSE_MAINTENANCE_ACTOR_EMAIL:?Maintenance actor is required}
+  PULSE_REPAIR_REPORT_DIGEST: ${PULSE_REPAIR_REPORT_DIGEST:-}
+
+x-maintenance-service: &maintenance-service
+  image: pulse-maintenance:${PULSE_RELEASE_TAG:?Release tag is required}
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+    target: maintenance
+  networks: [backend]
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  db-roles:
+    <<: *maintenance-service
+    profiles: ["maintenance"]
+    command: ["npm", "run", "db:roles:preview", "-w", "@pulse/api"]
+    environment:
+      <<: *maintenance-environment
+      DATABASE_URL: ${PULSE_DATABASE_ADMIN_URL:?Admin database URL is required}
+      PULSE_DATABASE_ADMIN_URL: ${PULSE_DATABASE_ADMIN_URL:?Admin database URL is required}
+      PULSE_DB_MIGRATION_USER: ${PULSE_DB_MIGRATION_USER:?Migration role is required}
+      PULSE_DB_MIGRATION_PASSWORD: ${PULSE_DB_MIGRATION_PASSWORD:?Migration password is required}
+      PULSE_DB_APP_USER: ${PULSE_DB_APP_USER:?App role is required}
+      PULSE_DB_APP_PASSWORD: ${PULSE_DB_APP_PASSWORD:?App password is required}
+      PULSE_LEGACY_DATABASE_ROLE: ${PULSE_LEGACY_DATABASE_ROLE:-}
+
+  migrate:
+    <<: *maintenance-service
+    profiles: ["maintenance"]
+    command: ["npm", "run", "db:migrate:deploy", "-w", "@pulse/api"]
+    environment:
+      <<: *maintenance-environment
+      DATABASE_URL: ${PULSE_DATABASE_MIGRATION_URL:?Migration database URL is required}
+
+  reference-data:
+    <<: *maintenance-service
+    profiles: ["maintenance"]
+    command: ["npm", "run", "db:reference-data:apply", "-w", "@pulse/api"]
+    environment:
+      <<: *maintenance-environment
+      DATABASE_URL: ${PULSE_DATABASE_MIGRATION_URL:?Migration database URL is required}
+
+  db-role-verify:
+    <<: *maintenance-service
+    profiles: ["maintenance"]
+    command: ["npm", "run", "db:roles:verify", "-w", "@pulse/api"]
+    environment:
+      <<: *maintenance-environment
+      DATABASE_URL: ${DATABASE_URL:?Runtime database URL is required}
+      PULSE_DB_APP_USER: ${PULSE_DB_APP_USER:?App role is required}
+
+  data-integrity:
+    <<: *maintenance-service
+    profiles: ["maintenance"]
+    command: ["npm", "run", "verify:data-integrity", "-w", "@pulse/api"]
+    environment:
+      <<: *maintenance-environment
+      DATABASE_URL: ${DATABASE_URL:?Runtime database URL is required}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:?Document bucket is required}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?MinIO application key is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?MinIO application secret is required}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+
+  baseline:
+    <<: *maintenance-service
+    profiles: ["maintenance"]
+    command: ["npm", "run", "db:baseline:preview", "-w", "@pulse/api"]
+    environment:
+      <<: *maintenance-environment
+      DATABASE_URL: ${PULSE_DATABASE_MIGRATION_URL:?Migration database URL is required}
+
+  bootstrap-admin:
+    <<: *maintenance-service
+    profiles: ["maintenance"]
+    command: ["npm", "run", "auth:bootstrap:preview", "-w", "@pulse/api"]
+    environment:
+      <<: *maintenance-environment
+      DATABASE_URL: ${PULSE_DATABASE_MIGRATION_URL:?Migration database URL is required}
+      PULSE_BOOTSTRAP_ADMIN_NAME: ${PULSE_BOOTSTRAP_ADMIN_NAME:?Administrator name is required}
+      PULSE_BOOTSTRAP_ADMIN_EMAIL: ${PULSE_BOOTSTRAP_ADMIN_EMAIL:?Administrator email is required}
+      PULSE_BOOTSTRAP_ADMIN_PASSWORD_FILE: /run/secrets/bootstrap-password
+    volumes:
+      - ${PULSE_BOOTSTRAP_ADMIN_PASSWORD_FILE:?Bootstrap password file is required}:/run/secrets/bootstrap-password:ro
+
+  credential-containment:
+    <<: *maintenance-service
+    profiles: ["maintenance"]
+    command: ["npm", "run", "auth:containment:preview", "-w", "@pulse/api"]
+    environment:
+      <<: *maintenance-environment
+      DATABASE_URL: ${PULSE_DATABASE_MIGRATION_URL:?Migration database URL is required}
+      PULSE_CREDENTIAL_CONTAINMENT_FILE: /run/secrets/credential-containment.json
+    volumes:
+      - ${PULSE_CREDENTIAL_CONTAINMENT_FILE:?Containment file is required}:/run/secrets/credential-containment.json:ro
+
+  minio-backup:
+    profiles: ["backup"]
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mkdir -p /backup/minio/objects
+        mc alias set pulse http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null
+        mc mirror --overwrite --preserve "pulse/$$S3_BUCKET" /backup/minio/objects
+        mc ls --recursive --json "pulse/$$S3_BUCKET" > /backup/minio/object-manifest.jsonl
+        printf '%s\n' "$$S3_BUCKET" > /backup/minio/bucket-name.txt
+    environment:
+      MC_CONFIG_DIR: /tmp/.mc
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MinIO root user is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MinIO root password is required}
+      S3_BUCKET: ${S3_BUCKET:?Document bucket is required}
+    volumes:
+      - ${PULSE_BACKUP_WORK_DIR:?Backup work directory is required}:/backup
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+
+  minio-restore:
+    profiles: ["restore"]
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set pulse http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null
+        mc mb --ignore-existing "pulse/$$S3_BUCKET"
+        mc anonymous set none "pulse/$$S3_BUCKET"
+        mc mirror --overwrite --preserve /restore/minio/objects "pulse/$$S3_BUCKET"
+    environment:
+      MC_CONFIG_DIR: /tmp/.mc
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MinIO root user is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MinIO root password is required}
+      S3_BUCKET: ${S3_BUCKET:?Document bucket is required}
+    volumes:
+      - ${PULSE_RESTORE_WORK_DIR:?Restore work directory is required}:/restore:ro
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+
+  backup-encrypt:
+    profiles: ["backup"]
+    image: pulse-backup-crypto:${PULSE_RELEASE_TAG:?Release tag is required}
+    build:
+      context: .
+      dockerfile: docker/backup/Dockerfile
+      args:
+        ALPINE_BASE_IMAGE: ${BACKUP_CRYPTO_BASE_IMAGE:-alpine:3.22.1}
+    entrypoint: ["age"]
+    command: ["--version"]
+    network_mode: none
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ${PULSE_BACKUP_ARCHIVE_DIR:-/tmp}:/archives
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+
+  backup-decrypt:
+    profiles: ["restore"]
+    image: pulse-backup-crypto:${PULSE_RELEASE_TAG:?Release tag is required}
+    entrypoint: ["age"]
+    command: ["--version"]
+    network_mode: none
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ${PULSE_BACKUP_ARCHIVE_DIR:-/tmp}:/archives:ro
+      - ${PULSE_RESTORE_WORK_DIR:-/tmp}:/restore
+      - ${PULSE_BACKUP_AGE_IDENTITY_FILE:-/dev/null}:/run/secrets/age-identity:ro
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]

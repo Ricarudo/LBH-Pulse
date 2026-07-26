@@ -28,6 +28,7 @@ import { SettingsAuditSection } from "@/components/SettingsAuditSection";
 import { SettingsPrivacySection } from "@/components/SettingsPrivacySection";
 import { ImportExportWorkspace } from "@/components/ImportExportWorkspace";
 import { roleColorForeground } from "@pulse/contracts/access-control";
+import { apiFetch, setCsrfToken } from "@/lib/api/client";
 import type {
   ThemeMode,
   AccentTheme,
@@ -88,11 +89,12 @@ function AccountSection() {
     }
     try {
       setSaving(true);
-      await responseJson(await fetch("/api/auth/change-password", {
+      const result = await responseJson<{ csrfToken?: string }>(await apiFetch("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword, newPassword })
       }));
+      setCsrfToken(result.csrfToken);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -265,7 +267,7 @@ function GeneralSection({ canManage }: { canManage: boolean }) {
     event.preventDefault();
     try {
       setSaving(true);
-      const data = await responseJson<{ workspace: WorkspaceSettingsRecord }>(await fetch("/api/settings/workspace", {
+      const data = await responseJson<{ workspace: WorkspaceSettingsRecord }>(await apiFetch("/api/settings/workspace", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(draft)

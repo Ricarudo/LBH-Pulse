@@ -11,24 +11,56 @@ permissions:
   contents: read
 
 jobs:
-  checks:
+  release-gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Run isolated Pulse checks
+      - name: Generate ephemeral CI secrets
+        run: ./scripts/ci/create-env.sh .env.ci
+
+      - name: Reject shipped credentials and secret fallbacks
+        run: npm run verify:no-shipped-secrets
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Validate production Compose policy
+        run: npm run verify:production-config -- .env.ci
+
+      - name: Build every production image
         run: >-
-          docker compose -f compose.ci.yaml up
-          --build
-          --abort-on-container-exit
-          --exit-code-from checks
+          docker compose --env-file .env.ci -f compose.production.yaml build
+          api web gateway minio-init clamav
+
+      - name: Build isolated release-check image
+        run: docker compose --env-file .env.ci -f compose.ci.yaml build checks
+
+      - name: Build maintenance and network-isolated backup images
+        run: >-
+          docker compose --env-file .env.ci
+          -f compose.production.yaml -f compose.maintenance.yaml
+          --profile maintenance --profile backup build db-roles backup-encrypt
+
+      - name: Start isolated release stack
+        run: >-
+          docker compose --env-file .env.ci -f compose.ci.yaml up -d --build --wait
+          --wait-timeout 360 postgres minio clamav initialize api web
+
+      - name: Run release tests and reconciliation gates
+        run: docker compose --env-file .env.ci -f compose.ci.yaml run --no-deps --rm checks
+
+      - name: Validate encrypted PostgreSQL and MinIO restore
+        run: ./scripts/ci/backup-restore.sh .env.ci
 
       - name: Show service logs on failure
         if: failure()
-        run: docker compose -f compose.ci.yaml logs --no-color
+        run: docker compose --env-file .env.ci -f compose.ci.yaml logs --no-color
 
       - name: Remove CI resources
         if: always()
-        run: docker compose -f compose.ci.yaml down -v --remove-orphans
+        run: |
+          docker compose --env-file .env.ci -f compose.ci.yaml down -v --remove-orphans
+          rm -f .env.ci

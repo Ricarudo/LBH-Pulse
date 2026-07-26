@@ -13,13 +13,9 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Express, Request, Response } from "express";
 import { memoryStorage } from "multer";
-import {
-  clientCsvTemplate,
-  commitClientBulkCsv,
-  exportClientCsv,
-  previewClientBulkCsv
-} from "@/lib/services/clientBulkService";
 import type { ClientBulkCommitSelection } from "@pulse/contracts/client-bulk";
+import { importerFor } from "@/lib/importers/importerRegistry";
+import { legacyClientCommit, legacyClientPreview } from "@/lib/importers/clientImportCompatibility";
 import { AuthService } from "@/shared/auth.service";
 
 const csvUpload = FileInterceptor("file", {
@@ -38,21 +34,33 @@ function sendCsv(response: Response, filename: string, csv: string) {
     .send(Buffer.from(csv, "utf8"));
 }
 
+function deprecationHeaders(response: Response, successorPath: string) {
+  response.setHeader("Deprecation", "true");
+  response.setHeader("Link", `</api/importers/clients/${successorPath}>; rel=\"successor-version\"`);
+  response.setHeader("Warning", '299 Pulse "Deprecated API; migrate to /api/importers/clients/* before Pulse 0.2."');
+}
+
+// Deprecated compatibility controller. It contains no import business logic;
+// every operation delegates to the canonical importer registry.
 @Controller("clients/bulk")
 export class ClientBulkController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Get("template")
   async template(@Req() request: Request, @Res() response: Response) {
-    await this.auth.requireUser(request, "clients:read");
-    sendCsv(response, "pulse-client-import-template.csv", clientCsvTemplate());
+    const importer = importerFor("clients");
+    await this.auth.requireUser(request, importer.readPermission);
+    deprecationHeaders(response, "template");
+    sendCsv(response, importer.templateFileName, importer.template());
   }
 
   @Get("export")
   async export(@Req() request: Request, @Res() response: Response) {
-    await this.auth.requireUser(request, "clients:read");
+    const importer = importerFor("clients");
+    await this.auth.requireUser(request, importer.readPermission);
     const date = new Date().toISOString().slice(0, 10);
-    sendCsv(response, `pulse-clients-${date}.csv`, await exportClientCsv());
+    deprecationHeaders(response, "export");
+    sendCsv(response, importer.exportFileName(date), await importer.export());
   }
 
   @Post("preview")
@@ -60,12 +68,14 @@ export class ClientBulkController {
   @UseInterceptors(csvUpload)
   async preview(
     @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
     @UploadedFile() file?: Express.Multer.File
   ) {
-    await this.auth.requireUser(request, "clients:read");
+    const importer = importerFor("clients");
+    await this.auth.requireUser(request, importer.readPermission);
     if (!file) throw new Error("CLIENT_BULK_FILE_REQUIRED");
-    const preview = await previewClientBulkCsv(file);
-    return { preview };
+    deprecationHeaders(response, "preview");
+    return { preview: legacyClientPreview(await importer.preview(file)) };
   }
 
   @Post("commit")
@@ -73,11 +83,13 @@ export class ClientBulkController {
   @UseInterceptors(csvUpload)
   async commit(
     @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("fileDigest") fileDigest?: string,
     @Body("selections") rawSelections?: string
   ) {
-    const user = await this.auth.requireUser(request, "clients:write");
+    const importer = importerFor("clients");
+    const user = await this.auth.requireUser(request, importer.writePermission);
     if (!file) throw new Error("CLIENT_BULK_FILE_REQUIRED");
     if (!fileDigest || !rawSelections) {
       throw new Error("CLIENT_BULK_INVALID_SELECTION");
@@ -90,12 +102,18 @@ export class ClientBulkController {
       throw new Error("CLIENT_BULK_INVALID_SELECTION");
     }
 
-    const result = await commitClientBulkCsv(
+    const result = await importer.commit(
       file,
       fileDigest,
-      selections,
+      selections.map((selection) => ({
+        rowNumber: selection.rowNumber,
+        action: selection.action,
+        targetId: selection.targetClientId,
+        expectedUpdatedAt: selection.expectedUpdatedAt
+      })),
       user
     );
-    return { result };
+    deprecationHeaders(response, "commit");
+    return { result: legacyClientCommit(result) };
   }
 }

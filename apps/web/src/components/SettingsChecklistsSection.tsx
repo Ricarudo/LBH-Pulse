@@ -16,12 +16,13 @@ import type {
   RequestChecklistTemplateItemRecord,
   RequestChecklistTemplateRecord
 } from "@pulse/contracts/request-checklists";
+import { apiFetch } from "@/lib/api/client";
 
 type TemplatesResponse = { templates: RequestChecklistTemplateRecord[] };
 type TemplateResponse = { template: RequestChecklistTemplateRecord };
 
 async function json<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers }
   });

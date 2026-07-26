@@ -7,6 +7,7 @@ import {
 import { effectiveRolePermissions } from "@/lib/services/roleAccessService";
 import { recordActivity } from "@/lib/services/activityService";
 import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService";
+import { allocateRecordNumber } from "@/lib/services/recordNumberService";
 import {
   calculateLegacyQuoteFinancials,
   calculatePulseQuoteFinancials,
@@ -77,16 +78,8 @@ const requestInclude = {
       { label: "asc" }
     ]
   },
-  activities: {
-    orderBy: {
-      createdAt: "desc"
-    }
-  },
-  tasks: {
-    orderBy: {
-      createdAt: "desc"
-    }
-  },
+  // RequestUpdate is the only Pulse 0.1 timeline read/write model. Legacy
+  // activity/task tables remain in the database for compatibility retention.
   updates: {
     include: requestUpdateInclude,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -470,7 +463,9 @@ function toRequestRecord(request: RequestWithRelations, viewerId?: string): Requ
     }),
     activity: compatibilityActivity,
     tasks: compatibilityTasks,
-    checklistItems: request.checklistItems.map((item) => ({
+    // Legacy checklist items are exposed only when no canonical instance has
+    // been adopted, avoiding two conflicting checklist representations.
+    checklistItems: (request.checklistInstances.length ? [] : request.checklistItems).map((item) => ({
       id: item.id,
       label: item.label,
       description: item.description ?? "",
@@ -556,18 +551,6 @@ function toRequestRecord(request: RequestWithRelations, viewerId?: string): Requ
         : [])
     ]
   };
-}
-
-async function generateRequestNumber(tx: Prisma.TransactionClient) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:request'))`;
-  const count = await tx.request.count();
-  return `RQ-${new Date().getUTCFullYear()}-${String(1001 + count).padStart(4, "0")}`;
-}
-
-async function generateQuoteNumber(tx: Prisma.TransactionClient) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:request-quote'))`;
-  const count = await tx.quote.count();
-  return `QM-${new Date().getUTCFullYear()}-${String(1001 + count).padStart(4, "0")}`;
 }
 
 async function getRequestOrThrow(id: string) {
@@ -1313,7 +1296,7 @@ export async function createRequest(input: CreateRequestInput, user?: Authentica
   const assignedTo = await resolveRequestAssignee(input.assignedToId);
   const request = await prisma.$transaction(async (tx) => {
     const now = new Date();
-    const requestNumber = await generateRequestNumber(tx);
+    const requestNumber = await allocateRecordNumber(tx, "request", now);
     const serviceCategories = input.serviceCategories;
     const matches = await findChecklistTemplates(tx, serviceCategories, input.requestType);
     if (!matches.some((match) => match.matchType === "CORE")) {
@@ -1524,7 +1507,13 @@ export async function updateRequest(
     : input.clientId !== undefined
       ? ""
       : existingRequest.siteId ?? "";
-  if (input.clientId !== undefined && (!effectiveClientId || !effectiveContactId)) {
+  const effectiveAssigneeId = input.assignedToId !== undefined
+    ? input.assignedToId
+    : existingRequest.assignedToId ?? "";
+  if (input.contactId !== undefined && !input.contactId) throw new Error("REQUEST_CONTACT_REQUIRED");
+  if (input.siteId !== undefined && !input.siteId) throw new Error("REQUEST_SITE_REQUIRED");
+  if (input.assignedToId !== undefined && !input.assignedToId) throw new Error("REQUEST_ASSIGNEE_REQUIRED");
+  if (input.clientId !== undefined && (!effectiveClientId || !effectiveContactId || !effectiveSiteId || !effectiveAssigneeId)) {
     throw new Error("REQUEST_LINKED_RECORDS_REQUIRED");
   }
   if (effectiveClientId && effectiveContactId) {
@@ -2046,7 +2035,9 @@ export async function convertRequest(
       })
     ).id;
 
-    const quoteNumber = input.createQuote ? await generateQuoteNumber(tx) : null;
+    const quoteNumber = input.createQuote
+      ? await allocateRecordNumber(tx, "quote", now)
+      : null;
     const quote = input.createQuote
       ? await tx.quote.create({
           data: {

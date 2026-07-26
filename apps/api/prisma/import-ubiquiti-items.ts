@@ -7,8 +7,32 @@ const adapter = new PrismaPg(
   { schema: "pulse" }
 );
 const prisma = new PrismaClient({ adapter });
+const apply = process.argv.includes("--apply");
 
 async function main() {
+  const partNumbers = ubiquitiCatalogItems
+    .map((item) => item.partNumber)
+    .filter((value): value is string => Boolean(value));
+  const existingParts = await prisma.item.findMany({
+    where: { manufacturer: "Ubiquiti", partNumber: { in: partNumbers } },
+    select: { partNumber: true }
+  });
+  const existingPartNumbers = new Set<string | null | undefined>(existingParts.map((item) => item.partNumber));
+  console.log(JSON.stringify({
+    mode: apply ? "APPLY" : "PREVIEW",
+    catalogItems: ubiquitiCatalogItems.length,
+    proposedCreates: ubiquitiCatalogItems
+      .filter((item) => !existingPartNumbers.has(item.partNumber))
+      .map((item) => item.partNumber),
+    proposedUpdates: ubiquitiCatalogItems
+      .filter((item) => existingPartNumbers.has(item.partNumber))
+      .map((item) => item.partNumber),
+    humanReviewRequired: true
+  }, null, 2));
+  if (!apply) {
+    console.log("No changes made. Re-run with --apply after reviewing catalog pricing and part numbers.");
+    return;
+  }
   let created = 0;
   let updated = 0;
 

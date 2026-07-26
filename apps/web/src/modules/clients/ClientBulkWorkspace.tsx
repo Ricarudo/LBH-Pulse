@@ -21,6 +21,7 @@ import {
 } from "react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { ViewportPortal } from "@/components/ViewportPortal";
+import { apiFetch } from "@/lib/api/client";
 import { canUser, type Permission } from "@pulse/contracts/auth";
 import type {
   BulkImportCommitResult,
@@ -233,7 +234,7 @@ export function ClientBulkWorkspace({ config }: { config: BulkImportWorkspaceCon
       setResult(null);
       const form = new FormData();
       form.append("file", file);
-      const response = await fetch(`${endpoint}/preview`, {
+      const response = await apiFetch(`${endpoint}/preview`, {
         method: "POST",
         body: form
       });
@@ -287,7 +288,7 @@ export function ClientBulkWorkspace({ config }: { config: BulkImportWorkspaceCon
       form.append("file", file);
       form.append("fileDigest", preview.fileDigest);
       form.append("selections", JSON.stringify(selections));
-      const response = await fetch(`${endpoint}/commit`, {
+      const response = await apiFetch(`${endpoint}/commit`, {
         method: "POST",
         body: form
       });

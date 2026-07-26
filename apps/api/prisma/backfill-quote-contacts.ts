@@ -430,9 +430,9 @@ async function main() {
     console.log("Run with --apply to create and link the planned contacts.");
     return;
   }
-
-  const bundle = await applyBundle();
-  printBundle(bundle, "applied");
+  throw new Error(
+    "Pulse 0.1 permanently disables synthetic legacy-contact creation. Resolve the quality-audit finding through human review instead."
+  );
 }
 
 main()

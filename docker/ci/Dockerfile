@@ -12,6 +12,7 @@ COPY packages ./packages
 COPY apps ./apps
 COPY docker/ci/smoke.mjs ./docker/ci/smoke.mjs
 COPY docker/ci/run.sh /usr/local/bin/pulse-ci
-RUN chmod +x /usr/local/bin/pulse-ci
+COPY docker/ci/initialize.sh /usr/local/bin/pulse-ci-initialize
+RUN chmod +x /usr/local/bin/pulse-ci /usr/local/bin/pulse-ci-initialize
 
 CMD ["pulse-ci"]

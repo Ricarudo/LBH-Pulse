@@ -5,20 +5,37 @@
   "engines": {
     "node": ">=24"
   },
+  "overrides": {
+    "@prisma/dev": "0.24.16",
+    "fast-uri": "3.1.4",
+    "next": {
+      "postcss": "8.5.22",
+      "sharp": "0.35.3"
+    }
+  },
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
     "build": "npm run build -w @pulse/contracts && npm run build -w @pulse/api && npm run build -w @pulse/web",
-    "typecheck": "npm run typecheck -w @pulse/contracts && npm run typecheck -w @pulse/api && npm run typecheck -w @pulse/web",
-    "test": "npm run test -w @pulse/contracts && npm run test -w @pulse/api && npm run test -w @pulse/web",
+    "typecheck": "npm run build -w @pulse/contracts && npm run typecheck -w @pulse/api && npm run typecheck -w @pulse/web",
+    "test": "npm run build -w @pulse/contracts && npm run test -w @pulse/contracts && npm run test -w @pulse/api && npm run test -w @pulse/web",
     "dev:api": "npm run build -w @pulse/contracts && npm run dev -w @pulse/api",
     "dev:web": "npm run build -w @pulse/contracts && npm run dev -w @pulse/web",
     "responsive:check": "npm run responsive:check -w @pulse/web",
-    "db:initialize": "npm run db:initialize -w @pulse/api",
-    "db:import:ubiquiti": "npm run db:import:ubiquiti -w @pulse/api",
-    "db:setup": "npm run db:setup -w @pulse/api",
-    "db:seed": "npm run db:seed -w @pulse/api"
+    "db:init:dev": "npm run db:init:dev -w @pulse/api",
+    "db:init:test": "npm run db:init:test -w @pulse/api",
+    "db:migrate:deploy": "npm run db:migrate:deploy -w @pulse/api",
+    "db:baseline:preview": "npm run db:baseline:preview -w @pulse/api",
+    "db:roles:verify": "npm run db:roles:verify -w @pulse/api",
+    "db:import:ubiquiti:preview": "npm run db:import:ubiquiti:preview -w @pulse/api",
+    "data:audit": "npm run data:audit -w @pulse/api",
+    "lifecycle:audit": "npm run lifecycle:audit -w @pulse/api",
+    "verify:data-integrity": "npm run verify:data-integrity -w @pulse/api",
+    "verify:production-config": "node scripts/verification/production-compose.mjs",
+    "verify:no-shipped-secrets": "node scripts/verification/no-shipped-secrets.mjs",
+    "db:seed:preview": "npm run db:seed:preview -w @pulse/api",
+    "db:seed:apply": "npm run db:seed:apply -w @pulse/api"
   }
 }

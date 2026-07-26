@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import type { Request, Response } from "express";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
+import { runtimeEnvironment } from "@/config/runtimeEnvironment";
 import {
   toAuthenticatedUser,
   type AuthenticatedUser
@@ -12,14 +14,6 @@ import {
   effectiveRolePermissions,
   roleSummary
 } from "@/lib/services/roleAccessService";
-
-const sessionCookieName = "pulse.session";
-const sessionTtlSeconds = 60 * 60 * 12;
-
-type SessionPayload = {
-  userId: string;
-  exp: number;
-};
 
 export type PermissionRequirement = Permission | {
   allOf?: Permission[];
@@ -35,85 +29,73 @@ export class AuthError extends Error {
   }
 }
 
-function sessionSecret() {
-  return process.env.PULSE_SESSION_SECRET || "pulse-local-dev-session-secret";
-}
+type SessionContext = {
+  id: string;
+  token: string;
+  user: AuthenticatedUser;
+};
 
-function secureCookies() {
-  return process.env.PULSE_COOKIE_SECURE === "true" || process.env.NODE_ENV === "production";
-}
+const sessionUserInclude = {
+  accessRole: { include: accessRoleInclude }
+} satisfies Prisma.LocalUserInclude;
 
-function sign(value: string) {
-  return createHmac("sha256", sessionSecret()).update(value).digest("base64url");
-}
-
-function createToken(payload: SessionPayload) {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${encoded}.${sign(encoded)}`;
-}
-
-function readToken(token: string): SessionPayload | null {
-  const [encoded, signature] = token.split(".");
-
-  if (!encoded || !signature) {
-    return null;
-  }
-
-  const expected = sign(encoded);
-  const expectedBuffer = Buffer.from(expected);
-  const signatureBuffer = Buffer.from(signature);
-
-  if (
-    expectedBuffer.length !== signatureBuffer.length ||
-    !timingSafeEqual(expectedBuffer, signatureBuffer)
-  ) {
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as SessionPayload;
-    return payload.exp > Math.floor(Date.now() / 1000) ? payload : null;
-  } catch {
-    return null;
-  }
-}
+type SessionUser = Prisma.LocalUserGetPayload<{ include: typeof sessionUserInclude }>;
 
 function cookieValue(request: Request, name: string) {
   const header = request.headers.cookie;
+  if (!header) return undefined;
 
-  if (!header) {
-    return undefined;
+  for (const item of header.split(";")) {
+    const [rawName, ...rawValue] = item.trim().split("=");
+    if (rawName !== name) continue;
+    try {
+      return decodeURIComponent(rawValue.join("="));
+    } catch {
+      return undefined;
+    }
   }
+  return undefined;
+}
 
-  const cookies = header.split(";").map((cookie) => cookie.trim());
-  const match = cookies.find((cookie) => cookie.startsWith(`${name}=`));
-  return match ? decodeURIComponent(match.slice(name.length + 1)) : undefined;
+function safeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 @Injectable()
 export class AuthService {
-  async getCurrentUser(request: Request): Promise<AuthenticatedUser | null> {
-    const token = cookieValue(request, sessionCookieName);
+  private readonly requestSessions = new WeakMap<Request, Promise<SessionContext | null>>();
 
-    if (!token) {
-      return null;
-    }
+  private config() {
+    return runtimeEnvironment();
+  }
 
-    const payload = readToken(token);
+  private cookieName() {
+    return this.config().nodeEnv === "production" ? "__Host-pulse.session" : "pulse.session";
+  }
 
-    if (!payload) {
-      return null;
-    }
+  private digest(label: string, value: string) {
+    return createHmac("sha256", this.config().sessionSecret)
+      .update(`${label}\0${value}`)
+      .digest("base64url");
+  }
 
-    const user = await prisma.localUser.findUnique({
-      where: { id: payload.userId },
-      include: { accessRole: { include: accessRoleInclude } }
-    });
+  hashSecurityIdentifier(label: string, value: string) {
+    return createHmac("sha256", this.config().securityPepper)
+      .update(`${label}\0${value}`)
+      .digest("base64url");
+  }
 
-    if (!user || !user.active || user.accessRole.archivedAt) {
-      return null;
-    }
+  private tokenDigest(token: string) {
+    return this.digest("session-token", token);
+  }
 
+  private csrfToken(token: string) {
+    return this.digest("csrf-token", token);
+  }
+
+  private toUser(user: SessionUser) {
     return toAuthenticatedUser({
       ...user,
       accessRole: roleSummary(user.accessRole),
@@ -122,59 +104,158 @@ export class AuthService {
     });
   }
 
-  async requireUser(request: Request, requirement?: PermissionRequirement) {
-    const user = await this.getCurrentUser(request);
+  private async loadSession(request: Request): Promise<SessionContext | null> {
+    const token = cookieValue(request, this.cookieName());
+    if (!token || token.length < 32 || token.length > 256) return null;
 
-    if (!user) {
-      throw new AuthError("Authentication required.", 401);
+    const session = await prisma.authSession.findUnique({
+      where: { tokenDigest: this.tokenDigest(token) },
+      include: {
+        user: { include: sessionUserInclude }
+      }
+    });
+    const now = new Date();
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt <= now ||
+      session.idleExpiresAt <= now ||
+      !session.user.active ||
+      session.user.accessRole.archivedAt
+    ) {
+      return null;
     }
 
+    if (now.getTime() - session.lastSeenAt.getTime() >= 5 * 60_000) {
+      const proposedIdleExpiry = new Date(now.getTime() + this.config().sessionIdleMinutes * 60_000);
+      await prisma.authSession.update({
+        where: { id: session.id },
+        data: {
+          lastSeenAt: now,
+          idleExpiresAt: proposedIdleExpiry < session.expiresAt ? proposedIdleExpiry : session.expiresAt
+        }
+      });
+    }
+
+    return {
+      id: session.id,
+      token,
+      user: this.toUser(session.user)
+    };
+  }
+
+  private sessionFor(request: Request) {
+    let pending = this.requestSessions.get(request);
+    if (!pending) {
+      pending = this.loadSession(request);
+      this.requestSessions.set(request, pending);
+    }
+    return pending;
+  }
+
+  async getCurrentUser(request: Request): Promise<AuthenticatedUser | null> {
+    return (await this.sessionFor(request))?.user ?? null;
+  }
+
+  async getCsrfToken(request: Request) {
+    const session = await this.sessionFor(request);
+    return session ? this.csrfToken(session.token) : null;
+  }
+
+  async verifyCsrf(request: Request) {
+    const supplied = request.header("X-Pulse-CSRF") ?? "";
+    const expected = await this.getCsrfToken(request);
+    return Boolean(expected && supplied && safeEqual(expected, supplied));
+  }
+
+  async requireUser(request: Request, requirement?: PermissionRequirement) {
+    const user = await this.getCurrentUser(request);
+    if (!user) throw new AuthError("Authentication required.", 401);
     if (requirement && user.mustChangePassword) {
       throw new AuthError("Password change required before accessing Pulse.", 403);
     }
 
-    const allOf = typeof requirement === "string"
-      ? [requirement]
-      : requirement?.allOf ?? [];
-    const anyOf = typeof requirement === "string"
-      ? []
-      : requirement?.anyOf ?? [];
+    const allOf = typeof requirement === "string" ? [requirement] : requirement?.allOf ?? [];
+    const anyOf = typeof requirement === "string" ? [] : requirement?.anyOf ?? [];
     const hasAll = allOf.every((permission) => user.permissions.includes(permission));
     const hasAny = !anyOf.length || anyOf.some((permission) => user.permissions.includes(permission));
     if (requirement && (!hasAll || !hasAny)) {
       throw new AuthError("You do not have permission to perform this action.", 403);
     }
-
     return user;
   }
 
   async requireSystemAdmin(request: Request) {
     const user = await this.requireUser(request, "roles:manage");
-    if (!user.isSystemAdmin) {
-      throw new AuthError("Administrator access is required.", 403);
-    }
+    if (!user.isSystemAdmin) throw new AuthError("Administrator access is required.", 403);
     return user;
   }
 
-  setSessionCookie(response: Response, userId: string) {
-    const exp = Math.floor(Date.now() / 1000) + sessionTtlSeconds;
-
-    response.cookie(sessionCookieName, createToken({ userId, exp }), {
+  private cookieOptions(maxAge: number) {
+    const config = this.config();
+    return {
       httpOnly: true,
-      sameSite: "lax",
-      secure: secureCookies(),
+      sameSite: config.cookieSameSite,
+      secure: config.cookieSecure,
       path: "/",
-      maxAge: sessionTtlSeconds * 1000
+      maxAge
+    } as const;
+  }
+
+  async issueSession(request: Request, response: Response, userId: string) {
+    await this.revokeCurrentSession(request);
+    const config = this.config();
+    const token = randomBytes(32).toString("base64url");
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + config.sessionTtlMinutes * 60_000);
+    const idleExpiresAt = new Date(now.getTime() + config.sessionIdleMinutes * 60_000);
+    const remoteAddress = request.ip || request.socket.remoteAddress || "unknown";
+    const userAgent = request.header("user-agent") || "unknown";
+
+    await prisma.authSession.create({
+      data: {
+        userId,
+        tokenDigest: this.tokenDigest(token),
+        ipHash: this.hashSecurityIdentifier("session-ip", remoteAddress),
+        userAgentHash: this.hashSecurityIdentifier("session-user-agent", userAgent),
+        idleExpiresAt,
+        expiresAt
+      }
+    });
+    await prisma.authSession.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: new Date(now.getTime() - 86_400_000) } },
+          { revokedAt: { lt: new Date(now.getTime() - 86_400_000) } }
+        ]
+      }
+    });
+
+    response.cookie(this.cookieName(), token, this.cookieOptions(config.sessionTtlMinutes * 60_000));
+    this.requestSessions.delete(request);
+    return this.csrfToken(token);
+  }
+
+  async revokeCurrentSession(request: Request) {
+    const token = cookieValue(request, this.cookieName());
+    if (token) {
+      await prisma.authSession.updateMany({
+        where: { tokenDigest: this.tokenDigest(token), revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+    }
+    this.requestSessions.delete(request);
+  }
+
+  async revokeAllUserSessions(userId: string) {
+    await prisma.authSession.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() }
     });
   }
 
-  clearSessionCookie(response: Response) {
-    response.cookie(sessionCookieName, "", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: secureCookies(),
-      path: "/",
-      maxAge: 0
-    });
+  async logout(request: Request, response: Response) {
+    await this.revokeCurrentSession(request);
+    response.cookie(this.cookieName(), "", this.cookieOptions(0));
   }
 }

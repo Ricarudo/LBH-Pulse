@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, KeyRound, Plus, RotateCcw, Search, X } from "lucide-react";
 import { roleColorForeground, type RoleSummary } from "@pulse/contracts/access-control";
 import type { LocalAccountRecord } from "@pulse/contracts/local-users";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import { formatWorkspaceDate } from "@/lib/formatting";
+import { apiFetch } from "@/lib/api/client";
 
 type AccountsResponse = {
   users: LocalAccountRecord[];
@@ -71,7 +73,7 @@ type EditDraft = {
 };
 
 async function accountJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -217,8 +219,8 @@ export function SettingsAccountsSection({
       return;
     }
 
-    if (createDraft.password.length < 10) {
-      setCreateError("The temporary password must be at least 10 characters.");
+    if (createDraft.password.length < 14) {
+      setCreateError("The temporary password must be at least 14 characters.");
       return;
     }
 
@@ -316,7 +318,7 @@ export function SettingsAccountsSection({
     Boolean(createDraft.name.trim()) &&
     isValidEmail(createDraft.email) &&
     Boolean(createDraft.roleId) &&
-    createDraft.password.length >= 10;
+    createDraft.password.length >= 14;
   const canManageSelected = Boolean(
     selectedUser && (
       currentUserIsSystemAdmin ||
@@ -341,6 +343,16 @@ export function SettingsAccountsSection({
           }}><Plus size={17} />New user</button>
         </div>
       </div>
+
+      {!loading && users.length === 1 ? (
+        <div className="settings-onboarding-callout">
+          <div>
+            <strong>Initial setup: add your team</strong>
+            <p>Create each user who will own imported quotes. When the accounts are ready, continue to the preview-first data import.</p>
+          </div>
+          <Link className="toolbar-button" href="/settings/import-export">Continue to imports</Link>
+        </div>
+      ) : null}
 
       {revealedPassword ? <div className="settings-secret-banner" role="status"><CheckCircle2 size={20} aria-hidden="true" /><div><strong>{secretBannerTitle}</strong><p>Copy this temporary password now. The user must replace it at first sign-in, and it will not be shown again.</p><code>{revealedPassword}</code>{copyStatus ? <small className={copyStatus === "Copied" ? "settings-copy-status success" : "settings-copy-status error"} aria-live="polite">{copyStatus}</small> : null}</div><button type="button" className="toolbar-button compact" onClick={() => void copyRevealedPassword()}><Copy size={16} />{copyStatus === "Copied" ? "Copied" : "Copy"}</button><button type="button" className="icon-button" aria-label="Dismiss temporary password" onClick={() => { setRevealedPassword(""); setCopyStatus(""); }}><X size={16} /></button></div> : null}
       {message ? <div className="settings-inline-message" aria-live="polite">{message}</div> : null}
@@ -465,8 +477,8 @@ export function SettingsAccountsSection({
           <label><span>Name</span><input autoFocus required value={createDraft.name} onChange={(event) => updateCreateDraft({ name: event.target.value })} /></label>
           <label><span>Email</span><input type="email" required value={createDraft.email} onChange={(event) => updateCreateDraft({ email: event.target.value })} /></label>
           <label><span>Role</span><select value={createDraft.roleId} onChange={(event) => updateCreateDraft({ roleId: event.target.value })}>{roleOptions.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
-          <label><span>Temporary password</span><div className="settings-input-action"><input required aria-describedby="create-password-requirements" aria-invalid={createDraft.password.length > 0 && createDraft.password.length < 10} value={createDraft.password} minLength={10} onChange={(event) => updateCreateDraft({ password: event.target.value })} /><button type="button" onClick={() => updateCreateDraft({ password: generateTemporaryPassword() })}>Regenerate</button></div></label>
-          <div id="create-password-requirements" className={`settings-password-requirement ${createDraft.password.length >= 10 ? "met" : ""}`}><CheckCircle2 size={15} aria-hidden="true" /><span>At least 10 characters {createDraft.password ? `(${createDraft.password.length}/10)` : ""}</span></div>
+          <label><span>Temporary password</span><div className="settings-input-action"><input required aria-describedby="create-password-requirements" aria-invalid={createDraft.password.length > 0 && createDraft.password.length < 14} value={createDraft.password} minLength={14} onChange={(event) => updateCreateDraft({ password: event.target.value })} /><button type="button" onClick={() => updateCreateDraft({ password: generateTemporaryPassword() })}>Regenerate</button></div></label>
+          <div id="create-password-requirements" className={`settings-password-requirement ${createDraft.password.length >= 14 ? "met" : ""}`}><CheckCircle2 size={15} aria-hidden="true" /><span>At least 14 characters {createDraft.password ? `(${createDraft.password.length}/14)` : ""}</span></div>
         </div>
         {createError ? <div className="settings-form-error" role="alert">{createError}</div> : null}
         <div className="settings-modal-actions"><button type="button" className="toolbar-button" onClick={() => setCreateOpen(false)}>Cancel</button><button type="submit" className="primary-button" disabled={saving || !canCreateAccount}>{saving ? "Creating user…" : "Create user"}</button></div>

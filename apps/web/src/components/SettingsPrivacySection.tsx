@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { BarChart3, Clock3, Database, ShieldCheck } from "lucide-react";
 import type { DataPracticesRecord } from "@pulse/contracts/audit";
+import { apiFetch } from "@/lib/api/client";
 
 const fallbackPractices: DataPracticesRecord = {
   auditRetentionDays: 365,
@@ -16,7 +17,7 @@ export function SettingsPrivacySection() {
   useEffect(() => {
     async function loadPractices() {
       try {
-        const response = await fetch("/api/settings/data-practices", { cache: "no-store" });
+        const response = await apiFetch("/api/settings/data-practices", { cache: "no-store" });
         const data = await response.json() as Partial<DataPracticesRecord> & { error?: string };
         if (!response.ok) throw new Error(data.error || "Unable to load the retention policy.");
         setPractices({

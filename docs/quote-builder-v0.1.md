@@ -24,14 +24,15 @@ The migration and idempotent backfill follow these rules:
 3. Empty, no-item quotes remain `PULSE` drafts.
 4. Conflicting Legacy quotes with items are reported for review and are not silently reinterpreted by the script.
 
-Preview before applying in an existing environment:
+Pulse 0.1 retains the historical classifier only as a read-only audit:
 
 ```sh
-npm run db:quote-financials:preview -w @pulse/api
-npm run db:quote-financials:apply -w @pulse/api
+npm run legacy:audit:quote-financials -w @pulse/api
 ```
 
-`db:push` applies the idempotent backfill after schema synchronization. The SQL migration contains the equivalent deployment-time classification.
+The old bulk total/revision rewrite is permanently disabled. Production migrations
+do not classify or rewrite quotes; any proven anomaly requires a targeted,
+previewed repair and full financial/revision reconciliation.
 
 ## Project handoff
 

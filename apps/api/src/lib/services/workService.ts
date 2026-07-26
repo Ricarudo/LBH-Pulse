@@ -3,6 +3,7 @@ import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
 import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService";
+import { allocateRecordNumber } from "@/lib/services/recordNumberService";
 import {
   createQuoteSystemUpdate,
   listQuoteUpdates
@@ -1014,20 +1015,11 @@ async function updateLifecycleDetails(
   return lifecycleContextId;
 }
 
-async function nextNumber(
-  tx: Prisma.TransactionClient,
-  kind: "quote" | "project" | "invoice"
-) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pulse-number:${kind}`}))`;
+async function nextInvoiceNumber(tx: Prisma.TransactionClient) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:invoice'))`;
   const year = new Date().getUTCFullYear();
-  const prefix = kind === "quote" ? "QT" : kind === "project" ? "PRJ" : "INV";
-  const count =
-    kind === "quote"
-      ? await tx.quote.count()
-      : kind === "project"
-        ? await tx.project.count()
-        : await tx.invoice.count();
-  return `${prefix}-${year}-${String(count + 1001).padStart(4, "0")}`;
+  const count = await tx.invoice.count();
+  return `INV-${year}-${String(count + 1001).padStart(4, "0")}`;
 }
 
 async function quoteOrThrow(id: string) {
@@ -1715,7 +1707,7 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
   const site = input.siteId ? await siteForClientOrThrow(input.siteId, client.id) : null;
   const assignedTo = input.assignedToId ? await activeUserOrThrow(input.assignedToId) : null;
   const quote = await prisma.$transaction(async (tx) => {
-    const quoteNumber = await nextNumber(tx, "quote");
+    const quoteNumber = await allocateRecordNumber(tx, "quote");
     const versionCreatedAt = new Date();
     const lifecycleContext = await createLifecycleContext(tx, input.lifecycleDetails, user);
     const created = await tx.quote.create({
@@ -1785,6 +1777,11 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
     throw new Error("QUOTE_CONTACT_REQUIRED");
   }
   if (input.contactId === null) throw new Error("QUOTE_CONTACT_REQUIRED");
+  if (input.siteId === null) throw new Error("QUOTE_SITE_REQUIRED");
+  if (input.assignedToId === null) throw new Error("QUOTE_ASSIGNEE_REQUIRED");
+  if (client && client.id !== existing.clientId && !input.siteId) {
+    throw new Error("QUOTE_SITE_REQUIRED");
+  }
   if (input.contactId && !effectiveClientId) {
     throw new Error("QUOTE_POINT_OF_CONTACT_CLIENT_REQUIRED");
   }
@@ -2264,7 +2261,7 @@ async function createProjectData(
 
   return tx.project.create({
     data: {
-      projectNumber: await nextNumber(tx, "project"),
+      projectNumber: await allocateRecordNumber(tx, "project"),
       title: input.title,
       clientId: input.clientId,
       quoteId: input.quoteId,
@@ -2625,7 +2622,7 @@ async function createInvoiceData(
 
   return tx.invoice.create({
     data: {
-      invoiceNumber: await nextNumber(tx, "invoice"),
+      invoiceNumber: await nextInvoiceNumber(tx),
       title: input.title,
       clientId: input.clientId,
       projectId: input.projectId,

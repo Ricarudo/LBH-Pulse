@@ -14,6 +14,7 @@ import {
 } from "@pulse/contracts/documents";
 import { filterLifecycleDocuments } from "@/lib/documents";
 import { formatWorkspaceDate } from "@/lib/formatting";
+import { apiFetch, getCsrfToken } from "@/lib/api/client";
 
 type Stage = "request" | "quote" | "project" | "invoice";
 
@@ -319,6 +320,9 @@ export function LifecycleDocuments({
     const xhr = new XMLHttpRequest();
     xhr.open("POST", endpoint(stage, recordId));
     xhr.withCredentials = true;
+    xhr.setRequestHeader("X-Pulse-Request", "browser");
+    const csrfToken = getCsrfToken();
+    if (csrfToken) xhr.setRequestHeader("X-Pulse-CSRF", csrfToken);
     setMessage("Validating and scanning file...");
     setProgress(0);
     xhr.upload.onprogress = (event) => {
@@ -354,7 +358,7 @@ export function LifecycleDocuments({
   }
 
   async function remove(fileDocument: LifecycleDocumentRecord) {
-    const response = await fetch(`/api/documents/${fileDocument.id}`, { method: "DELETE" });
+    const response = await apiFetch(`/api/documents/${fileDocument.id}`, { method: "DELETE" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       setMessage(typeof data.error === "string" ? data.error : "Unable to remove document.");

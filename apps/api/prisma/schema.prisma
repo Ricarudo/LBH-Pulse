@@ -337,6 +337,7 @@ model LocalUser {
   passwordHash                   String
   active                         Boolean                @default(true)
   mustChangePassword             Boolean                @default(false)
+  isDemoAccount                  Boolean                @default(false)
   authProvider                   String                 @default("LOCAL")
   themeMode                      String                 @default("system")
   accentTheme                    String                 @default("blue")
@@ -364,13 +365,49 @@ model LocalUser {
   uploadedDocuments              LifecycleDocument[]    @relation("UploadedDocuments")
   lifecycleEvents                LifecycleStatusEvent[] @relation("LifecycleEventActors")
   requestedQuoteRevisions        QuoteRevision[]        @relation("QuoteRevisionActors")
+  authSessions                   AuthSession[]
+  maintenanceRuns                MaintenanceRun[]       @relation("MaintenanceRunActors")
+  lifecycleDispositionReviews    LifecycleEventDisposition[] @relation("LifecycleDispositionReviewers")
   accessRole                     AccessRole             @relation(fields: [role], references: [id], onDelete: Restrict)
 
   @@index([role])
   @@index([active])
+  @@index([isDemoAccount])
   @@index([authProvider])
   @@index([entraObjectId])
   @@index([lastLoginAt])
+}
+
+model AuthSession {
+  id            String    @id @default(cuid())
+  userId        String
+  tokenDigest   String    @unique
+  ipHash        String?
+  userAgentHash String?
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  idleExpiresAt DateTime
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  user          LocalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@index([idleExpiresAt])
+}
+
+model AuthThrottleBucket {
+  kind            String
+  keyDigest       String
+  attempts        Int      @default(0)
+  windowStartedAt DateTime
+  blockedUntil    DateTime?
+  expiresAt       DateTime
+  updatedAt       DateTime @updatedAt
+
+  @@id([kind, keyDigest])
+  @@index([blockedUntil])
+  @@index([expiresAt])
 }
 
 model AccessRole {
@@ -449,11 +486,46 @@ model LifecycleStatusEvent {
   precision         LifecycleEventPrecision @default(EXACT)
   createdAt         DateTime                @default(now())
   actor             LocalUser?              @relation("LifecycleEventActors", fields: [actorUserId], references: [id], onDelete: SetNull)
+  disposition       LifecycleEventDisposition?
 
   @@index([entityType, entityId, changedAt])
   @@index([entityType, toStatus, changedAt])
   @@index([changedAt])
   @@index([actorUserId])
+}
+
+model MaintenanceRun {
+  id                 String                      @id @default(cuid())
+  kind               String
+  mode               String
+  reportDigest       String?
+  actorUserId        String?
+  actorEmailSnapshot String?
+  summary            Json?
+  startedAt          DateTime                    @default(now())
+  completedAt        DateTime?
+  actor              LocalUser?                  @relation("MaintenanceRunActors", fields: [actorUserId], references: [id], onDelete: SetNull)
+  dispositions       LifecycleEventDisposition[]
+
+  @@index([kind, completedAt])
+  @@index([actorUserId])
+  @@index([reportDigest])
+}
+
+model LifecycleEventDisposition {
+  eventId          String               @id
+  status           String
+  reason           String
+  maintenanceRunId String
+  reviewedById     String?
+  reviewedAt       DateTime             @default(now())
+  event            LifecycleStatusEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  maintenanceRun   MaintenanceRun       @relation(fields: [maintenanceRunId], references: [id], onDelete: Restrict)
+  reviewedBy       LocalUser?           @relation("LifecycleDispositionReviewers", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([maintenanceRunId])
+  @@index([reviewedById])
 }
 
 model Opportunity {
@@ -967,6 +1039,7 @@ model ClientSite {
   siteNotes            String?
   status               String?          @default("Active")
   isPrimarySite        Boolean          @default(false)
+  isPlaceholder        Boolean          @default(false)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   client               Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -979,6 +1052,7 @@ model ClientSite {
   @@index([clientId])
   @@index([siteType])
   @@index([isPrimarySite])
+  @@index([isPlaceholder])
 }
 
 model ClientService {

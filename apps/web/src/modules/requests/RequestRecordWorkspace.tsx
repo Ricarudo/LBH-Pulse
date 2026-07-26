@@ -24,6 +24,7 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   type KeyboardEvent,
@@ -69,7 +70,7 @@ const requestRecordTabs: Array<{ id: RequestRecordTab; label: string }> = [
 ];
 
 async function requestJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",

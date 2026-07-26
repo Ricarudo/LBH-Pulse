@@ -674,7 +674,11 @@ async function main() {
   };
   console.log(JSON.stringify(summary, null, 2));
   if (!apply) return;
+  throw new Error(
+    "Pulse 0.1 permanently disables this legacy merge/rewrite path. Use the read-only audit and an approved targeted repair instead."
+  );
 
+  /* c8 ignore start -- retained only as historical implementation evidence */
   const events = await loadEvents(quotes.map((quote) => quote.id));
   let totalsReconciled = { quoteTotalsUpdated: 0, revisionTotalsUpdated: 0 };
   await prisma.$transaction(async (tx) => {
@@ -698,6 +702,7 @@ async function main() {
     prisma.quoteRevision.count()
   ]);
   console.log(JSON.stringify({ applied: true, activeQuotesAfter, revisionsAfter, ...totalsReconciled }, null, 2));
+  /* c8 ignore stop */
 }
 
 main()

@@ -537,6 +537,14 @@ export const createClientSchema = clientFieldsSchema
       });
     }
 
+    if (data.sites.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Add at least one real client site. Imported legacy clients may remain without one until reviewed.",
+        path: ["sites"]
+      });
+    }
+
     if (data.sites.filter((site) => site.isPrimarySite).length > 1) {
       context.addIssue({
         code: "custom",

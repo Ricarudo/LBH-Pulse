@@ -1,26 +1,114 @@
 name: lbh-pulse-ci
 
+x-test-environment: &test-environment
+  NODE_ENV: test
+  DATABASE_URL: postgresql://${PULSE_DB_APP_USER:?Generate .env.ci}:${PULSE_DB_APP_PASSWORD:?Generate .env.ci}@postgres:5432/${POSTGRES_DB:-pulse}?schema=pulse
+  PULSE_DB_APP_USER: ${PULSE_DB_APP_USER:?Generate .env.ci}
+  PULSE_PUBLIC_URL: http://web:4300
+  PULSE_SESSION_SECRET: ${PULSE_SESSION_SECRET:?Generate .env.ci}
+  PULSE_SECURITY_PEPPER: ${PULSE_SECURITY_PEPPER:?Generate .env.ci}
+  PULSE_SESSION_TTL_MINUTES: "60"
+  PULSE_SESSION_IDLE_MINUTES: "15"
+  PULSE_COOKIE_SECURE: "false"
+  PULSE_COOKIE_SAME_SITE: lax
+  PULSE_TRUST_PROXY_HOPS: "0"
+  PULSE_ALLOWED_ORIGINS: http://web:4300
+  PULSE_AUTH_RATE_LIMIT_ENABLED: "true"
+  PULSE_LOGIN_WINDOW_SECONDS: "60"
+  PULSE_LOGIN_ACCOUNT_MAX_ATTEMPTS: "3"
+  PULSE_LOGIN_IP_MAX_ATTEMPTS: "20"
+  PULSE_LOGIN_LOCKOUT_SECONDS: "60"
+  PULSE_REQUIRE_CREDENTIAL_CONTAINMENT: "false"
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: us-east-1
+  S3_BUCKET: ${S3_BUCKET:-pulse-ci-documents}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Generate .env.ci}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?Generate .env.ci}
+  S3_FORCE_PATH_STYLE: "true"
+  CLAMAV_HOST: clamav
+  CLAMAV_PORT: "3310"
+  CLAMAV_TIMEOUT_MS: "180000"
+
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16.14-alpine}
     environment:
-      POSTGRES_USER: pulse
-      POSTGRES_PASSWORD: pulse_ci_password
-      POSTGRES_DB: pulse
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?Generate .env.ci}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Generate .env.ci}
+      POSTGRES_DB: ${POSTGRES_DB:-pulse}
+    networks: [backend]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
       timeout: 5s
-      retries: 12
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Generate .env.ci}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Generate .env.ci}
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  minio-init:
+    build:
+      context: .
+      dockerfile: docker/minio/Dockerfile
+      args:
+        MINIO_MC_IMAGE: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Generate .env.ci}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Generate .env.ci}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Generate .env.ci}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Generate .env.ci}
+      S3_BUCKET: ${S3_BUCKET:-pulse-ci-documents}
+    networks: [backend]
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  clamav:
+    image: clamav/clamav:stable
+    platform: linux/amd64
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 45s
 
   initialize:
     build:
       context: .
       dockerfile: docker/ci/Dockerfile
-    command: ["/bin/sh", "-c", "npm run build -w @pulse/contracts && npm run db:initialize -w @pulse/api && touch /tmp/pulse-initialized && tail -f /dev/null"]
+    command: ["/usr/local/bin/pulse-ci-initialize"]
     environment:
-      DATABASE_URL: postgresql://pulse:pulse_ci_password@postgres:5432/pulse?schema=pulse
-      PULSE_SESSION_SECRET: pulse-ci-session-secret
+      NODE_ENV: test
+      DATABASE_URL: ${PULSE_DATABASE_MIGRATION_URL:?Generate .env.ci}
+      PULSE_DATABASE_ADMIN_URL: ${PULSE_DATABASE_ADMIN_URL:?Generate .env.ci}
+      PULSE_DATABASE_MIGRATION_URL: ${PULSE_DATABASE_MIGRATION_URL:?Generate .env.ci}
+      PULSE_DATABASE_APP_URL: ${DATABASE_URL:?Generate .env.ci}
+      PULSE_DB_MIGRATION_USER: ${PULSE_DB_MIGRATION_USER:?Generate .env.ci}
+      PULSE_DB_MIGRATION_PASSWORD: ${PULSE_DB_MIGRATION_PASSWORD:?Generate .env.ci}
+      PULSE_DB_APP_USER: ${PULSE_DB_APP_USER:?Generate .env.ci}
+      PULSE_DB_APP_PASSWORD: ${PULSE_DB_APP_PASSWORD:?Generate .env.ci}
+      PULSE_ALLOW_DESTRUCTIVE_SEED: "1"
+      PULSE_ENABLE_DEMO_SEED: "1"
+      PULSE_DEMO_ADMIN_PASSWORD: ${PULSE_DEMO_ADMIN_PASSWORD:?Generate .env.ci}
+      PULSE_DEMO_SALES_PASSWORD: ${PULSE_DEMO_SALES_PASSWORD:?Generate .env.ci}
+      PULSE_DEMO_PROJECT_MANAGER_PASSWORD: ${PULSE_DEMO_PROJECT_MANAGER_PASSWORD:?Generate .env.ci}
+      PULSE_DEMO_TECHNICIAN_PASSWORD: ${PULSE_DEMO_TECHNICIAN_PASSWORD:?Generate .env.ci}
+      PULSE_ALLOW_CI_DATABASE_CREATE: "1"
+      PULSE_CI_PREBASELINE_DATABASE: pulse_prebaseline_ci
+      PULSE_CI_FIRST_RUN_DATABASE: pulse_first_run_ci
+    networks: [backend]
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,26 +116,27 @@ services:
       test: ["CMD", "test", "-f", "/tmp/pulse-initialized"]
       interval: 2s
       timeout: 2s
-      retries: 30
+      retries: 90
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
       target: production
-    environment:
-      DATABASE_URL: postgresql://pulse:pulse_ci_password@postgres:5432/pulse?schema=pulse
-      PULSE_SESSION_SECRET: pulse-ci-session-secret
-      PULSE_COOKIE_SECURE: "true"
-      FRONTEND_ORIGINS: https://pulse.lbh.app
+    environment: *test-environment
+    networks: [backend]
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health/ready"]
       interval: 5s
       timeout: 5s
-      retries: 18
+      retries: 30
       start_period: 10s
     depends_on:
       initialize:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      clamav:
         condition: service_healthy
 
   web:
@@ -58,12 +147,14 @@ services:
       args:
         PULSE_API_URL: http://api:3000
     environment:
+      NODE_ENV: production
       PULSE_API_URL: http://api:3000
+    networks: [backend]
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4300/api/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4300/api/health/ready"]
       interval: 5s
       timeout: 5s
-      retries: 18
+      retries: 30
       start_period: 10s
     depends_on:
       api:
@@ -74,15 +165,17 @@ services:
       context: .
       dockerfile: docker/ci/Dockerfile
     environment:
-      NODE_ENV: test
-      DATABASE_URL: postgresql://pulse:pulse_ci_password@postgres:5432/pulse?schema=pulse
-      PULSE_SESSION_SECRET: pulse-ci-session-secret
-      PULSE_COOKIE_SECURE: "true"
+      <<: *test-environment
       PULSE_RUN_DB_TESTS: "1"
-      FRONTEND_ORIGINS: https://pulse.lbh.app
-      PULSE_API_URL: http://localhost:3000
+      PULSE_WEB_URL: http://web:4300
+      PULSE_CI_ORIGIN: http://web:4300
+      PULSE_CI_ADMIN_EMAIL: admin@r2.local
+      PULSE_CI_ADMIN_PASSWORD: ${PULSE_DEMO_ADMIN_PASSWORD:?Generate .env.ci}
+    networks: [backend]
     depends_on:
-      postgres:
-        condition: service_healthy
       web:
         condition: service_healthy
+
+networks:
+  backend:
+    internal: true

@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api/client";
+
 // Shared client-side form sanitation utilities. These helpers mirror the API
 // validation rules enough to give users immediate field-level feedback, while
 // the server-side Zod schemas remain the final source of truth.
@@ -126,7 +128,7 @@ export function mapApiErrors<TField extends string>(
 
 export async function formJson<T>(url: string, init?: RequestInit, fallback = "Request failed.") {
   // Fetch wrapper used by form surfaces that need structured field errors.
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",

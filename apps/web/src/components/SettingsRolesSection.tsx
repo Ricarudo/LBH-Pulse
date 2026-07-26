@@ -20,6 +20,7 @@ import {
   type Permission
 } from "@pulse/contracts/access-control";
 import { ViewportPortal } from "@/components/ViewportPortal";
+import { apiFetch } from "@/lib/api/client";
 
 type RolesResponse = { roles: AccessRoleRecord[] };
 type RoleResponse = { role: AccessRoleRecord };
@@ -41,7 +42,7 @@ const resourceLabels: Record<string, string> = {
 };
 
 async function roleJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers }
   });

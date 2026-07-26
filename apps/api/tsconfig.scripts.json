@@ -6,6 +6,6 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["prisma/**/*.ts"],
+  "include": ["prisma/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

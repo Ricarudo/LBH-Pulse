@@ -8,6 +8,7 @@ import {
   type AuditLogResponse
 } from "@pulse/contracts/audit";
 import { formatWorkspaceDate } from "@/lib/formatting";
+import { apiFetch } from "@/lib/api/client";
 
 type AuditFilters = {
   category: AuditEventCategory;
@@ -54,7 +55,7 @@ export function SettingsAuditSection() {
         });
         if (filters.from) query.set("from", filters.from);
         if (filters.to) query.set("to", filters.to);
-        const response = await fetch(`/api/audit?${query}`, {
+        const response = await apiFetch(`/api/audit?${query}`, {
           cache: "no-store",
           signal: controller.signal
         });

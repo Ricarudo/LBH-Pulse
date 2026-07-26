@@ -18,6 +18,7 @@ import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { ClientRecord } from "@pulse/contracts/clients";
 import type { RequestAssignee } from "@pulse/contracts/requests";
+import { apiFetch } from "@/lib/api/client";
 import {
   invoiceStatuses,
   projectStatuses,
@@ -126,7 +127,7 @@ const workViews: Record<WorkKind, WorkView[]> = {
 };
 
 async function requestJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers }
   });
@@ -436,11 +437,11 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     if (
       !form.title ||
       !form.clientId ||
-      (kind === "quotes" && (!form.contactId || !form.calculationMode))
+      (kind === "quotes" && (!form.contactId || !form.siteId || !form.assignedToId || !form.calculationMode))
     ) {
       setToast(
         kind === "quotes"
-          ? "Title, client, point of contact, and calculation mode are required."
+          ? "Title, client, point of contact, site, assignee, and calculation mode are required."
           : "Title and client are required."
       );
       return;

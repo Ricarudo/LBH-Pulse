@@ -6,6 +6,7 @@ const adapter = new PrismaPg(
   { schema: "pulse" }
 );
 const prisma = new PrismaClient({ adapter });
+const apply = process.argv.includes("--apply");
 
 async function main() {
   const itemsWithoutHistory = await prisma.item.findMany({
@@ -20,6 +21,24 @@ async function main() {
 
   if (!itemsWithoutHistory.length) {
     console.log("Item price history is already initialized.");
+    return;
+  }
+
+  console.log(JSON.stringify({
+    mode: apply ? "APPLY" : "PREVIEW",
+    findings: itemsWithoutHistory.map((item) => ({
+      entityType: "Item",
+      entityId: item.id,
+      currentValue: "no price-history row",
+      proposedRepair: "create an opening price-history snapshot from the current item values",
+      reason: "Preserve the initial known price state without changing the item.",
+      confidence: "high",
+      automaticRepairSafe: true,
+      humanReviewRequired: false
+    }))
+  }, null, 2));
+  if (!apply) {
+    console.log("No changes made. Re-run with --apply after reviewing the preview.");
     return;
   }
 

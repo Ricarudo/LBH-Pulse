@@ -28,10 +28,10 @@ export type LegacyQuoteCsvRow = Record<LegacyQuoteCsvHeader, string>;
 
 export function legacyQuoteCsvTemplate() {
   return stringifyCsv(legacyQuoteCsvHeaders, [{
-    external_quote_number: "LEGACY-1001", title: "Sample security upgrade", client_number: "CL-1001", client_name: "Sample Company",
+    external_quote_number: "QM260001", title: "Sample security upgrade", client_number: "CL-1001", client_name: "Sample Company",
     contact_name: "Jordan Rivera", contact_email: "jordan@sample.example", status: "Approved", owner_email: "",
     material_sale: "12500.00", material_cost: "8000.00", labor_sale: "3500.00", labor_cost: "1800.00", tax_amount: "1595.00",
-    estimated_duration_business_days: "10", created_at: "2025-01-06T13:00:00.000Z", sent_at: "2025-01-10T15:00:00.000Z",
-    approved_at: "2025-01-15T17:00:00.000Z", scope_description: "Replace sample scope before importing.", internal_notes: "", proposal_notes: ""
+    estimated_duration_business_days: "10", created_at: "2026-01-06T13:00:00.000Z", sent_at: "2026-01-10T15:00:00.000Z",
+    approved_at: "2026-01-15T17:00:00.000Z", scope_description: "Replace sample scope before importing.", internal_notes: "", proposal_notes: ""
   }]);
 }

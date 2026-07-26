@@ -5,8 +5,11 @@
 **/coverage
 .git
 .env
+.env.*
+!**/.env.example
 *.log
 *.tsbuildinfo
+**/*.tsbuildinfo
 database/local-backups
 .pnpm-store
 pulse-local-ca.crt
@@ -17,3 +20,9 @@ pulse-local-ca.crt
 *.bak
 *.dump
 client-list-cleaned.csv
+private-reports
+production-backups
+*.age
+*.manifest.json
+*.password
+*.secret

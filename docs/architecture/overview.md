@@ -25,8 +25,10 @@ NestJS API
    └── ClamAV upload inspection
 ```
 
-Docker Compose defines the supported runtime and the isolated CI topology. See
-the root README for startup, DNS, certificate, recovery, and safety operations.
+Docker Compose defines separate development, immutable production,
+maintenance/backup, and isolated CI topologies. Production publishes only
+Caddy ports; PostgreSQL, MinIO, API, and web remain on internal networks. See
+the root README and production runbook for deployment and recovery operations.
 
 ## Ownership boundaries
 
@@ -75,6 +77,8 @@ the document bytes.
 ## Security boundary
 
 Caddy's certificate-authority private key stays in its persistent Docker volume.
-Administrators may export only the current public `root.crt` as described in the
-root README. Database credentials, session secrets, MinIO credentials, and
-ClamAV connectivity remain server-side and are never exposed to browser code.
+Database administrator/migration/runtime identities are separate; the API uses
+only the restricted runtime role. MinIO root and bucket-scoped application
+identities are also separate. Opaque session tokens, CSRF tokens, database and
+storage credentials, passwords, and security peppers remain server-side and are
+never logged or exposed to browser code.

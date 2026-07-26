@@ -48,6 +48,7 @@ export function canAccessActivity(
     return canUser(user, "settings:read");
   }
   if (activity.relatedEntityType === "AccessRole") return user.isSystemAdmin;
+  if (activity.relatedEntityType === "Authentication") return canUser(user, "audit:read");
   if (activity.relatedEntityType === "User") {
     return activity.actorUserId === user.id || canUser(user, "users:manage");
   }

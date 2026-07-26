@@ -323,6 +323,20 @@ export const createRequestSchema = requestFormFieldsSchema
         path: ["companyName"]
       });
     }
+    for (const [field, label] of [
+      ["clientId", "client"],
+      ["contactId", "point of contact"],
+      ["siteId", "site"],
+      ["assignedToId", "assignee"]
+    ] as const) {
+      if (!data[field]) {
+        context.addIssue({
+          code: "custom",
+          message: `Select a ${label}. Imported legacy requests may remain incomplete until reviewed.`,
+          path: [field]
+        });
+      }
+    }
   })
   .transform((data) => ({
     ...data,

@@ -36,7 +36,7 @@ describe("modular CSV import utilities", () => {
       legacyQuoteCsvHeaders
     );
     assert.equal(parsed.length, 1);
-    assert.equal(parsed[0].row.external_quote_number, "LEGACY-1001");
+    assert.equal(parsed[0].row.external_quote_number, "QM260001");
     assert.equal(parsed[0].row.status, "Approved");
     assert.equal(parsed[0].row.material_sale, "12500.00");
   });

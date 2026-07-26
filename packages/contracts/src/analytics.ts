@@ -167,6 +167,7 @@ export type AnalyticsFilterOption = { value: string; label: string };
 export type AnalyticsDataQuality = {
   exactLifecycleEvents: number;
   estimatedLifecycleEvents: number;
+  unreliableEntityCount: number;
   partialMetricCount: number;
   message?: string;
 };

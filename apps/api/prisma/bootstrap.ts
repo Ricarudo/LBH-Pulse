@@ -1,5 +1,4 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-import { scryptSync } from "node:crypto";
 import { PrismaClient } from "../src/generated/prisma/client";
 
 const adapter = new PrismaPg(
@@ -9,6 +8,7 @@ const adapter = new PrismaPg(
   { schema: "pulse" }
 );
 const prisma = new PrismaClient({ adapter });
+const apply = process.argv.includes("--apply");
 
 type ChecklistItemSeed = readonly [
   label: string,
@@ -24,37 +24,6 @@ type ChecklistTemplateSeed = {
   serviceCategory?: string;
   items: ChecklistItemSeed[];
 };
-
-function hashPassword(password: string, salt: string) {
-  return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
-}
-
-const runtimeUsers = [
-  {
-    name: "Admin User",
-    email: "admin@r2.local",
-    role: "Admin",
-    password: "PulseAdmin123!"
-  },
-  {
-    name: "Sales User",
-    email: "sales@r2.local",
-    role: "Sales",
-    password: "PulseSales123!"
-  },
-  {
-    name: "Project Manager User",
-    email: "project.manager@r2.local",
-    role: "ProjectManager",
-    password: "PulsePm123!"
-  },
-  {
-    name: "Technician User",
-    email: "technician@r2.local",
-    role: "Technician",
-    password: "PulseTech123!"
-  }
-];
 
 const checklistTemplates: ChecklistTemplateSeed[] = [
   {
@@ -185,29 +154,6 @@ const checklistTemplates: ChecklistTemplateSeed[] = [
   }
 ];
 
-async function upsertRuntimeUsers() {
-  for (const user of runtimeUsers) {
-    await prisma.localUser.upsert({
-      where: { email: user.email },
-      create: {
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        passwordHash: hashPassword(user.password, user.email),
-        active: true,
-        mustChangePassword: false,
-        authProvider: "LOCAL"
-      },
-      update: {
-        name: user.name,
-        active: true,
-        deactivatedAt: null,
-        authProvider: "LOCAL"
-      }
-    });
-  }
-}
-
 async function upsertChecklistTemplates() {
   for (const template of checklistTemplates) {
     const savedTemplate = await prisma.requestChecklistTemplate.upsert({
@@ -262,11 +208,24 @@ async function upsertChecklistTemplates() {
 }
 
 async function main() {
-  await upsertRuntimeUsers();
+  console.log(JSON.stringify({
+    mode: apply ? "APPLY" : "PREVIEW",
+    referenceData: checklistTemplates.map((template) => ({
+      key: template.key,
+      name: template.name,
+      itemCount: template.items.length
+    })),
+    usersCreated: 0,
+    destructive: false
+  }, null, 2));
+  if (!apply) {
+    console.log("No changes made. Re-run with --apply after reviewing the reference-data preview.");
+    return;
+  }
   await upsertChecklistTemplates();
 
   console.log(
-    `Bootstrapped ${runtimeUsers.length} local users and ${checklistTemplates.length} checklist templates without deleting data.`
+    `Bootstrapped ${checklistTemplates.length} checklist templates without creating users or deleting data.`
   );
 }
 

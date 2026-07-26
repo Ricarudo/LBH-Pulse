@@ -67,7 +67,11 @@ async function main() {
     console.log("No changes made. Re-run with --apply after reviewing this report.");
     return;
   }
+  throw new Error(
+    "Pulse 0.1 permanently disables this historical total rewrite. Use the reconciliation report and an approved targeted repair instead."
+  );
 
+  /* c8 ignore start -- retained only as historical implementation evidence */
   await prisma.$transaction(async (tx) => {
     for (const quote of legacyCandidates) {
       await tx.quote.update({
@@ -135,6 +139,7 @@ async function main() {
   });
 
   console.log("Quote financial backfill complete.");
+  /* c8 ignore stop */
 }
 
 main()

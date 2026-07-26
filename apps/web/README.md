@@ -41,12 +41,15 @@ does not need `DATABASE_URL`.
 The complete supported stack starts with:
 
 ```bash
-docker compose up -d --build --remove-orphans
-docker compose logs -f web gateway
+./scripts/development/create-env.sh
+docker compose --env-file .env.development up -d --build
+docker compose --env-file .env.development logs -f web gateway
 ```
 
-Use `https://pulse.lbh.app` through Caddy. `http://localhost:4300` is a host-only
-diagnostic endpoint; certificate and DNS setup belong in the root README.
+Use the configured development hostname through Caddy. `http://localhost:4300`
+is a host-only diagnostic endpoint. Production uses
+`compose.production.yaml` and the root production runbook; it never runs
+`next dev` or uses source bind mounts.
 
 ## API client conventions
 

@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { ViewportPortal } from "@/components/ViewportPortal";
+import { apiFetch } from "@/lib/api/client";
 import { canUser } from "@pulse/contracts/auth";
 import {
   clientIndustries,
@@ -294,7 +295,7 @@ function contactPayload(contact: ContactFormState) {
 }
 
 async function requestClient(clientId: string) {
-  const response = await fetch(`/api/clients/${clientId}`, { cache: "no-store" });
+  const response = await apiFetch(`/api/clients/${clientId}`, { cache: "no-store" });
   const data = (await response.json().catch(() => ({}))) as ClientResponse & ApiErrorResponse;
 
   if (!response.ok || !data.client) {
@@ -305,7 +306,7 @@ async function requestClient(clientId: string) {
 }
 
 async function requestJson<T>(url: string, init: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",

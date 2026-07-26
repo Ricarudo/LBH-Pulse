@@ -27,7 +27,7 @@ async function main() {
         "Pulse is already initialized; refusing to run the first-run seed.",
         "No users, documents, or application records were changed.",
         "Use the normal Docker startup command instead: docker compose up -d --build",
-        "Only run npm run db:reset-demo when an intentional destructive reset was specifically requested."
+        "Only run npm run db:reset:demo when an intentional destructive reset of disposable development data was specifically requested."
       ].join("\n")
     );
     process.exitCode = 2;

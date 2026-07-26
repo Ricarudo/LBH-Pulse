@@ -10,6 +10,7 @@ const adapter = new PrismaPg(
   { schema: "pulse" }
 );
 const prisma = new PrismaClient({ adapter });
+const apply = process.argv.includes("--apply");
 
 async function main() {
   const existing = await prisma.lifecycleStatusEvent.findMany({
@@ -70,6 +71,23 @@ async function main() {
 
   if (!rows.length) {
     console.log("Lifecycle analytics history is already initialized.");
+    return;
+  }
+  console.log(JSON.stringify({
+    mode: apply ? "APPLY" : "PREVIEW",
+    findings: rows.map((row) => ({
+      entityType: row.entityType,
+      entityId: row.entityId,
+      currentValue: "no lifecycle event",
+      proposedRepair: { toStatus: row.toStatus, changedAt: row.changedAt.toISOString(), precision: row.precision },
+      reason: "Create one explicitly estimated opening event from the current record state.",
+      confidence: "medium",
+      automaticRepairSafe: true,
+      humanReviewRequired: false
+    }))
+  }, null, 2));
+  if (!apply) {
+    console.log("No changes made. Re-run with --apply after reviewing the estimated timestamps.");
     return;
   }
   const result = await prisma.lifecycleStatusEvent.createMany({ data: rows });

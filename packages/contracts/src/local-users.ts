@@ -11,6 +11,7 @@ export type LocalAccountRecord = {
   accessRole: RoleSummary;
   active: boolean;
   mustChangePassword: boolean;
+  isDemoAccount: boolean;
   authProvider: AuthProvider;
   entraObjectId: string;
   createdAt: string;
@@ -31,7 +32,8 @@ const emailSchema = z
 
 export const localPasswordSchema = z
   .string()
-  .min(10, "Password must be at least 10 characters.");
+  .min(14, "Password must be at least 14 characters.")
+  .max(256, "Password may contain up to 256 characters.");
 
 export const createLocalUserSchema = z.object({
   name: z.string().trim().min(1, "Name is required."),

@@ -13,6 +13,11 @@ import {
   type LegacyQuoteCsvRow as Row
 } from "@/lib/importers/legacyQuoteCsv";
 import type { BulkImporter, UploadedCsv } from "@/lib/importers/types";
+import {
+  lockRecordNumberSequence,
+  nextRecordNumberFromExisting,
+  normalizeRecordNumber
+} from "@/lib/services/recordNumberService";
 import type {
   BulkImportCommitResult,
   BulkImportCommitSelection,
@@ -124,6 +129,8 @@ function sanitize(parsed: ReturnType<typeof parseExactCsv<Header>>): SanitizedRo
 const quoteSelect = {
   id: true,
   quoteNumber: true,
+  baseQuoteNumber: true,
+  revisionNumber: true,
   externalQuoteNumber: true,
   title: true,
   status: true,
@@ -202,21 +209,21 @@ async function buildPreview(file: UploadedCsv) {
   const sanitized = sanitize(parseExactCsv(file.buffer, legacyQuoteCsvHeaders));
   const [quotes, clients, users] = await Promise.all([
     prisma.quote.findMany({
-      where: {
-        OR: [
-          { externalQuoteNumber: { not: null } },
-          { calculationMode: "LEGACY" }
-        ]
-      },
       select: quoteSelect
     }),
     prisma.client.findMany({ include: { contacts: true } }),
     prisma.localUser.findMany({ where: { active: true }, select: { id: true, email: true, name: true } })
   ]);
   const quoteByExternal = new Map<string, Quote>();
+  const quoteByNumber = new Map<string, Quote>();
   for (const quote of quotes) {
-    quoteByExternal.set(identity(quote.externalQuoteNumber ?? ""), quote);
-    quoteByExternal.set(identity(quote.quoteNumber), quote);
+    if (quote.externalQuoteNumber) {
+      quoteByExternal.set(identity(quote.externalQuoteNumber), quote);
+    }
+    quoteByNumber.set(identity(quote.quoteNumber), quote);
+    if (quote.baseQuoteNumber) {
+      quoteByNumber.set(identity(quote.baseQuoteNumber), quote);
+    }
   }
   const clientsByNumber = new Map(clients.map((client) => [identity(client.clientNumber), client]));
   const clientsByName = new Map<string, Client[]>();
@@ -252,6 +259,7 @@ async function buildPreview(file: UploadedCsv) {
       const contacts = client.contacts.filter((contact) => identity(contact.email ?? "") === identity(item.row.contact_email));
       if (contacts.length === 1) { contactId = contacts[0].id; matchedBy.push("Contact email"); }
       else if (contacts.length > 1) errors.push("Contact email matches more than one client contact.");
+      else errors.push("Contact email does not match a contact on the resolved client.");
     }
     let assignedToId: string | undefined;
     let assignedToName: string | undefined;
@@ -262,17 +270,48 @@ async function buildPreview(file: UploadedCsv) {
       if (!assignedToId) errors.push("Owner email does not match an active Pulse user.");
       else matchedBy.push("Owner email");
     }
-    const target = quoteByExternal.get(identity(item.row.external_quote_number));
-    if (target) matchedBy.unshift("External quote number");
+    const externalIdentity = identity(item.row.external_quote_number);
+    const canonicalQuoteNumber = normalizeRecordNumber(
+      item.row.external_quote_number,
+      "quote"
+    );
+    const externalTarget = quoteByExternal.get(externalIdentity);
+    const numberTarget = quoteByNumber.get(externalIdentity);
+    const target = externalTarget ?? numberTarget;
+    const numberConflict = Boolean(
+      externalTarget && numberTarget && externalTarget.id !== numberTarget.id
+    );
+    const quoteNumberWillChange = Boolean(
+      canonicalQuoteNumber &&
+      target &&
+      target.quoteNumber !== canonicalQuoteNumber
+    );
+    const rowDiffs = diffs(item.row, target ? currentRow(target) : undefined);
+    if (quoteNumberWillChange && canonicalQuoteNumber && target) {
+      rowDiffs.unshift({
+        field: "pulse_quote_number",
+        label: "Pulse quote number",
+        group: "Quote",
+        current: target.quoteNumber,
+        incoming: canonicalQuoteNumber,
+        changed: true
+      });
+    }
+    if (externalTarget) matchedBy.unshift("External quote number");
+    else if (numberTarget) matchedBy.unshift("Pulse quote number");
     if (!target && !item.row.title) errors.push("Title is required for a new legacy quote.");
+    if (!target && !client) errors.push("A new imported quote must resolve to an existing Pulse client by client number or exact name.");
+    if (!target && !assignedToId) errors.push("A new imported quote requires the email of an active Pulse owner.");
     if (target?.clientId && (item.row.client_number || item.row.client_name) && !client) {
       errors.push("The supplied client values do not resolve to an existing client.");
     }
     let status: BulkImportRowStatus;
     if (errors.length) status = "invalid";
     else if (duplicateExternal.has(item.rowNumber)) { status = "conflict"; errors.push("This file contains the external quote number more than once."); }
+    else if (numberConflict) { status = "conflict"; errors.push("This external quote number and Pulse quote number belong to different records."); }
     else if (target && (target.calculationMode !== "LEGACY" || !target.importBatchId || target.project || target.archivedAt)) { status = "conflict"; errors.push("This external number belongs to a quote that cannot be updated by the legacy importer."); }
-    else if (target) status = diffs(item.row, currentRow(target)).some((diff) => diff.changed) ? "changed" : "unchanged";
+    else if (quoteNumberWillChange && target?.revisionNumber !== 0) { status = "conflict"; errors.push("A revised quote cannot adopt a different canonical quote number through the importer."); }
+    else if (target) status = rowDiffs.some((diff) => diff.changed) ? "changed" : "unchanged";
     else status = "new";
     resolved.set(item.rowNumber, { client, contactId, assignedToId, assignedToName });
     return {
@@ -284,8 +323,19 @@ async function buildPreview(file: UploadedCsv) {
       expectedUpdatedAt: target?.updatedAt.toISOString(),
       matchedBy,
       errors: Array.from(new Set(errors)),
-      candidates: target ? [{ id: target.id, recordNumber: target.quoteNumber, displayName: target.title, archived: Boolean(target.archivedAt) }] : [],
-      diffs: diffs(item.row, target ? currentRow(target) : undefined)
+      candidates: Array.from(
+        new Map(
+          [externalTarget, numberTarget]
+            .filter((candidate): candidate is Quote => Boolean(candidate))
+            .map((candidate) => [candidate.id, {
+              id: candidate.id,
+              recordNumber: candidate.quoteNumber,
+              displayName: candidate.title,
+              archived: Boolean(candidate.archivedAt)
+            }])
+        ).values()
+      ),
+      diffs: rowDiffs
     };
   });
   const summary: Record<BulkImportRowStatus, number> = { new: 0, changed: 0, unchanged: 0, conflict: 0, invalid: 0 };
@@ -329,21 +379,41 @@ async function commit(
   const batchId = randomUUID();
   try {
     return await prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('pulse-number:quote'))`;
-      const year = new Date().getUTCFullYear();
-      const existingNumbers = await tx.quote.findMany({ select: { quoteNumber: true } });
-      let next = existingNumbers.reduce((max, quote) => {
-        const match = new RegExp(`^QT-${year}-(\\d+)$`).exec(quote.quoteNumber);
-        return Math.max(max, match ? Number(match[1]) : 1000);
-      }, Math.max(1000, existingNumbers.length + 1000));
+      await lockRecordNumberSequence(tx, "quote");
+      const existingNumbers = (await tx.quote.findMany({
+        select: {
+          quoteNumber: true,
+          baseQuoteNumber: true,
+          externalQuoteNumber: true
+        }
+      })).flatMap((quote) => [
+        quote.quoteNumber,
+        quote.baseQuoteNumber,
+        quote.externalQuoteNumber
+      ]);
+      const reservedImportedNumbers = selections.flatMap((selection) => {
+        const row = rebuilt.sanitized.get(selection.rowNumber);
+        const canonical = row
+          ? normalizeRecordNumber(row.external_quote_number, "quote")
+          : null;
+        return canonical ? [canonical] : [];
+      });
+      const allocatedNumbers = [...existingNumbers, ...reservedImportedNumbers];
       const result: BulkImportCommitResult = { batchId, created: 0, updated: 0, records: [] };
       for (const selection of selections) {
         const row = rebuilt.sanitized.get(selection.rowNumber);
         const relation = rebuilt.resolved.get(selection.rowNumber);
         if (!row || !relation) throw new Error("BULK_IMPORT_PREVIEW_STALE");
+        const canonicalQuoteNumber = normalizeRecordNumber(
+          row.external_quote_number,
+          "quote"
+        );
         if (selection.action === "create") {
-          next += 1;
-          const quoteNumber = `QT-${year}-${String(next).padStart(4, "0")}`;
+          const quoteNumber = canonicalQuoteNumber ?? nextRecordNumberFromExisting(
+            "quote",
+            allocatedNumbers
+          );
+          allocatedNumbers.push(quoteNumber);
           const createdAt = date(row.created_at) ?? new Date();
           const lifecycle = await tx.lifecycleContext.create({ data: { details: row.internal_notes, updatedById: user.id, updatedByNameSnapshot: user.name } });
           const created = await tx.quote.create({
@@ -358,7 +428,7 @@ async function commit(
               legacyLaborSale: amount(row, "labor_sale"), legacyLaborCost: amount(row, "labor_cost"),
               legacyTaxAmount: amount(row, "tax_amount"),
               legacyEstimatedDurationBusinessDays: row.estimated_duration_business_days ? Number(row.estimated_duration_business_days) : null,
-              externalQuoteNumber: row.external_quote_number, importBatchId: batchId,
+              externalQuoteNumber: canonicalQuoteNumber ?? row.external_quote_number, importBatchId: batchId,
               externalCreatedAt: date(row.created_at), externalSentAt: date(row.sent_at), externalApprovedAt: date(row.approved_at),
               sentAt: date(row.sent_at), sentAtPrecision: row.sent_at ? "EXACT" : undefined,
               contactNameSnapshot: nullable(row.contact_name), contactEmailSnapshot: nullable(row.contact_email),
@@ -379,8 +449,16 @@ async function commit(
         } else {
           const current = await tx.quote.findUnique({ where: { id: selection.targetId }, select: quoteSelect });
           if (!current || current.updatedAt.toISOString() !== selection.expectedUpdatedAt || current.calculationMode !== "LEGACY" || !current.importBatchId || current.project || current.archivedAt) throw new Error("BULK_IMPORT_PREVIEW_STALE");
+          if (canonicalQuoteNumber && canonicalQuoteNumber !== current.quoteNumber && current.revisionNumber !== 0) throw new Error("BULK_IMPORT_PREVIEW_STALE");
           const priorStatus = current.status;
           const updated = await tx.quote.update({ where: { id: current.id }, data: {
+            ...(canonicalQuoteNumber && canonicalQuoteNumber !== current.quoteNumber
+              ? {
+                  quoteNumber: canonicalQuoteNumber,
+                  baseQuoteNumber: canonicalQuoteNumber,
+                  externalQuoteNumber: canonicalQuoteNumber
+                }
+              : {}),
             ...(row.title ? { title: row.title } : {}), ...(row.status ? { status: row.status } : {}),
             ...(relation.client ? { clientId: relation.client.id, clientName: relation.client.displayName } : row.client_name ? { clientName: row.client_name } : {}),
             ...(relation.contactId ? { contactId: relation.contactId } : {}), ...(relation.assignedToId ? { assignedToId: relation.assignedToId, owner: relation.assignedToName } : {}),
@@ -415,7 +493,11 @@ async function commit(
         metadata: { fileName: file.originalname, fileDigest, selectedRows: selections.map((selection) => selection.rowNumber) }
       } });
       return result;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWait: 10_000,
+      timeout: 120_000
+    });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(error.code)) throw new Error("BULK_IMPORT_PREVIEW_STALE");
     throw error;

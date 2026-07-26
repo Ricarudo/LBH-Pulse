@@ -14,10 +14,12 @@ import {
   updateQuoteSchema
 } from "./work";
 
-test("new quotes require a client profile point of contact", () => {
+test("new quotes require client, contact, site, and assignee relationships", () => {
   const missingContact = createQuoteSchema.safeParse({
     title: "Network refresh",
-    clientId: "client-1"
+    clientId: "client-1",
+    siteId: "site-1",
+    assignedToId: "user-1"
   });
 
   assert.equal(missingContact.success, false);
@@ -26,6 +28,8 @@ test("new quotes require a client profile point of contact", () => {
     title: "Network refresh",
     clientId: "client-1",
     contactId: "contact-1",
+    siteId: "site-1",
+    assignedToId: "user-1",
     calculationMode: "PULSE"
   });
 
@@ -46,6 +50,7 @@ test("quote ownership is a linked user and legacy owner text is discarded", () =
     title: "Network refresh",
     clientId: "client-1",
     contactId: "contact-1",
+    siteId: "site-1",
     calculationMode: "LEGACY",
     assignedToId: "user-1",
     owner: "Legacy text"
@@ -61,6 +66,8 @@ test("quote mutation contracts reject arbitrary totals and invalid Legacy values
     title: "Manual total",
     clientId: "client-1",
     contactId: "contact-1",
+    siteId: "site-1",
+    assignedToId: "user-1",
     calculationMode: "LEGACY",
     total: 500
   }).success, false);

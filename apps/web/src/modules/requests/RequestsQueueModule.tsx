@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { apiFetch } from "@/lib/api/client";
 import type { ClientRecord } from "@pulse/contracts/clients";
 import type {
   RequestAssignee,
@@ -27,7 +28,7 @@ type ClientListResponse = {
 };
 
 async function requestJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",

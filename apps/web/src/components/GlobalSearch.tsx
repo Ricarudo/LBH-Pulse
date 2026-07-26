@@ -23,6 +23,7 @@ import {
   X
 } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
+import { apiFetch } from "@/lib/api/client";
 import {
   canAccessPath,
   navigationCommands,
@@ -197,7 +198,7 @@ export function GlobalSearch({
       setLoading(true);
       setError("");
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(normalized)}`, {
+        const response = await apiFetch(`/api/search?q=${encodeURIComponent(normalized)}`, {
           cache: "no-store",
           signal: controller.signal
         });

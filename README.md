@@ -6,244 +6,76 @@ Pulse is LBH's internal operations platform for the workflow:
 Request → Quote Workspace → Proposal → Project
 ```
 
-The application boundary is:
+The production boundary is Browser → Caddy → Next.js → NestJS → PostgreSQL/MinIO/ClamAV. NestJS is the only database and business-logic owner; Next.js owns the browser experience. See [the architecture overview](docs/architecture/overview.md).
 
-```text
-Browser → Next.js → NestJS API → PostgreSQL / MinIO / ClamAV
+## Release operations
+
+Pulse 0.1 separates development and production deliberately:
+
+- `compose.yaml` is development-only and retains source bind mounts/hot reload.
+- `compose.production.yaml` builds immutable production API/web images and exposes only Caddy ports.
+- `compose.maintenance.yaml` contains explicit role, migration, bootstrap, audit, backup, and restore jobs.
+- `compose.ci.yaml` is an isolated release-gate environment.
+
+Pulse 0.1 deploys into a new release database; the current development database is not promoted. Production operators must use the [production runbook](docs/production/runbook.md), [first-run and import guide](docs/production/initial-setup.md), [operator checklist](docs/production/operator-checklist.md), [migration guide](docs/production/migrations.md), and [rollback guide](docs/production/rollback.md). Never run `db:setup`, `prisma db push`, `prisma migrate reset`, `db:reset:demo`, or migrations in `legacy-migrations-pre-0.1` against a database whose data matters.
+
+## Local development
+
+Use Node.js 24+ and Docker Compose v2. Generate an ignored environment file; its random demo credentials are development-only and are never printed:
+
+```sh
+./scripts/development/create-env.sh
+docker compose --env-file .env.development --profile setup run --rm initialize
+docker compose --env-file .env.development up -d --build
 ```
 
-Caddy provides the private HTTPS gateway in front of Next.js. NestJS is the
-only database and backend owner; Next.js owns the browser experience and calls
-the API. See [the architecture overview](docs/architecture/overview.md) for the
-repository boundaries.
+The initialization command refuses an already initialized database. On normal restarts, omit it:
 
-The active repository consists of:
-
-- `apps/web`: Next.js UI and browser API clients
-- `apps/api`: NestJS API, Prisma, migrations, seed data, and storage integrations
-- `packages/contracts`: framework-independent API contracts and validation
-- PostgreSQL: application data
-- MinIO: document objects
-- ClamAV: upload inspection
-- Caddy: private HTTPS termination
-
-Docker Compose is the supported runtime interface. The commands below work
-with Docker Desktop on macOS and Windows and with Docker Engine plus Compose on
-Linux.
-
-## Network prerequisites
-
-Configure the Pulse host in UniFi before distributing the URL:
-
-1. Reserve `192.168.1.253` for the Pulse host.
-2. Add a local DNS record mapping `pulse.lbh.app` to `192.168.1.253`.
-3. Confirm Teleport clients receive the UniFi DNS server and can resolve that
-   record.
-
-DNS maps the hostname to the host. Caddy listens on standard ports 80 and 443,
-so users do not enter port 4300.
-
-## First installation
-
-Only use the initialization command for a new, empty Pulse database:
-
-```bash
-docker compose --profile setup run --rm initialize
-docker compose up -d --build --remove-orphans
+```sh
+docker compose --env-file .env.development up -d --build
+docker compose --env-file .env.development ps
+docker compose --env-file .env.development logs -f api web gateway
 ```
 
-Initialization is guarded. It refuses to seed a database that already contains
-Pulse tables.
+Do not use `docker compose down -v` for a database whose data matters. The `-v` flag deletes persistent volumes.
 
-## Normal startup and recovery
+Development diagnostics are bound to localhost: web `4300`, API `3000`, PostgreSQL `5432`, and MinIO `9000/9001`. Users should access the configured HTTPS hostname through Caddy.
 
-Use the same reconciliation command after a reboot, source update, or container
-failure:
+Install/check the workspace directly when needed:
 
-```bash
-docker compose up -d --build --remove-orphans
-```
-
-Useful operations:
-
-```bash
-docker compose ps
-docker compose logs -f
-docker compose logs -f web api gateway
-docker compose down
-```
-
-Do not run `docker compose down -v` against Pulse. The `-v` option deletes
-database, document, and certificate volumes.
-
-The application services use `restart: unless-stopped`, so Docker restores them
-after Docker Desktop or the host restarts.
-
-## HTTPS and client certificate setup
-
-Pulse is available at:
-
-```text
-https://pulse.lbh.app
-https://192.168.1.253
-```
-
-Caddy terminates HTTPS on port 443. Do not append `:4300` for remote access;
-that port is reserved for local diagnostics on the Pulse host.
-
-Caddy issues certificates from a private Pulse certificate authority. Export
-the current public root certificate after the gateway has started:
-
-```bash
-docker compose cp gateway:/data/caddy/pki/authorities/local/root.crt ./pulse-local-ca.crt
-```
-
-The exported file is local-only and ignored by Git. Install it once on every
-client that will access Pulse.
-
-### macOS
-
-```bash
-sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain ./pulse-local-ca.crt
-```
-
-### Windows PowerShell as Administrator
-
-```powershell
-Import-Certificate `
-  -FilePath .\pulse-local-ca.crt `
-  -CertStoreLocation Cert:\LocalMachine\Root
-```
-
-### Debian or Ubuntu Linux
-
-```bash
-sudo cp ./pulse-local-ca.crt /usr/local/share/ca-certificates/pulse-local-ca.crt
-sudo update-ca-certificates
-```
-
-### Android
-
-Transfer `pulse-local-ca.crt` to the phone, then open **Settings → Security &
-privacy → More security settings → Encryption & credentials → Install a
-certificate → CA certificate**. Select the file, confirm the device lock, and
-restart Chrome before opening `https://pulse.lbh.app` again. Android labels vary
-slightly by device manufacturer.
-
-Some browsers maintain a separate certificate store. Import
-`pulse-local-ca.crt` into the browser's Authorities store if it still reports an
-untrusted issuer.
-
-The root CA private key remains in Caddy's Docker volume. Never copy, commit, or
-distribute private key material. Only the public `root.crt` may be exported.
-
-## Local diagnostic endpoints
-
-The application and infrastructure ports are bound to localhost and are not
-directly exposed to the LAN:
-
-```text
-Web:           http://localhost:4300
-API health:    http://localhost:3000/api/health
-PostgreSQL:    localhost:5432
-MinIO API:     http://localhost:9000
-MinIO console: http://localhost:9001
-```
-
-Remote users should always use the HTTPS hostname.
-
-## Repository development
-
-Use Node.js 24 or newer. Install the npm workspace once from the repository
-root; do not install dependencies separately in each application:
-
-```bash
+```sh
 npm ci
 npm run typecheck
 npm test
+npm run responsive:check
 npm run build
 ```
 
-Application-specific development and conventions are documented in the
-[API README](apps/api/README.md) and [web README](apps/web/README.md).
+Application-specific conventions are in the [API README](apps/api/README.md) and [web README](apps/web/README.md).
 
-## CI
+## Isolated release gates
 
-CI runs in the isolated `lbh-pulse-ci` Compose project and cannot replace the
-running Pulse services.
+Generate ephemeral CI secrets and run the release stack without touching development/production volumes:
 
-Run the same check used by GitHub Actions:
-
-```bash
-docker compose -f compose.ci.yaml up \
-  --build --abort-on-container-exit --exit-code-from checks
-docker compose -f compose.ci.yaml down -v --remove-orphans
+```sh
+./scripts/ci/create-env.sh .env.ci
+npm run verify:no-shipped-secrets
+npm run verify:production-config -- .env.ci
+docker compose --env-file .env.ci -f compose.ci.yaml build checks
+docker compose --env-file .env.ci -f compose.ci.yaml up -d --build --wait
+docker compose --env-file .env.ci -f compose.ci.yaml run --no-deps --rm checks
+docker compose --env-file .env.ci -f compose.ci.yaml down -v --remove-orphans
 ```
 
-The CI project uses ephemeral PostgreSQL storage, initializes the API schema,
-runs workspace tests, type-checking, and builds, and verifies the production
-images. Its `down -v` command is safe only because this is the isolated CI
-Compose project.
+The CI project validates type checks/tests/responsive checks/builds, clean migrations, representative pre-baseline adoption, restricted runtime privileges, authentication/CSRF/throttling, HTTP/document smoke tests, data-quality/lifecycle previews, and financial/revision/price-history/document consistency. The GitHub workflow additionally validates an encrypted PostgreSQL/MinIO restore.
 
-## Database operations
+## Safety invariants
 
-Schema setup does not run during normal startup. NestJS is the only Prisma and
-database owner:
+- No production seed/demo account or default password is created automatically.
+- Production refuses weak/missing secrets, elevated runtime database credentials, insecure cookies, wrong proxy trust, active demo accounts, missing reference data, or unsafe setup/account provenance. An empty installation starts only in protected first-run mode.
+- Site placeholder creation and every data repair are preview-only unless an explicit, reviewed apply command is used.
+- Backups are encrypted and restores target new isolated volumes; no script automatically cuts over or resets production.
+- PostgreSQL and MinIO are not publicly exposed in production; only the gateway publishes ports 80/443.
+- The local `client-list-cleaned.csv`, populated environment files, reports, plaintext secret files, and backup archives are excluded from Git and production build contexts.
 
-```bash
-docker compose exec api npm run db:setup
-```
-
-The demo reset deletes data and must be requested explicitly:
-
-```bash
-docker compose exec api npm run db:reset-demo
-```
-
-Never run the reset against data that must be retained. Database schema, seed,
-and migration development conventions are documented in the API README.
-
-## Configuration
-
-The checked-in defaults serve `pulse.lbh.app` and `192.168.1.253`. Copy
-`.env.example` to `.env` and update the documented values when the host,
-credentials, or deployment secrets differ:
-
-```bash
-cp .env.example .env
-```
-
-Restart with the normal reconciliation command after changing configuration.
-Do not commit `.env`.
-
-## Production safety
-
-- Replace development database, MinIO, and session credentials before using a
-  deployment outside the trusted local environment.
-- Keep PostgreSQL, MinIO, ClamAV, and diagnostic application ports bound to the
-  host only; expose Pulse through Caddy.
-- Back up PostgreSQL and MinIO volumes before schema or host maintenance.
-- Never delete persistent volumes during ordinary recovery.
-- Never distribute Caddy private keys or commit an exported local CA file.
-
-## Troubleshooting
-
-If the host responds to ping but Pulse does not open:
-
-```bash
-docker compose ps
-docker compose logs --tail=100 gateway web api
-curl -I http://localhost:4300
-```
-
-Expected state:
-
-- `postgres`, `minio`, `clamav`, `api`, `web`, and `gateway` are healthy.
-- Port 80 redirects to HTTPS.
-- Port 443 serves a certificate for `pulse.lbh.app` and `192.168.1.253`.
-- Port 4300 is reachable only from the Pulse host.
-
-Use `docker compose up -d --build --remove-orphans` to reconcile the stack. A
-plain `docker compose restart` does not rebuild images or correct changed
-service definitions.
+Pulse 0.1 release scope and accepted limitations are recorded in [release notes](docs/releases/0.1.0.md), [data-repair policy](docs/production/data-repairs.md), and the [technical-debt register](docs/technical-debt.md).

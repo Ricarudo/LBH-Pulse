@@ -137,32 +137,49 @@ function hashPassword(password: string, salt: string) {
   return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
 
-const testUsers = [
+const demoUserDefinitions = [
   {
     name: "Admin User",
     email: "admin@r2.local",
     role: "Admin",
-    password: "PulseAdmin123!"
+    passwordEnvironment: "PULSE_DEMO_ADMIN_PASSWORD"
   },
   {
     name: "Sales User",
     email: "sales@r2.local",
     role: "Sales",
-    password: "PulseSales123!"
+    passwordEnvironment: "PULSE_DEMO_SALES_PASSWORD"
   },
   {
     name: "Project Manager User",
     email: "project.manager@r2.local",
     role: "ProjectManager",
-    password: "PulsePm123!"
+    passwordEnvironment: "PULSE_DEMO_PROJECT_MANAGER_PASSWORD"
   },
   {
     name: "Technician User",
     email: "technician@r2.local",
     role: "Technician",
-    password: "PulseTech123!"
+    passwordEnvironment: "PULSE_DEMO_TECHNICIAN_PASSWORD"
   }
-];
+] as const;
+
+function demoUsers() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Demo seed accounts are prohibited when NODE_ENV=production.");
+  }
+  if (process.env.PULSE_ENABLE_DEMO_SEED !== "1") {
+    throw new Error("Demo seed refused. Set PULSE_ENABLE_DEMO_SEED=1 only in an isolated development or test environment.");
+  }
+
+  return demoUserDefinitions.map((definition) => {
+    const password = process.env[definition.passwordEnvironment];
+    if (!password || password.length < 16) {
+      throw new Error(`${definition.passwordEnvironment} must be supplied with at least 16 characters.`);
+    }
+    return { ...definition, password };
+  });
+}
 
 const seededAccessRoles = [
   {
@@ -360,7 +377,7 @@ function checklistKeyFor(serviceCategory: string) {
 
 const sampleRequests = [
   {
-    requestNumber: "RQ-2026-1001",
+    requestNumber: "RM260001",
     name: "Surveillance system upgrade",
     companyName: "Northfield Industries",
     contactName: "Elena Cruz",
@@ -423,7 +440,7 @@ const sampleRequests = [
     ]
   },
   {
-    requestNumber: "RQ-2026-1002",
+    requestNumber: "RM260002",
     name: "Access control expansion",
     companyName: "San Juan Medical Center",
     contactName: "Mariela Torres",
@@ -478,7 +495,7 @@ const sampleRequests = [
     ]
   },
   {
-    requestNumber: "RQ-2026-1003",
+    requestNumber: "RM260003",
     name: "Structured cabling project",
     companyName: "Municipality Facilities Office",
     contactName: "Rafael Ortiz",
@@ -528,7 +545,7 @@ const sampleRequests = [
     ]
   },
   {
-    requestNumber: "RQ-2026-1004",
+    requestNumber: "RM260004",
     name: "AV conference room upgrade",
     companyName: "Banco Popular Tower",
     contactName: "Daniela Perez",
@@ -582,7 +599,7 @@ const sampleRequests = [
     ]
   },
   {
-    requestNumber: "RQ-2026-1005",
+    requestNumber: "RM260005",
     name: "Fiber backbone installation",
     companyName: "Caribbean Logistics",
     contactName: "Hector Rivera",
@@ -640,7 +657,7 @@ const sampleRequests = [
     ]
   },
   {
-    requestNumber: "RQ-2026-1006",
+    requestNumber: "RM260006",
     name: "Network refresh",
     companyName: "Coastal Hospitality Group",
     contactName: "Sofia Morales",
@@ -696,7 +713,7 @@ const sampleRequests = [
     ]
   },
   {
-    requestNumber: "RQ-2026-1007",
+    requestNumber: "RM260007",
     name: "Small residential camera repair",
     companyName: "Private Residence",
     contactName: "Luis Santiago",
@@ -1029,11 +1046,29 @@ async function main() {
       [
         "Destructive Pulse seed refused.",
         "This command deletes and recreates users, document metadata, and demo records.",
-        "Use db:initialize for a pristine database or db:reset-demo only when an intentional reset was specifically requested."
+        "Use db:init:dev for a pristine development database or db:reset:demo only when an intentional disposable reset was specifically requested."
       ].join("\n")
     );
   }
+  const testUsers = demoUsers();
+  const apply = process.argv.includes("--apply");
+  if (!apply) {
+    console.log(JSON.stringify({
+      mode: "PREVIEW",
+      environment: process.env.NODE_ENV,
+      demoAccounts: testUsers.map((user) => ({ email: user.email, role: user.role, markedNonProduction: true })),
+      destructiveReset: true,
+      productionAllowed: false
+    }, null, 2));
+    console.log("No changes made. An isolated development/test seed requires --apply and PULSE_ALLOW_DESTRUCTIVE_SEED=1.");
+    return;
+  }
 
+  await prisma.lifecycleEventDisposition.deleteMany();
+  await prisma.maintenanceRun.deleteMany();
+  await prisma.authSession.deleteMany();
+  await prisma.authThrottleBucket.deleteMany();
+  await prisma.lifecycleStatusEvent.deleteMany();
   await prisma.activity.deleteMany();
   await prisma.requestChecklistItem.deleteMany();
   await prisma.lifecycleDocument.deleteMany();
@@ -1086,6 +1121,7 @@ async function main() {
           passwordHash: hashPassword(user.password, user.email),
           active: true,
           mustChangePassword: false,
+          isDemoAccount: true,
           authProvider: "LOCAL"
         }
       })
@@ -1573,14 +1609,14 @@ async function main() {
   });
 
   const coastalRequest = await prisma.request.findFirst({
-    where: { requestNumber: "RQ-2026-1006" },
+    where: { requestNumber: "RM260006" },
     select: { id: true, contactId: true }
   });
 
   const quote = await prisma.quote.create({
     data: {
-      quoteNumber: "QT-2026-1001",
-      baseQuoteNumber: "QT-2026-1001",
+      quoteNumber: "QM260001",
+      baseQuoteNumber: "QM260001",
       revisionNumber: 0,
       versionCreatedAt: new Date("2026-05-09T18:30:00.000Z"),
       title: "Coastal Hospitality network refresh",
@@ -1591,7 +1627,7 @@ async function main() {
       owner: "Sales User",
       total: 0,
       sourceRequestIdSnapshot: coastalRequest?.id ?? null,
-      requestNumberSnapshot: "RQ-2026-1006",
+      requestNumberSnapshot: "RM260006",
       requestTitleSnapshot: "Network refresh",
       requestTypeSnapshot: "Quote Request",
       serviceCategorySnapshot: "Networking",
@@ -1664,9 +1700,9 @@ async function main() {
     budget: number,
     dueDate: string
   ]> = [
-    ["PRJ-118", "Banco Popular Tower", "Banco Popular Tower", "Project Manager User", "In Progress", 284000, "2026-06-02"],
-    ["PRJ-119", "Northfield Upgrade", "Northfield Industries", "Technician User", "Field Work", 96000, "2026-05-28"],
-    ["PRJ-120", "Metro Retail Camera Refresh", "Metro Retail Group", "Project Manager User", "Ready", 42000, "2026-06-05"]
+    ["PM260001", "Banco Popular Tower", "Banco Popular Tower", "Project Manager User", "In Progress", 284000, "2026-06-02"],
+    ["PM260002", "Northfield Upgrade", "Northfield Industries", "Technician User", "Field Work", 96000, "2026-05-28"],
+    ["PM260003", "Metro Retail Camera Refresh", "Metro Retail Group", "Project Manager User", "Ready", 42000, "2026-06-05"]
   ];
   const seededProjects = await Promise.all(projectSeeds.map(([
     projectNumber,
@@ -1709,9 +1745,9 @@ async function main() {
     amount: number,
     dueDate: string
   ]> = [
-    ["INV-901", "Northfield progress invoice", "Northfield Industries", "PRJ-119", "Technician User", "Sent", 24800, "2026-05-20"],
-    ["INV-902", "Banco Popular milestone billing", "Banco Popular Tower", "PRJ-118", "Project Manager User", "Review", 76000, "2026-05-19"],
-    ["INV-903", "Metro Retail deposit", "Metro Retail Group", "PRJ-120", "Sales User", "Overdue", 8500, "2026-05-13"]
+    ["INV-901", "Northfield progress invoice", "Northfield Industries", "PM260002", "Technician User", "Sent", 24800, "2026-05-20"],
+    ["INV-902", "Banco Popular milestone billing", "Banco Popular Tower", "PM260001", "Project Manager User", "Review", 76000, "2026-05-19"],
+    ["INV-903", "Metro Retail deposit", "Metro Retail Group", "PM260003", "Sales User", "Overdue", 8500, "2026-05-13"]
   ];
   await Promise.all(invoiceSeeds.map(([
     invoiceNumber,
@@ -1757,7 +1793,7 @@ main()
   .then(async () => {
     await prisma.$disconnect();
     console.log(
-      `Seeded ${testUsers.length} local users, ${sampleClients.length + 1} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, starter items, quote BOM lines, and activity.`
+      `Seeded ${demoUserDefinitions.length} explicitly marked demo users, ${sampleClients.length + 1} Pulse clients, ${sampleRequests.length} Pulse request records, ${checklistTemplates.length} intake checklist templates, starter items, quote BOM lines, and activity.`
     );
   })
   .catch(async (error) => {

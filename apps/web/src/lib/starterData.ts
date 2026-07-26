@@ -19,7 +19,7 @@ export type QuoteRow = {
 
 export const requests: RequestRow[] = [
   {
-    id: "RQ-1001",
+    id: "RM260001",
     title: "Access control expansion",
     customer: "San Juan Medical Center",
     site: "North tower",
@@ -28,7 +28,7 @@ export const requests: RequestRow[] = [
     due: "2026-05-12"
   },
   {
-    id: "RQ-1002",
+    id: "RM260002",
     title: "Fiber backbone assessment",
     customer: "Caribbean Logistics",
     site: "Bayamon warehouse",
@@ -37,7 +37,7 @@ export const requests: RequestRow[] = [
     due: "2026-05-14"
   },
   {
-    id: "RQ-1003",
+    id: "RM260003",
     title: "Camera replacement walk-through",
     customer: "Metro Retail Group",
     site: "Plaza location",
@@ -80,7 +80,7 @@ export const activity = [
     detail: "Access control expansion for San Juan Medical Center"
   },
   {
-    title: "Request RQ-1002 needs follow-up",
+    title: "Request RM260002 needs follow-up",
     detail: "Caribbean Logistics requested a revised site walk date"
   },
   {
@@ -102,7 +102,7 @@ export type WorkspaceRow = {
 
 export const projectRows: WorkspaceRow[] = [
   {
-    id: "PRJ-118",
+    id: "PM260118",
     title: "Banco Popular Tower",
     customer: "Banco Popular",
     detail: "Closeout and job costing review",
@@ -112,7 +112,7 @@ export const projectRows: WorkspaceRow[] = [
     value: "$284K"
   },
   {
-    id: "PRJ-119",
+    id: "PM260119",
     title: "Northfield Upgrade",
     customer: "Northfield Industries",
     detail: "Field work and punch list",
@@ -122,7 +122,7 @@ export const projectRows: WorkspaceRow[] = [
     value: "$96K"
   },
   {
-    id: "PRJ-120",
+    id: "PM260120",
     title: "Metro Retail Camera Refresh",
     customer: "Metro Retail Group",
     detail: "Materials ready",

@@ -10,6 +10,10 @@ import {
 test("request input keeps distinct multi-trade selections", () => {
   const request = createRequestSchema.parse({
     companyName: "R2 Test Client",
+    clientId: "client-1",
+    contactId: "contact-1",
+    siteId: "site-1",
+    assignedToId: "user-1",
     serviceCategories: ["Fiber", "CCTV / Surveillance", "Fiber"]
   });
   assert.deepEqual(request.serviceCategories, ["Fiber", "CCTV / Surveillance"]);

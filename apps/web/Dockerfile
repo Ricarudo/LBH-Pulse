@@ -48,14 +48,15 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PULSE_API_URL=http://api:3000
 
-COPY --from=production-deps /workspace/package.json ./package.json
-COPY --from=production-deps /workspace/node_modules ./node_modules
-COPY --from=production-deps /workspace/apps ./apps
-COPY --from=production-deps /workspace/packages ./packages
-COPY --from=build /workspace/apps/web/.next ./apps/web/.next
-COPY --from=build /workspace/apps/web/next.config.ts ./apps/web/next.config.ts
-COPY --from=build /workspace/apps/web/public ./apps/web/public
-COPY --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
+COPY --chown=node:node --from=production-deps /workspace/package.json ./package.json
+COPY --chown=node:node --from=production-deps /workspace/node_modules ./node_modules
+COPY --chown=node:node --from=production-deps /workspace/apps ./apps
+COPY --chown=node:node --from=production-deps /workspace/packages ./packages
+COPY --chown=node:node --from=build /workspace/apps/web/.next ./apps/web/.next
+COPY --chown=node:node --from=build /workspace/apps/web/next.config.ts ./apps/web/next.config.ts
+COPY --chown=node:node --from=build /workspace/apps/web/public ./apps/web/public
+COPY --chown=node:node --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
 
 EXPOSE 4300
+USER node
 CMD ["npm", "run", "start", "-w", "@pulse/web"]

@@ -21,13 +21,29 @@ CMD ["npm", "run", "dev:api"]
 
 FROM workspace-deps AS build
 
-ARG DATABASE_URL=postgresql://pulse:pulse@postgres:5432/pulse?schema=pulse
-ENV DATABASE_URL=${DATABASE_URL}
+# Prisma generate validates URL syntax but does not connect during the build.
+# This passwordless, unroutable URL is build metadata, never a runtime fallback.
+ENV DATABASE_URL=postgresql://prisma-build@127.0.0.1:1/pulse?schema=pulse
 
 COPY packages/contracts ./packages/contracts
 COPY apps/api ./apps/api
 RUN npm run build -w @pulse/contracts \
-  && npm run build -w @pulse/api
+  && npm run build -w @pulse/api \
+  && test -f /workspace/apps/api/dist/main.js
+
+FROM workspace-deps AS maintenance
+
+ENV NODE_ENV=production
+ENV npm_config_update_notifier=false
+ENV DATABASE_URL=postgresql://prisma-build@127.0.0.1:1/pulse?schema=pulse
+
+COPY --chown=node:node packages/contracts ./packages/contracts
+COPY --chown=node:node apps/api ./apps/api
+RUN npm run build -w @pulse/contracts \
+  && npm run prisma:generate -w @pulse/api
+
+USER node
+CMD ["npm", "run", "db:baseline:preview", "-w", "@pulse/api"]
 
 FROM node:24-alpine AS production-deps
 
@@ -44,12 +60,13 @@ FROM node:24-alpine AS production
 WORKDIR /workspace
 ENV NODE_ENV=production
 
-COPY --from=production-deps /workspace/package.json ./package.json
-COPY --from=production-deps /workspace/node_modules ./node_modules
-COPY --from=production-deps /workspace/apps ./apps
-COPY --from=production-deps /workspace/packages ./packages
-COPY --from=build /workspace/apps/api/dist ./apps/api/dist
-COPY --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
+COPY --chown=node:node --from=production-deps /workspace/package.json ./package.json
+COPY --chown=node:node --from=production-deps /workspace/node_modules ./node_modules
+COPY --chown=node:node --from=production-deps /workspace/apps ./apps
+COPY --chown=node:node --from=production-deps /workspace/packages ./packages
+COPY --chown=node:node --from=build /workspace/apps/api/dist ./apps/api/dist
+COPY --chown=node:node --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
 
 EXPOSE 3000
+USER node
 CMD ["npm", "run", "start", "-w", "@pulse/api"]

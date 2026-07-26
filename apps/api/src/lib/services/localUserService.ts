@@ -19,6 +19,7 @@ type LocalUserShape = {
   role: string;
   active: boolean;
   mustChangePassword: boolean;
+  isDemoAccount: boolean;
   authProvider: string;
   entraObjectId: string | null;
   createdAt: Date;
@@ -70,6 +71,7 @@ function toLocalAccountRecord(user: LocalUserShape): LocalAccountRecord {
     accessRole,
     active: user.active,
     mustChangePassword: user.mustChangePassword,
+    isDemoAccount: user.isDemoAccount,
     authProvider,
     entraObjectId: user.entraObjectId ?? "",
     createdAt: formatDateTime(user.createdAt),
@@ -177,6 +179,7 @@ export async function createLocalUser(input: CreateLocalUserInput, actor: Authen
       passwordHash: hashPassword(input.password),
       active: input.active,
       mustChangePassword: true,
+      isDemoAccount: false,
       authProvider: "LOCAL",
       deactivatedAt: input.active ? null : new Date()
     },
@@ -238,6 +241,13 @@ export async function updateLocalUser(
     },
     include: localUserInclude
   });
+
+  if (existing.active && !updated.active) {
+    await prisma.authSession.updateMany({
+      where: { userId: updated.id, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+  }
 
   const changes = changedFields(existing, updated);
 
@@ -307,9 +317,15 @@ export async function resetLocalUserPassword(
     where: { id },
     data: {
       passwordHash: hashPassword(input.temporaryPassword),
-      mustChangePassword: true
+      mustChangePassword: true,
+      isDemoAccount: false
     },
     include: localUserInclude
+  });
+
+  await prisma.authSession.updateMany({
+    where: { userId: updated.id, revokedAt: null },
+    data: { revokedAt: new Date() }
   });
 
   await recordActivity({

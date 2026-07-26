@@ -17,10 +17,29 @@ type ErrorPayload = {
 };
 
 const errorMap: Record<string, ErrorPayload> = {
+  INITIAL_SETUP_NOT_AVAILABLE: {
+    status: 409,
+    body: { error: "Initial setup is no longer available. Sign in or use the controlled Administrator recovery process." }
+  },
+  INITIAL_SETUP_ROLE_CONFIGURATION_INVALID: {
+    status: 500,
+    body: { error: "Pulse setup is unavailable because the built-in role configuration is incomplete." }
+  },
   REQUEST_NOT_FOUND: { status: 404, body: { error: "Request not found." } },
+  RECORD_NUMBER_SEQUENCE_EXHAUSTED: {
+    status: 409,
+    body: { error: "The current-year record number sequence has reached 9999." }
+  },
   REQUEST_ASSIGNEE_INVALID: {
     status: 400,
     body: { error: "Assigned person must be an active Pulse operations user." }
+  },
+  REQUEST_ASSIGNEE_REQUIRED: { status: 400, body: { error: "Select a request assignee." } },
+  REQUEST_CONTACT_REQUIRED: { status: 400, body: { error: "Select a request point of contact." } },
+  REQUEST_SITE_REQUIRED: { status: 400, body: { error: "Select a real request site." } },
+  REQUEST_LINKED_RECORDS_REQUIRED: {
+    status: 400,
+    body: { error: "Select a client, point of contact, site, and assignee." }
   },
   REQUEST_NOT_READY_FOR_QUOTE: {
     status: 400,
@@ -225,6 +244,8 @@ const errorMap: Record<string, ErrorPayload> = {
     status: 400,
     body: { error: "Select a point of contact from the quote client profile." }
   },
+  QUOTE_SITE_REQUIRED: { status: 400, body: { error: "Select a real site from the quote client profile." } },
+  QUOTE_ASSIGNEE_REQUIRED: { status: 400, body: { error: "Select an active quote assignee." } },
   QUOTE_REVISION_NOT_FOUND: { status: 404, body: { error: "Quote revision not found." } },
   QUOTE_REVISION_IS_CURRENT: { status: 409, body: { error: "This is the current editable quote version." } },
   QUOTE_REVISION_STATUS_INVALID: {
@@ -353,7 +374,6 @@ const errorMap: Record<string, ErrorPayload> = {
   QUOTE_NOT_APPROVED: { status: 400, body: { error: "Approve the quote before creating a project." } },
   QUOTE_CLIENT_REQUIRED: { status: 400, body: { error: "Select a client before creating a project from this quote." } },
   WORK_CLIENT_MISMATCH: { status: 400, body: { error: "The selected records must belong to the same client." } },
-  REQUEST_LINKED_RECORDS_REQUIRED: { status: 400, body: { error: "Select a linked client and point of contact for this request." } },
   PROJECT_CANCELLED: { status: 400, body: { error: "Cancelled projects cannot create invoices." } },
   DOCUMENT_NOT_FOUND: { status: 404, body: { error: "Document not found." } },
   DOCUMENT_NOT_AVAILABLE: { status: 409, body: { error: "This unverified document is not available for download." } },
@@ -411,7 +431,7 @@ export function apiErrorPayload(error: unknown): ErrorPayload | null {
         status: 503,
         body: {
           error: "Pulse database schema is not ready.",
-          detail: "Run the Pulse Prisma schema push after reviewing any data-loss warnings."
+          detail: "Apply the reviewed Pulse migration deployment before starting the API."
         }
       };
     }

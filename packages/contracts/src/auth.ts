@@ -17,6 +17,17 @@ export type AuthenticatedUser = {
   authProvider: AuthProvider;
 };
 
+export type AuthSessionResponse = {
+  user: AuthenticatedUser | null;
+  csrfToken: string | null;
+  setupRequired: boolean;
+};
+
+export type AuthLoginResponse = {
+  user: AuthenticatedUser;
+  csrfToken: string;
+};
+
 export const roleLabels: Record<LocalRole, string> = {
   Admin: "Administrator",
   Sales: "Sales",

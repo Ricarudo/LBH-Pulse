@@ -1,5 +1,7 @@
 "use client";
 
+import { apiFetch } from "@/lib/api/client";
+
 import {
   DndContext,
   KeyboardSensor,
@@ -79,7 +81,7 @@ const upcomingDatesPageSize = 8;
 const recentActivityPageSize = 10;
 
 async function requestJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
