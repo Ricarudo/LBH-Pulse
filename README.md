@@ -17,7 +17,7 @@ Pulse 0.1 separates development and production deliberately:
 - `compose.maintenance.yaml` contains explicit role, migration, bootstrap, audit, backup, and restore jobs.
 - `compose.ci.yaml` is an isolated release-gate environment.
 
-Pulse 0.1 deploys into a new release database; the current development database is not promoted. Production operators must use the [production runbook](docs/production/runbook.md), [first-run and import guide](docs/production/initial-setup.md), [operator checklist](docs/production/operator-checklist.md), [migration guide](docs/production/migrations.md), and [rollback guide](docs/production/rollback.md). Never run `db:setup`, `prisma db push`, `prisma migrate reset`, `db:reset:demo`, or migrations in `legacy-migrations-pre-0.1` against a database whose data matters.
+Pulse 0.1 deploys into a new release database; the current development database is not promoted. Production operators should start with the [production setup and future updates guide](docs/production/setup-and-updates.md). Detailed procedures remain in the [production runbook](docs/production/runbook.md), [first-run and import guide](docs/production/initial-setup.md), [operator checklist](docs/production/operator-checklist.md), [migration guide](docs/production/migrations.md), and [rollback guide](docs/production/rollback.md). Never run `db:setup`, `prisma db push`, `prisma migrate reset`, `db:reset:demo`, or migrations in `legacy-migrations-pre-0.1` against a database whose data matters.
 
 ## Local development
 
