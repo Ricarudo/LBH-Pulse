@@ -30,6 +30,18 @@ const errorMap: Record<string, ErrorPayload> = {
     status: 409,
     body: { error: "The current-year record number sequence has reached 9999." }
   },
+  RECORD_NUMBER_SEQUENCE_INVALID: {
+    status: 400,
+    body: { error: "Use the correct record prefix, current two-digit year, and a four-digit sequence." }
+  },
+  RECORD_NUMBER_SEQUENCE_CONFLICT: {
+    status: 409,
+    body: { error: "The next record number is already in use. Choose a different sequence cursor." }
+  },
+  RECORD_NUMBER_SEQUENCE_STALE: {
+    status: 409,
+    body: { error: "This sequence was changed in another session. Reload and try again." }
+  },
   REQUEST_ASSIGNEE_INVALID: {
     status: 400,
     body: { error: "Assigned person must be an active Pulse operations user." }

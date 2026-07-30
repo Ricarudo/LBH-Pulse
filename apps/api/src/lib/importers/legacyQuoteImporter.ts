@@ -14,9 +14,10 @@ import {
 } from "@/lib/importers/legacyQuoteCsv";
 import type { BulkImporter, UploadedCsv } from "@/lib/importers/types";
 import {
+  allocateRecordNumber,
   lockRecordNumberSequence,
-  nextRecordNumberFromExisting,
-  normalizeRecordNumber
+  normalizeRecordNumber,
+  reserveRecordNumberSequence
 } from "@/lib/services/recordNumberService";
 import type {
   BulkImportCommitResult,
@@ -380,17 +381,6 @@ async function commit(
   try {
     return await prisma.$transaction(async (tx) => {
       await lockRecordNumberSequence(tx, "quote");
-      const existingNumbers = (await tx.quote.findMany({
-        select: {
-          quoteNumber: true,
-          baseQuoteNumber: true,
-          externalQuoteNumber: true
-        }
-      })).flatMap((quote) => [
-        quote.quoteNumber,
-        quote.baseQuoteNumber,
-        quote.externalQuoteNumber
-      ]);
       const reservedImportedNumbers = selections.flatMap((selection) => {
         const row = rebuilt.sanitized.get(selection.rowNumber);
         const canonical = row
@@ -398,7 +388,11 @@ async function commit(
           : null;
         return canonical ? [canonical] : [];
       });
-      const allocatedNumbers = [...existingNumbers, ...reservedImportedNumbers];
+      await reserveRecordNumberSequence(
+        tx,
+        "quote",
+        reservedImportedNumbers
+      );
       const result: BulkImportCommitResult = { batchId, created: 0, updated: 0, records: [] };
       for (const selection of selections) {
         const row = rebuilt.sanitized.get(selection.rowNumber);
@@ -409,11 +403,8 @@ async function commit(
           "quote"
         );
         if (selection.action === "create") {
-          const quoteNumber = canonicalQuoteNumber ?? nextRecordNumberFromExisting(
-            "quote",
-            allocatedNumbers
-          );
-          allocatedNumbers.push(quoteNumber);
+          const quoteNumber = canonicalQuoteNumber ??
+            await allocateRecordNumber(tx, "quote");
           const createdAt = date(row.created_at) ?? new Date();
           const lifecycle = await tx.lifecycleContext.create({ data: { details: row.internal_notes, updatedById: user.id, updatedByNameSnapshot: user.name } });
           const created = await tx.quote.create({

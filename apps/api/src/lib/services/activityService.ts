@@ -43,6 +43,7 @@ export function canAccessActivity(
   if (activity.relatedEntityType === "Invoice") return canUser(user, "billing:read");
   if (
     activity.relatedEntityType === "WorkspaceSettings" ||
+    activity.relatedEntityType === "RecordNumberSequence" ||
     activity.relatedEntityType === "RequestChecklistTemplate"
   ) {
     return canUser(user, "settings:read");

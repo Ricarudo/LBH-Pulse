@@ -30,9 +30,15 @@ import {
   updateRequestChecklistTemplateSchema
 } from "@pulse/contracts/request-checklists";
 import {
+  recordNumberKindSchema,
+  recordNumberSequenceUpdateSchema,
   userPreferencesSchema,
   workspaceSettingsSchema
 } from "@pulse/contracts/settings";
+import {
+  getRecordNumberSequences,
+  updateRecordNumberSequence
+} from "@/lib/services/recordNumberService";
 import { AuthService } from "@/shared/auth.service";
 import {
   archiveAccessRole,
@@ -84,6 +90,26 @@ export class SettingsController {
     const user = await this.auth.requireUser(request, "settings:write");
     const payload = workspaceSettingsSchema.parse(body);
     return { workspace: await updateWorkspaceSettings(payload, user) };
+  }
+
+  @Get("record-number-sequences")
+  async recordNumberSequences(@Req() request: Request) {
+    await this.auth.requireUser(request, "settings:read");
+    return { sequences: await getRecordNumberSequences() };
+  }
+
+  @Patch("record-number-sequences/:kind")
+  async saveRecordNumberSequence(
+    @Req() request: Request,
+    @Param("kind") rawKind: string,
+    @Body() body: unknown
+  ) {
+    const user = await this.auth.requireUser(request, "settings:write");
+    const kind = recordNumberKindSchema.parse(rawKind);
+    const input = recordNumberSequenceUpdateSchema.parse(body);
+    return {
+      sequence: await updateRecordNumberSequence(kind, input, user)
+    };
   }
 
   @Get("accounts")

@@ -449,6 +449,16 @@ model WorkspaceSettings {
   updatedAt    DateTime @updatedAt
 }
 
+model RecordNumberSequence {
+  kind         String
+  year         Int
+  lastSequence Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@id([kind, year])
+}
+
 model Activity {
   id                String     @id @default(cuid())
   relatedEntityType String

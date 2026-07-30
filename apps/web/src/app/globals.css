@@ -896,6 +896,10 @@
 }
 
 @media (max-width: 1023px) {
+  .record-number-sequence-grid {
+    grid-template-columns: 1fr;
+  }
+
   .import-sequence {
     grid-template-columns: 1fr;
   }
@@ -10990,6 +10994,72 @@ a {
   min-width: 0;
 }
 
+.record-number-sequences {
+  display: grid;
+  gap: 18px;
+}
+
+.record-number-sequence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.record-number-sequence-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 12px;
+  background: var(--pulse-surface-soft);
+}
+
+.record-number-sequence-control label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: var(--pulse-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.record-number-sequence-control input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 9px;
+  background: var(--pulse-surface);
+  color: var(--pulse-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+
+.record-number-sequence-control input:focus {
+  border-color: var(--pulse-blue);
+  outline: 3px solid color-mix(in srgb, var(--pulse-blue) 18%, transparent);
+}
+
+.record-number-sequence-next,
+.record-number-sequence-control .settings-inline-message {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.record-number-sequence-next {
+  color: var(--pulse-muted);
+  font-size: 12px;
+}
+
+.record-number-sequence-next strong {
+  color: var(--pulse-text);
+  font-variant-numeric: tabular-nums;
+}
+
 .import-sequence {
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
@@ -11529,6 +11599,10 @@ a {
 }
 
 @media (max-width: 1023px) {
+  .record-number-sequence-grid {
+    grid-template-columns: 1fr;
+  }
+
   .client-bulk-actions {
     grid-template-columns: 1fr;
   }
@@ -11540,6 +11614,10 @@ a {
 }
 
 @media (max-width: 767px) {
+  .record-number-sequence-grid {
+    grid-template-columns: 1fr;
+  }
+
   .import-export-selector {
     grid-template-columns: 1fr;
   }

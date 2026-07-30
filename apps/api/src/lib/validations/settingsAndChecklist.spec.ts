@@ -3,6 +3,8 @@ import test from "node:test";
 import { createRequestSchema } from "@pulse/contracts/requests";
 import { updateRequestChecklistTemplateSchema } from "@pulse/contracts/request-checklists";
 import {
+  recordNumberKindSchema,
+  recordNumberSequenceUpdateSchema,
   userPreferencesSchema,
   workspaceSettingsSchema
 } from "@pulse/contracts/settings";
@@ -57,4 +59,19 @@ test("workspace settings validate Puerto Rico defaults", () => {
     dateFormat: "MM/DD/YYYY",
     weekStartsOn: 0
   }).success, true);
+});
+
+test("record number sequence updates require canonical cursor input and a version", () => {
+  assert.equal(recordNumberKindSchema.parse("quote"), "quote");
+  assert.deepEqual(recordNumberSequenceUpdateSchema.parse({
+    currentNumber: "qm260457",
+    expectedUpdatedAt: "2026-07-29T12:00:00.000Z"
+  }), {
+    currentNumber: "qm260457",
+    expectedUpdatedAt: "2026-07-29T12:00:00.000Z"
+  });
+  assert.throws(() => recordNumberSequenceUpdateSchema.parse({
+    currentNumber: "QM26-0457",
+    expectedUpdatedAt: null
+  }));
 });
