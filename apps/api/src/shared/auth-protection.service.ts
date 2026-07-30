@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { runtimeEnvironment } from "@/config/runtimeEnvironment";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
@@ -15,7 +15,7 @@ type LoginKeys = {
 
 @Injectable()
 export class AuthProtectionService {
-  constructor(private readonly auth: AuthService) {}
+  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   keys(email: string, ip: string): LoginKeys {
     return {

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { NextFunction, Request, Response } from "express";
 import { runtimeEnvironment } from "@/config/runtimeEnvironment";
 import { AuthProtectionService } from "@/shared/auth-protection.service";
@@ -8,7 +8,9 @@ const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 
 @Injectable()
 export class CsrfMiddleware {
-  constructor(private readonly protection: AuthProtectionService) {}
+  constructor(
+    @Inject(AuthProtectionService) private readonly protection: AuthProtectionService
+  ) {}
 
   private requestOrigin(request: Request) {
     const origin = request.header("origin");
