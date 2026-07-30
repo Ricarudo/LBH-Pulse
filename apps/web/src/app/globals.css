@@ -2485,6 +2485,229 @@ a {
   text-decoration: none;
 }
 
+.client-merge-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #06111f 72%, transparent);
+  backdrop-filter: blur(5px);
+}
+
+.client-merge-dialog {
+  display: grid;
+  gap: 18px;
+  width: min(1080px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 18px;
+  background: var(--pulse-surface);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 34%);
+}
+
+.client-merge-heading,
+.client-merge-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.client-merge-heading span {
+  color: var(--pulse-blue);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.client-merge-heading h2,
+.client-merge-heading p,
+.client-merge-grid h3 {
+  margin: 0;
+}
+
+.client-merge-heading h2 {
+  margin-top: 4px;
+}
+
+.client-merge-heading p {
+  margin-top: 6px;
+  color: var(--pulse-muted);
+}
+
+.client-merge-grid {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 16px;
+}
+
+.client-merge-grid > section {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 14px;
+  background: var(--pulse-surface-soft);
+}
+
+.client-merge-selected,
+.client-merge-results {
+  display: grid;
+  gap: 8px;
+}
+
+.client-merge-selected article,
+.client-merge-results button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 10px;
+  background: var(--pulse-surface);
+}
+
+.client-merge-selected label,
+.client-merge-results button {
+  width: 100%;
+  cursor: pointer;
+}
+
+.client-merge-selected label,
+.client-merge-results button,
+.client-merge-selected span,
+.client-merge-results span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.client-merge-selected span,
+.client-merge-results span {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.client-merge-selected small,
+.client-merge-results small {
+  color: var(--pulse-muted);
+}
+
+.client-merge-search {
+  width: 100%;
+}
+
+.client-merge-results {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.client-merge-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.client-merge-counts div {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 9px;
+  background: var(--pulse-surface);
+}
+
+.client-merge-counts strong {
+  font-size: 20px;
+}
+
+.client-merge-counts span {
+  color: var(--pulse-muted);
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.client-merge-aliases,
+.client-merge-warnings,
+.client-merge-empty,
+.client-360-alias-list,
+.client-360-merge-history {
+  display: grid;
+  gap: 6px;
+  padding: 11px;
+  border-radius: 10px;
+  background: var(--pulse-surface);
+  color: var(--pulse-muted);
+}
+
+.client-merge-aliases p,
+.client-merge-warnings p,
+.client-merge-empty p,
+.client-360-alias-list p,
+.client-360-merge-history p {
+  margin: 0;
+}
+
+.client-merge-warnings {
+  border: 1px solid color-mix(in srgb, var(--pulse-amber) 42%, var(--pulse-line));
+}
+
+.client-merge-warnings > strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--pulse-amber);
+}
+
+.client-merge-empty {
+  min-height: 220px;
+  place-content: center;
+  place-items: center;
+  text-align: center;
+}
+
+.client-merge-actions {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .client-merge-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .client-merge-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .client-merge-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .client-merge-dialog {
+    max-height: 94vh;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .client-merge-actions > button {
+    flex: 1;
+  }
+}
+
 @keyframes page-enter {
   from {
     opacity: 0.92;

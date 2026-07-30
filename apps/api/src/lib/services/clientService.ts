@@ -2,13 +2,21 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { recordActivity } from "@/lib/services/activityService";
-import type { ClientContact, ClientRecord, ClientSite } from "@pulse/contracts/clients";
+import type {
+  ClientContact,
+  ClientMergeDuplicateWarning,
+  ClientMergePreview,
+  ClientRecord,
+  ClientSite
+} from "@pulse/contracts/clients";
 import type {
   ParsedClientContactInput as ClientContactInput,
   ParsedClientSiteInput as ClientSiteInput,
   CreateClientActivityInput,
   CreateClientInput,
   ImportClientInfoInput,
+  MergeClientsInput,
+  PreviewClientMergeInput,
   UpdateClientContactInput,
   UpdateClientInput,
   UpdateClientSiteInput
@@ -38,6 +46,23 @@ const clientInclude = {
   activities: {
     orderBy: {
       createdAt: "desc"
+    }
+  },
+  aliases: {
+    orderBy: {
+      name: "asc"
+    }
+  },
+  mergedClients: {
+    orderBy: {
+      mergedAt: "desc"
+    },
+    select: {
+      id: true,
+      clientNumber: true,
+      displayName: true,
+      mergedAt: true,
+      mergedByName: true
     }
   },
   projects: {
@@ -256,6 +281,19 @@ function toClientRecord(client: ClientWithRelations): ClientRecord {
       actor: activity.actor,
       date: formatDateInput(activity.createdAt)
     })),
+    aliases: client.aliases.map((alias) => ({
+      id: alias.id,
+      name: alias.name,
+      source: alias.source,
+      ...(alias.originalClientId ? { originalClientId: alias.originalClientId } : {})
+    })),
+    mergedFrom: client.mergedClients.map((source) => ({
+      id: source.id,
+      clientNumber: source.clientNumber,
+      displayName: source.displayName,
+      mergedAt: source.mergedAt?.toISOString() ?? "",
+      mergedByName: source.mergedByName ?? "Pulse System"
+    })),
     createdAt: formatDateInput(client.createdAt),
     updatedAt: client.updatedAt.toISOString()
   };
@@ -280,6 +318,26 @@ async function getClientOrThrow(id: string) {
   }
 
   return client;
+}
+
+function normalizeClientIdentity(value: string | null | undefined) {
+  return value?.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US") ?? "";
+}
+
+export async function getClientProfileById(id: string) {
+  const requested = await prisma.client.findFirst({
+    where: { OR: [{ id }, { clientNumber: id }] },
+    select: { id: true, archivedAt: true, mergedIntoId: true }
+  });
+  if (!requested) throw new Error("CLIENT_NOT_FOUND");
+
+  const resolvedId = requested.mergedIntoId ?? requested.id;
+  if (requested.archivedAt && !requested.mergedIntoId) throw new Error("CLIENT_NOT_FOUND");
+
+  return {
+    client: toClientRecord(await getClientOrThrow(resolvedId)),
+    redirectClientId: requested.mergedIntoId ?? undefined
+  };
 }
 
 function siteCreateData(clientId: string, site: ClientSiteInput, primary: boolean) {
@@ -553,6 +611,24 @@ export async function updateClient(id: string, input: UpdateClientInput, user?: 
     include: clientInclude
   });
 
+  if (input.aliases !== undefined) {
+    const aliases = Array.from(
+      new Map(
+        input.aliases
+          .map((name) => ({ name: name.trim(), normalizedName: normalizeClientIdentity(name) }))
+          .filter((alias) => alias.normalizedName && alias.normalizedName !== normalizeClientIdentity(client.displayName))
+          .map((alias) => [alias.normalizedName, alias])
+      ).values()
+    );
+    await prisma.$transaction([
+      prisma.clientAlias.deleteMany({ where: { clientId: id } }),
+      prisma.clientAlias.createMany({
+        data: aliases.map((alias) => ({ clientId: id, ...alias, source: "Manual" })),
+        skipDuplicates: true
+      })
+    ]);
+  }
+
   await recordActivity({
     user,
     relatedEntityType: "Client",
@@ -563,7 +639,322 @@ export async function updateClient(id: string, input: UpdateClientInput, user?: 
     metadata: { clientNumber: client.clientNumber, status: client.status }
   });
 
-  return toClientRecord(client);
+  return getClientById(client.id);
+}
+
+const mergeClientInclude = {
+  aliases: true,
+  contacts: { include: { site: true }, orderBy: { createdAt: "asc" } },
+  sites: { orderBy: { createdAt: "asc" } },
+  services: true,
+  _count: {
+    select: {
+      requests: true,
+      quotes: true,
+      projects: true,
+      invoices: true,
+      activities: true
+    }
+  }
+} satisfies Prisma.ClientInclude;
+
+type MergeClient = Prisma.ClientGetPayload<{ include: typeof mergeClientInclude }>;
+
+function duplicateWarnings(clients: MergeClient[]): ClientMergeDuplicateWarning[] {
+  const warnings: ClientMergeDuplicateWarning[] = [];
+  const contactGroups = new Map<string, MergeClient["contacts"]>();
+  const siteGroups = new Map<string, MergeClient["sites"]>();
+
+  for (const client of clients) {
+    for (const contact of client.contacts) {
+      const email = normalizeClientIdentity(contact.email);
+      const name = normalizeClientIdentity(
+        contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ")
+      );
+      const key = email ? `email:${email}` : name ? `name:${name}` : "";
+      if (key) contactGroups.set(key, [...(contactGroups.get(key) ?? []), contact]);
+    }
+    for (const site of client.sites) {
+      const address = normalizeClientIdentity(
+        [site.addressLine1, site.addressLine2, site.city, site.state, site.postalCode]
+          .filter(Boolean)
+          .join(" ")
+      );
+      const name = normalizeClientIdentity(site.siteName);
+      const key = address ? `address:${address}` : name ? `name:${name}` : "";
+      if (key) siteGroups.set(key, [...(siteGroups.get(key) ?? []), site]);
+    }
+  }
+
+  for (const [key, contacts] of contactGroups) {
+    if (contacts.length < 2) continue;
+    warnings.push({
+      kind: "contact",
+      recordIds: contacts.map((contact) => contact.id),
+      label: contacts[0].name || fullName(contacts[0].firstName, contacts[0].lastName),
+      reason: key.startsWith("email:") ? "Matching email address" : "Matching contact name"
+    });
+  }
+  for (const [key, sites] of siteGroups) {
+    if (sites.length < 2) continue;
+    warnings.push({
+      kind: "site",
+      recordIds: sites.map((site) => site.id),
+      label: sites[0].siteName,
+      reason: key.startsWith("address:") ? "Matching site address" : "Matching site name"
+    });
+  }
+  return warnings;
+}
+
+async function loadMergeClients(input: PreviewClientMergeInput | MergeClientsInput) {
+  const clients = await prisma.client.findMany({
+    where: { id: { in: input.clientIds } },
+    include: mergeClientInclude,
+    orderBy: { createdAt: "asc" }
+  });
+  if (clients.length !== input.clientIds.length) throw new Error("CLIENT_MERGE_SELECTION_INVALID");
+  if (clients.some((client) => client.archivedAt || client.mergedIntoId)) {
+    throw new Error("CLIENT_MERGE_SELECTION_INVALID");
+  }
+  if (!clients.some((client) => client.id === input.masterId)) {
+    throw new Error("CLIENT_MERGE_MASTER_INVALID");
+  }
+  if (
+    clients.some(
+      (client) =>
+        !input.expectedUpdatedAt[client.id] ||
+        client.updatedAt.toISOString() !== input.expectedUpdatedAt[client.id]
+    )
+  ) {
+    throw new Error("CLIENT_MERGE_STALE");
+  }
+  return clients;
+}
+
+function mergeAliases(clients: MergeClient[], globalDisplayName: string) {
+  const globalName = normalizeClientIdentity(globalDisplayName);
+  const aliases = new Map<string, { name: string; originalClientId?: string; source: string }>();
+  for (const client of clients) {
+    for (const [name, source] of [
+      [client.displayName, "Merged display name"],
+      [client.legalName, "Merged legal name"],
+      [client.companyName, "Merged company name"]
+    ] as const) {
+      const normalized = normalizeClientIdentity(name);
+      if (name && normalized && normalized !== globalName) {
+        aliases.set(normalized, { name, originalClientId: client.id, source });
+      }
+    }
+    for (const alias of client.aliases) {
+      if (alias.normalizedName && alias.normalizedName !== globalName) {
+        aliases.set(alias.normalizedName, {
+          name: alias.name,
+          originalClientId: alias.originalClientId ?? client.id,
+          source: alias.source
+        });
+      }
+    }
+  }
+  return aliases;
+}
+
+export async function previewClientMerge(input: PreviewClientMergeInput): Promise<ClientMergePreview> {
+  const clients = await loadMergeClients(input);
+  const aliases = mergeAliases(clients, input.globalDisplayName);
+  return {
+    masterId: input.masterId,
+    globalDisplayName: input.globalDisplayName,
+    clients: clients.map((client) => ({
+      id: client.id,
+      clientNumber: client.clientNumber,
+      displayName: client.displayName,
+      updatedAt: client.updatedAt.toISOString()
+    })),
+    aliases: Array.from(aliases.values(), (alias) => alias.name).sort((a, b) => a.localeCompare(b)),
+    contacts: clients.flatMap((client) => client.contacts.map(mapContact)),
+    sites: clients.flatMap((client) => client.sites.map(mapSite)),
+    counts: {
+      requests: clients.reduce((total, client) => total + client._count.requests, 0),
+      quotes: clients.reduce((total, client) => total + client._count.quotes, 0),
+      projects: clients.reduce((total, client) => total + client._count.projects, 0),
+      invoices: clients.reduce((total, client) => total + client._count.invoices, 0),
+      contacts: clients.reduce((total, client) => total + client.contacts.length, 0),
+      sites: clients.reduce((total, client) => total + client.sites.length, 0),
+      activities: clients.reduce((total, client) => total + client._count.activities, 0),
+      services: new Set(clients.flatMap((client) => client.services.map((service) => service.serviceName))).size
+    },
+    duplicateWarnings: duplicateWarnings(clients)
+  };
+}
+
+export async function mergeClients(input: MergeClientsInput, user: AuthenticatedUser) {
+  const clients = await loadMergeClients(input);
+  const contactIds = new Set(clients.flatMap((client) => client.contacts.map((contact) => contact.id)));
+  const siteIds = new Set(clients.flatMap((client) => client.sites.map((site) => site.id)));
+  if (contactIds.size && (!input.primaryContactId || !contactIds.has(input.primaryContactId))) {
+    throw new Error("CLIENT_MERGE_PRIMARY_CONTACT_INVALID");
+  }
+  if (siteIds.size && (!input.primarySiteId || !siteIds.has(input.primarySiteId))) {
+    throw new Error("CLIENT_MERGE_PRIMARY_SITE_INVALID");
+  }
+
+  const sourceIds = input.clientIds.filter((id) => id !== input.masterId);
+  const aliases = mergeAliases(clients, input.globalDisplayName);
+  const serviceNames = Array.from(
+    new Set(clients.flatMap((client) => client.services.map((service) => service.serviceName)))
+  );
+  const now = new Date();
+  const openOpportunities = clients.reduce((total, client) => total + client.openOpportunities, 0);
+  const lifetimeValue = clients.reduce(
+    (total, client) => total.add(client.lifetimeValue),
+    new Prisma.Decimal(0)
+  );
+  const outstandingBalance = clients.reduce(
+    (total, client) => total.add(client.outstandingBalance),
+    new Prisma.Decimal(0)
+  );
+
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.client.findMany({
+      where: { id: { in: input.clientIds } },
+      select: { id: true, updatedAt: true, archivedAt: true, mergedIntoId: true }
+    });
+    if (
+      current.length !== clients.length ||
+      current.some(
+        (client) =>
+          client.archivedAt ||
+          client.mergedIntoId ||
+          client.updatedAt.toISOString() !== input.expectedUpdatedAt[client.id]
+      )
+    ) {
+      throw new Error("CLIENT_MERGE_STALE");
+    }
+
+    await Promise.all([
+      tx.request.updateMany({ where: { clientId: { in: sourceIds } }, data: { clientId: input.masterId } }),
+      tx.quote.updateMany({ where: { clientId: { in: sourceIds } }, data: { clientId: input.masterId } }),
+      tx.project.updateMany({ where: { clientId: { in: sourceIds } }, data: { clientId: input.masterId } }),
+      tx.invoice.updateMany({ where: { clientId: { in: sourceIds } }, data: { clientId: input.masterId } }),
+      tx.clientSite.updateMany({ where: { clientId: { in: input.clientIds } }, data: { clientId: input.masterId, isPrimarySite: false } }),
+      tx.pointOfContact.updateMany({
+        where: { clientId: { in: input.clientIds } },
+        data: {
+          clientId: input.masterId,
+          ownerType: CLIENT_OWNER_TYPE,
+          ownerId: input.masterId,
+          isPrimary: false,
+          isPrimaryContact: false
+        }
+      }),
+      tx.clientActivity.updateMany({ where: { clientId: { in: sourceIds } }, data: { clientId: input.masterId } })
+    ]);
+
+    if (input.primaryContactId) {
+      await tx.pointOfContact.update({
+        where: { id: input.primaryContactId },
+        data: { isPrimary: true, isPrimaryContact: true }
+      });
+    }
+    if (input.primarySiteId) {
+      await tx.clientSite.update({ where: { id: input.primarySiteId }, data: { isPrimarySite: true } });
+    }
+
+    await tx.clientService.deleteMany({ where: { clientId: { in: input.clientIds } } });
+    if (serviceNames.length) {
+      await tx.clientService.createMany({
+        data: serviceNames.map((serviceName) => ({ clientId: input.masterId, serviceName })),
+        skipDuplicates: true
+      });
+    }
+    await tx.clientAlias.deleteMany({ where: { clientId: { in: input.clientIds } } });
+    if (aliases.size) {
+      await tx.clientAlias.createMany({
+        data: Array.from(aliases, ([normalizedName, alias]) => ({
+          clientId: input.masterId,
+          normalizedName,
+          ...alias
+        })),
+        skipDuplicates: true
+      });
+    }
+
+    await tx.client.update({
+      where: { id: input.masterId },
+      data: {
+        displayName: input.globalDisplayName,
+        openOpportunities,
+        lifetimeValue,
+        outstandingBalance,
+        lastActivityAt: now,
+        activities: {
+          create: {
+            type: "Merge",
+            title: "Client records combined",
+            detail: `${sourceIds.length} client record${sourceIds.length === 1 ? "" : "s"} consolidated.`,
+            actor: user.name,
+            createdAt: now
+          }
+        }
+      }
+    });
+    await tx.client.updateMany({
+      where: { mergedIntoId: { in: sourceIds } },
+      data: { mergedIntoId: input.masterId }
+    });
+    await tx.client.updateMany({
+      where: { id: { in: sourceIds } },
+      data: {
+        archivedAt: now,
+        mergedIntoId: input.masterId,
+        mergedAt: now,
+        mergedById: user.id,
+        mergedByName: user.name,
+        lastActivityAt: now
+      }
+    });
+    await tx.activity.create({
+      data: {
+        relatedEntityType: "Client",
+        relatedEntityId: input.masterId,
+        actorUserId: user.id,
+        actorName: user.name,
+        actorRole: user.roleLabel,
+        type: "Merged",
+        title: `${input.globalDisplayName} consolidated`,
+        detail: `${clients.map((client) => client.clientNumber).join(", ")} were combined.`,
+        metadata: {
+          masterId: input.masterId,
+          sourceIds,
+          aliases: Array.from(aliases.values(), (alias) => alias.name)
+        }
+      }
+    });
+    await tx.activity.createMany({
+      data: clients
+        .filter((client) => sourceIds.includes(client.id))
+        .map((source) => ({
+          relatedEntityType: "Client",
+          relatedEntityId: source.id,
+          actorUserId: user.id,
+          actorName: user.name,
+          actorRole: user.roleLabel,
+          type: "Merged",
+          title: `${source.displayName} combined into ${input.globalDisplayName}`,
+          detail: `${source.clientNumber} now redirects to the master client.`,
+          metadata: {
+            masterId: input.masterId,
+            masterDisplayName: input.globalDisplayName
+          }
+        }))
+    });
+  });
+
+  return {
+    client: await getClientById(input.masterId),
+    mergedClientIds: sourceIds
+  };
 }
 
 export async function archiveClient(id: string, user?: AuthenticatedUser) {

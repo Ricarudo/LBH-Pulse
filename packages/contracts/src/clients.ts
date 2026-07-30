@@ -149,6 +149,21 @@ export type ClientActivity = {
   date: string;
 };
 
+export type ClientAlias = {
+  id: string;
+  name: string;
+  source: string;
+  originalClientId?: string;
+};
+
+export type ClientMergeSource = {
+  id: string;
+  clientNumber: string;
+  displayName: string;
+  mergedAt: string;
+  mergedByName: string;
+};
+
 export type ClientRecord = {
   id: string;
   clientNumber: string;
@@ -192,8 +207,44 @@ export type ClientRecord = {
   sites: ClientSite[];
   contacts: ClientContact[];
   recentActivity: ClientActivity[];
+  aliases: ClientAlias[];
+  mergedFrom: ClientMergeSource[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type ClientMergeCounts = {
+  requests: number;
+  quotes: number;
+  projects: number;
+  invoices: number;
+  contacts: number;
+  sites: number;
+  activities: number;
+  services: number;
+};
+
+export type ClientMergeDuplicateWarning = {
+  kind: "contact" | "site";
+  recordIds: string[];
+  label: string;
+  reason: string;
+};
+
+export type ClientMergePreview = {
+  masterId: string;
+  globalDisplayName: string;
+  clients: Array<{
+    id: string;
+    clientNumber: string;
+    displayName: string;
+    updatedAt: string;
+  }>;
+  aliases: string[];
+  contacts: ClientContact[];
+  sites: ClientSite[];
+  counts: ClientMergeCounts;
+  duplicateWarnings: ClientMergeDuplicateWarning[];
 };
 
 export type ClientQuoteSummary = {
@@ -601,6 +652,7 @@ export const updateClientSchema = clientFieldsSchema
     preferredLanguage: clientLanguageSchema,
     paymentTerms: clientPaymentTermsSchema,
     serviceProfile: serviceProfileUpdateSchema,
+    aliases: z.array(clientNameText.refine(Boolean, "Alias is required.")).max(100).optional(),
     updatedAt: optionalDateTimeText,
     primarySite: updatePrimarySiteSchema.optional(),
     primaryContact: updatePrimaryContactSchema.optional()
@@ -659,6 +711,34 @@ export const importClientInfoSchema = z.object({
   actor: optionalText.default("Alex Morgan")
 });
 
+const clientMergeFields = z.object({
+  clientIds: z.array(z.string().trim().min(1)).min(2).max(50),
+  masterId: z.string().trim().min(1),
+  globalDisplayName: clientNameText.refine(Boolean, "Global display name is required."),
+  primaryContactId: z.string().trim().min(1).nullable().optional(),
+  primarySiteId: z.string().trim().min(1).nullable().optional(),
+  expectedUpdatedAt: z.record(z.string(), z.string().datetime())
+}).strict().superRefine((data, context) => {
+  const uniqueIds = new Set(data.clientIds);
+  if (uniqueIds.size !== data.clientIds.length) {
+    context.addIssue({
+      code: "custom",
+      message: "Select each client only once.",
+      path: ["clientIds"]
+    });
+  }
+  if (!uniqueIds.has(data.masterId)) {
+    context.addIssue({
+      code: "custom",
+      message: "The master client must be one of the selected clients.",
+      path: ["masterId"]
+    });
+  }
+});
+
+export const previewClientMergeSchema = clientMergeFields;
+export const mergeClientsSchema = clientMergeFields;
+
 export const addClientSiteSchema = clientSiteSchema;
 export const updateClientSiteSchema = clientSiteSchema.partial().strict();
 export const addClientContactSchema = clientContactSchema;
@@ -676,3 +756,5 @@ export type CreateClientActivityInput = z.infer<
   typeof createClientActivitySchema
 >;
 export type ImportClientInfoInput = z.infer<typeof importClientInfoSchema>;
+export type PreviewClientMergeInput = z.infer<typeof previewClientMergeSchema>;
+export type MergeClientsInput = z.infer<typeof mergeClientsSchema>;

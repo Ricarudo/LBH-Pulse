@@ -971,6 +971,10 @@ model Client {
   lifetimeValue               Decimal          @default(0) @db.Decimal(12, 2)
   outstandingBalance          Decimal          @default(0) @db.Decimal(12, 2)
   archivedAt                  DateTime?
+  mergedIntoId                String?
+  mergedAt                    DateTime?
+  mergedById                  String?
+  mergedByName                String?
   createdAt                   DateTime         @default(now())
   updatedAt                   DateTime         @updatedAt
   lastActivityAt              DateTime?
@@ -982,10 +986,29 @@ model Client {
   quotes                      Quote[]
   projects                    Project[]
   invoices                    Invoice[]
+  aliases                     ClientAlias[]
+  mergedInto                  Client?          @relation("ClientMerges", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedClients               Client[]         @relation("ClientMerges")
 
   @@index([status])
   @@index([accountOwner])
   @@index([archivedAt])
+  @@index([mergedIntoId])
+}
+
+model ClientAlias {
+  id               String   @id @default(cuid())
+  clientId         String
+  name             String
+  normalizedName   String
+  source           String   @default("Manual")
+  originalClientId String?
+  createdAt        DateTime @default(now())
+  client           Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, normalizedName])
+  @@index([normalizedName])
+  @@index([originalClientId])
 }
 
 model PointOfContact {

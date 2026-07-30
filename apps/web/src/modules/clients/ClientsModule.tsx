@@ -165,6 +165,7 @@ export function ClientsModule() {
         client.industry,
         client.status,
         client.accountOwner,
+        ...client.aliases.map((alias) => alias.name),
         client.primaryContact.name,
         client.primaryContact.email,
         client.primaryContact.phone,

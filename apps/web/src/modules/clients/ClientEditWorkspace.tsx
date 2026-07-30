@@ -74,6 +74,7 @@ type ClientEditState = {
   standardTechnologies: string;
   documentationRequirements: string;
   serviceProfileText: string;
+  aliasesText: string;
 };
 
 type ContactFormState = {
@@ -142,7 +143,8 @@ function clientToFormState(client: ClientRecord): ClientEditState {
     preferredCablingBrand: client.preferredCablingBrand,
     standardTechnologies: client.standardTechnologies,
     documentationRequirements: client.documentationRequirements,
-    serviceProfileText: client.serviceProfile.join(", ")
+    serviceProfileText: client.serviceProfile.join(", "),
+    aliasesText: client.aliases.map((alias) => alias.name).join("\n")
   };
 }
 
@@ -759,6 +761,10 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
       serviceProfile: formState.serviceProfileText
         .split(",")
         .map((service) => service.trim())
+        .filter(Boolean),
+      aliases: formState.aliasesText
+        .split(/\r?\n/)
+        .map((alias) => alias.trim())
         .filter(Boolean)
     };
 
@@ -952,6 +958,13 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
                 errors={fieldErrors}
                 maxLength={2048}
                 onChange={(value) => updateForm("website", value)}
+              />
+              <TextAreaField
+                label="Alternative names (one per line)"
+                name="aliases"
+                value={formState.aliasesText}
+                errors={fieldErrors}
+                onChange={(value) => updateForm("aliasesText", value)}
               />
             </div>
           </SectionCard>

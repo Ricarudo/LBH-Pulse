@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  Building2,
   CalendarClock,
   ChartNoAxesColumnIncreasing,
   CreditCard,
@@ -21,6 +22,7 @@ import {
   UserRound
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { canUser } from "@pulse/contracts/auth";
@@ -45,6 +47,7 @@ import {
   ClientProfileContactDialog,
   ClientProfileSiteDialog
 } from "./ClientProfileDialogs";
+import { ClientMergeDialog } from "./ClientMergeDialog";
 
 type ClientProfileWorkspaceProps = {
   clientId: string;
@@ -52,6 +55,7 @@ type ClientProfileWorkspaceProps = {
 
 type ClientResponse = {
   client: ClientRecord;
+  redirectClientId?: string;
 };
 
 type ClientRelatedWorkResponse = {
@@ -499,6 +503,8 @@ function QuotesTable({
 
 export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps) {
   const { user } = useCurrentUser();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
@@ -529,6 +535,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   const [profileDialog, setProfileDialog] = useState<"contact" | "site" | null>(null);
   const [siteToEdit, setSiteToEdit] = useState<ClientSite | null>(null);
   const [focusedRecord, setFocusedRecord] = useState("");
+  const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false);
 
   const canEditClients = canUser(user, "clients:write");
   const canWriteClients = canUser(user, "clients:write");
@@ -544,10 +551,14 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
           cache: "no-store"
         });
         setClient(clientData.client);
+        const resolvedClientId = clientData.redirectClientId ?? clientId;
+        if (clientData.redirectClientId) {
+          router.replace(`/clients/${clientData.redirectClientId}`);
+        }
 
         try {
           const relatedWorkData = await requestJson<ClientRelatedWorkResponse>(
-            `/api/clients/${clientId}/related-work`,
+            `/api/clients/${resolvedClientId}/related-work`,
             {
               cache: "no-store"
             }
@@ -582,7 +593,17 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     }
 
     void loadClientProfile();
-  }, [clientId]);
+  }, [clientId, router]);
+
+  useEffect(() => {
+    const contactId = searchParams.get("contact");
+    if (searchParams.get("tab") === "contacts" || contactId) {
+      setActiveTab("Contacts & Sites");
+    }
+    if (contactId && client) {
+      setFocusedRecord(contactId);
+    }
+  }, [client, searchParams]);
 
   useEffect(() => {
     if (!focusedRecord) return;
@@ -868,7 +889,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               Edit Client
             </Link>
           ) : null}
-          {canWriteActivity ? (
+          {canWriteActivity || user?.isSystemAdmin ? (
             <div className="client-360-more-actions">
               <button
                 className="toolbar-button compact"
@@ -882,10 +903,21 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               </button>
               {moreActionsOpen ? (
                 <div className="mini-popover client-360-actions-menu" role="menu">
-                  <button type="button" role="menuitem" onClick={importClientInfo}>
-                    <Upload size={15} />
-                    Record import
-                  </button>
+                  {canWriteActivity ? (
+                    <button type="button" role="menuitem" onClick={importClientInfo}>
+                      <Upload size={15} />
+                      Record import
+                    </button>
+                  ) : null}
+                  {user?.isSystemAdmin ? (
+                    <button type="button" role="menuitem" onClick={() => {
+                      setMoreActionsOpen(false);
+                      setIsMergeDialogOpen(true);
+                    }}>
+                      <Building2 size={15} />
+                      Combine with another client
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -1045,6 +1077,12 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                         { label: "Client Since", value: displayDate(client.createdAt) }
                       ]}
                     />
+                    {client.aliases.length ? (
+                      <div className="client-360-alias-list">
+                        <strong>Alternative names</strong>
+                        <p>{client.aliases.map((alias) => alias.name).join(", ")}</p>
+                      </div>
+                    ) : null}
                   </section>
                   <section className="client-360-tab-card">
                     <h3>Billing & Finance</h3>
@@ -1073,6 +1111,16 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                   <section className="client-360-tab-card">
                     <h3>Recently Updated</h3>
                     <ClientActivityTimeline activities={filteredActivities.slice(0, 3)} />
+                    {client.mergedFrom.length ? (
+                      <div className="client-360-merge-history">
+                        <strong>Combined records</strong>
+                        {client.mergedFrom.map((source) => (
+                          <p key={source.id}>
+                            {source.clientNumber} · {source.displayName} · {displayDate(source.mergedAt)}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
                   </section>
                 </div>
               </div>
@@ -1105,7 +1153,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                     <div className="client-360-list-stack">
                       {filteredContacts.length ? (
                         filteredContacts.map((contact) => (
-                          <ContactCard contact={contact} isFocused={focusedRecord === contact.name} key={contact.id || contact.name} />
+                          <ContactCard contact={contact} isFocused={focusedRecord === contact.id || focusedRecord === contact.name} key={contact.id || contact.name} />
                         ))
                       ) : (
                         <EmptyPanel
@@ -1234,6 +1282,19 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
             setSiteToEdit(null);
             setFocusedRecord(siteName);
             setMessage(`${siteName} site details were saved.`);
+          }}
+        />
+      ) : null}
+      {isMergeDialogOpen ? (
+        <ClientMergeDialog
+          currentClient={client}
+          onCancel={() => setIsMergeDialogOpen(false)}
+          onMerged={(mergedClient) => {
+            setClient(mergedClient);
+            setIsMergeDialogOpen(false);
+            setMessage(`${mergedClient.displayName} now contains the consolidated client records.`);
+            router.replace(`/clients/${mergedClient.id}`);
+            router.refresh();
           }}
         />
       ) : null}

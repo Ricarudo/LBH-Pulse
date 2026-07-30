@@ -105,7 +105,8 @@ export async function searchPulse(
           { clientNumber: contains },
           { displayName: contains },
           { companyName: contains },
-          { legalName: contains }
+          { legalName: contains },
+          { aliases: { some: { name: contains } } }
         ]
       },
       orderBy: { updatedAt: "desc" },

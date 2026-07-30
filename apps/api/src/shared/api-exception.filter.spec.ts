@@ -47,6 +47,18 @@ describe("apiErrorPayload", () => {
         error: "Confirm that the existing financial data should be permanently removed."
       }
     });
+    assert.deepEqual(apiErrorPayload(new Error("RECORD_NUMBER_SEQUENCE_CONFLICT")), {
+      status: 409,
+      body: {
+        error: "The next record number is already in use. Choose a different sequence cursor."
+      }
+    });
+    assert.deepEqual(apiErrorPayload(new Error("CLIENT_MERGE_STALE")), {
+      status: 409,
+      body: {
+        error: "One of these clients changed after the merge review. Reload the preview and try again."
+      }
+    });
   });
 
   it("requires reasons for terminal request outcomes", () => {

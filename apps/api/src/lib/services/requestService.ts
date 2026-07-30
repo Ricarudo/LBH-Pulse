@@ -400,7 +400,7 @@ function toRequestRecord(request: RequestWithRelations, viewerId?: string): Requ
       : [request.serviceCategory]) as RequestRecord["serviceCategories"],
     status: request.status as RequestRecord["status"],
     priority: request.priority as RequestRecord["priority"],
-    companyName: request.companyName ?? request.client?.displayName ?? "",
+    companyName: request.client?.displayName ?? request.companyName ?? "",
     contactName:
       request.contactName ??
       request.contact?.name ??
@@ -1165,24 +1165,24 @@ export async function listRequests(viewerId?: string) {
 export async function listClientRelatedWork(clientId: string, user: AuthenticatedUser) {
   const client = await prisma.client.findFirst({
     where: {
-      archivedAt: null,
       OR: [{ id: clientId }, { clientNumber: clientId }]
     },
-    select: { id: true }
+    select: { id: true, archivedAt: true, mergedIntoId: true }
   });
 
-  if (!client) {
+  if (!client || (client.archivedAt && !client.mergedIntoId)) {
     throw new Error("CLIENT_NOT_FOUND");
   }
+  const resolvedClientId = client.mergedIntoId ?? client.id;
 
   const [clientRequests, quotes, projects, invoices] = await Promise.all([
     prisma.request.findMany({
-      where: { clientId: client.id, archivedAt: null },
+      where: { clientId: resolvedClientId, archivedAt: null },
       include: requestInclude,
       orderBy: { updatedAt: "desc" }
     }),
     prisma.quote.findMany({
-      where: { clientId: client.id, archivedAt: null },
+      where: { clientId: resolvedClientId, archivedAt: null },
       include: {
         ...quoteInclude,
         revisions: { select: { sentAt: true } }
@@ -1190,12 +1190,12 @@ export async function listClientRelatedWork(clientId: string, user: Authenticate
       orderBy: { updatedAt: "desc" }
     }),
     prisma.project.findMany({
-      where: { clientId: client.id, archivedAt: null },
+      where: { clientId: resolvedClientId, archivedAt: null },
       include: projectInclude,
       orderBy: { updatedAt: "desc" }
     }),
     prisma.invoice.findMany({
-      where: { clientId: client.id, archivedAt: null },
+      where: { clientId: resolvedClientId, archivedAt: null },
       include: invoiceInclude,
       orderBy: { updatedAt: "desc" }
     })
@@ -2051,7 +2051,7 @@ export async function convertRequest(
             siteId: existingRequest.siteId,
             assignedToId: existingRequest.assignedToId,
             lifecycleContextId,
-            clientName: existingRequest.companyName || existingRequest.client?.displayName || null,
+            clientName: existingRequest.client?.displayName || existingRequest.companyName || null,
             status: "Draft",
             owner: existingRequest.assignedTo?.name ?? "Unassigned",
             calculationMode: input.calculationMode ?? "PULSE",

@@ -212,7 +212,10 @@ async function buildPreview(file: UploadedCsv) {
     prisma.quote.findMany({
       select: quoteSelect
     }),
-    prisma.client.findMany({ include: { contacts: true } }),
+    prisma.client.findMany({
+      where: { archivedAt: null, mergedIntoId: null },
+      include: { contacts: true, aliases: true }
+    }),
     prisma.localUser.findMany({ where: { active: true }, select: { id: true, email: true, name: true } })
   ]);
   const quoteByExternal = new Map<string, Quote>();
@@ -230,6 +233,10 @@ async function buildPreview(file: UploadedCsv) {
   const clientsByName = new Map<string, Client[]>();
   for (const client of clients) for (const name of [client.displayName, client.legalName ?? ""]) {
     const key = identity(name);
+    if (key) clientsByName.set(key, [...(clientsByName.get(key) ?? []), client]);
+  }
+  for (const client of clients) for (const alias of client.aliases) {
+    const key = alias.normalizedName;
     if (key) clientsByName.set(key, [...(clientsByName.get(key) ?? []), client]);
   }
   const usersByEmail = new Map(users.map((user) => [identity(user.email), user]));

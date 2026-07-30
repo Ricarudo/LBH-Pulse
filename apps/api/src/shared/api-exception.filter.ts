@@ -26,6 +26,26 @@ const errorMap: Record<string, ErrorPayload> = {
     body: { error: "Pulse setup is unavailable because the built-in role configuration is incomplete." }
   },
   REQUEST_NOT_FOUND: { status: 404, body: { error: "Request not found." } },
+  CLIENT_MERGE_SELECTION_INVALID: {
+    status: 400,
+    body: { error: "Select at least two active, unmerged clients." }
+  },
+  CLIENT_MERGE_MASTER_INVALID: {
+    status: 400,
+    body: { error: "Choose one of the selected clients as the master." }
+  },
+  CLIENT_MERGE_STALE: {
+    status: 409,
+    body: { error: "One of these clients changed after the merge review. Reload the preview and try again." }
+  },
+  CLIENT_MERGE_PRIMARY_CONTACT_INVALID: {
+    status: 400,
+    body: { error: "Choose one of the selected clients' contacts as the primary contact." }
+  },
+  CLIENT_MERGE_PRIMARY_SITE_INVALID: {
+    status: 400,
+    body: { error: "Choose one of the selected clients' sites as the primary site." }
+  },
   RECORD_NUMBER_SEQUENCE_EXHAUSTED: {
     status: 409,
     body: { error: "The current-year record number sequence has reached 9999." }

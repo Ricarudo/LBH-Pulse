@@ -6,9 +6,11 @@ import {
   addClientSite,
   archiveClient,
   createClient,
-  getClientById,
+  getClientProfileById,
   importClientInfo,
   listClients,
+  mergeClients,
+  previewClientMerge,
   removeClientContact,
   removeClientSite,
   updateClient,
@@ -22,6 +24,8 @@ import {
   createClientActivitySchema,
   createClientSchema,
   importClientInfoSchema,
+  mergeClientsSchema,
+  previewClientMergeSchema,
   updateClientContactSchema,
   updateClientSchema,
   updateClientSiteSchema
@@ -50,8 +54,23 @@ export class ClientsController {
   @Get(":id")
   async get(@Req() request: Request, @Param("id") id: string) {
     await this.auth.requireUser(request, "clients:read");
-    const client = await getClientById(id);
-    return { client };
+    return getClientProfileById(id);
+  }
+
+  @Post("merge/preview")
+  @HttpCode(200)
+  async previewMerge(@Req() request: Request, @Body() body: unknown) {
+    await this.auth.requireSystemAdmin(request);
+    return {
+      preview: await previewClientMerge(previewClientMergeSchema.parse(body))
+    };
+  }
+
+  @Post("merge")
+  @HttpCode(200)
+  async merge(@Req() request: Request, @Body() body: unknown) {
+    const user = await this.auth.requireSystemAdmin(request);
+    return mergeClients(mergeClientsSchema.parse(body), user);
   }
 
   @Get(":id/related-work")

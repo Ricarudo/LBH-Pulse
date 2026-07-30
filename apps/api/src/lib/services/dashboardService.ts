@@ -375,7 +375,7 @@ export async function getDashboardData(
       stepId: currentStep?.id,
       reference: request.requestNumber,
       title: stepTitle,
-      context: request.companyName || request.client?.displayName || "Request",
+      context: request.client?.displayName || request.companyName || "Request",
       owner: stepOwner,
       status: explicitStep ? "Current step" : "Suggested",
       priority: request.priority,
@@ -477,7 +477,7 @@ export async function getDashboardData(
   };
   for (const request of scopedRequests) {
     if (terminalRequestStatuses.has(request.status)) continue;
-    const context = request.companyName || request.client?.displayName || request.title;
+    const context = request.client?.displayName || request.companyName || request.title;
     const dueDate = dateOutput(request.dueDate);
     if (dueDate) addSchedule({
       id: `request-due:${request.id}`,

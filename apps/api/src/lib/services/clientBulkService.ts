@@ -34,6 +34,7 @@ type UploadedCsv = {
 };
 
 const bulkClientInclude = {
+  aliases: true,
   contacts: {
     where: {
       OR: [{ isPrimary: true }, { isPrimaryContact: true }]
@@ -521,6 +522,7 @@ function duplicateKeys(rows: Array<{ rowNumber: number; row: ClientBulkCsvRow }>
 
 async function loadBulkClients(): Promise<BulkClient[]> {
   return prisma.client.findMany({
+    where: { archivedAt: null, mergedIntoId: null },
     include: bulkClientInclude,
     orderBy: { createdAt: "asc" }
   });
@@ -548,6 +550,9 @@ async function buildPreview(file: UploadedCsv) {
     addToIndex(numberIndex, normalizeClientNumber(client.clientNumber), client.id);
     addToIndex(nameIndex, normalizeIdentity(client.displayName), client.id);
     addToIndex(nameIndex, normalizeIdentity(client.legalName ?? ""), client.id);
+    for (const alias of client.aliases) {
+      addToIndex(nameIndex, alias.normalizedName, client.id);
+    }
     for (const contact of client.contacts) {
       addToIndex(emailIndex, normalizeEmail(contact.email ?? ""), client.id);
     }
