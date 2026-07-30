@@ -1,6 +1,7 @@
 export type GlobalSearchKind =
   | "request"
   | "client"
+  | "contact"
   | "quote"
   | "project"
   | "invoice"
@@ -9,6 +10,7 @@ export type GlobalSearchKind =
 export type GlobalSearchResult = {
   kind: GlobalSearchKind;
   id: string;
+  parentId?: string;
   number: string;
   title: string;
   context: string;

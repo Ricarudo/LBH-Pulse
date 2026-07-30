@@ -163,9 +163,17 @@ export function isNavigationItemActive(
   return getActiveNavigationKey(pathname) === key;
 }
 
-export function searchResultHref(kind: GlobalSearchKind, id: string) {
+export function searchResultHref(
+  kind: GlobalSearchKind,
+  id: string,
+  parentId?: string
+) {
   if (kind === "request") return `/requests/${id}`;
   if (kind === "client") return `/clients/${id}`;
+  if (kind === "contact" && parentId) {
+    return `/clients/${parentId}?tab=contacts&contact=${encodeURIComponent(id)}`;
+  }
+  if (kind === "contact") return "/contacts";
   if (kind === "quote") return `/quotes/${id}`;
   if (kind === "project") return `/projects?record=${encodeURIComponent(id)}`;
   if (kind === "item") return `/directory/items/${id}`;

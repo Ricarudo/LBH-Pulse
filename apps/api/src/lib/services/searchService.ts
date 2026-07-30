@@ -48,6 +48,7 @@ function toCandidate(
   kind: GlobalSearchKind,
   record: {
     id: string;
+    parentId?: string;
     number: string;
     title: string;
     context: string;
@@ -58,6 +59,7 @@ function toCandidate(
   return {
     kind,
     id: record.id,
+    parentId: record.parentId,
     number: record.number,
     title: record.title,
     context: record.context,
@@ -74,7 +76,7 @@ export async function searchPulse(
   const normalizedQuery = normalize(query);
   const contains = { contains: query, mode: "insensitive" as const };
 
-  const [requests, clients, quotes, projects, invoices, items] = await Promise.all([
+  const [requests, clients, contacts, quotes, projects, invoices, items] = await Promise.all([
     canUser(user, "requests:read") ? prisma.request.findMany({
       where: {
         archivedAt: null,
@@ -119,6 +121,45 @@ export async function searchPulse(
         industry: true,
         status: true,
         updatedAt: true
+      }
+    }) : Promise.resolve([]),
+    canUser(user, "clients:read") ? prisma.pointOfContact.findMany({
+      where: {
+        client: { is: { archivedAt: null } },
+        OR: [
+          { name: contains },
+          { firstName: contains },
+          { lastName: contains },
+          { title: contains },
+          { department: contains },
+          { email: contains },
+          { phone: contains },
+          { mobile: contains },
+          { client: { is: { displayName: contains } } },
+          { site: { is: { siteName: contains } } }
+        ]
+      },
+      orderBy: { updatedAt: "desc" },
+      take: candidateLimit,
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        title: true,
+        department: true,
+        email: true,
+        phone: true,
+        mobile: true,
+        role: true,
+        updatedAt: true,
+        client: {
+          select: {
+            id: true,
+            displayName: true
+          }
+        },
+        site: { select: { siteName: true } }
       }
     }) : Promise.resolve([]),
     canUser(user, "quotes:read") ? prisma.quote.findMany({
@@ -248,6 +289,32 @@ export async function searchPulse(
           updatedAt: record.updatedAt
         })
       ),
+      normalizedQuery
+    ),
+    ...rankSearchResults(
+      contacts.map((record) => {
+        const contactName =
+          record.name?.trim() ||
+          [record.firstName, record.lastName].filter(Boolean).join(" ").trim() ||
+          "Unnamed contact";
+        const contactMethod = record.email || record.phone || record.mobile;
+        const context = [
+          record.client?.displayName,
+          record.title || record.department,
+          record.site?.siteName,
+          contactMethod
+        ].filter(Boolean).join(" · ") || "Point of contact";
+
+        return toCandidate("contact", {
+          id: record.id,
+          parentId: record.client?.id,
+          number: "",
+          title: contactName,
+          context,
+          status: record.role || "Contact",
+          updatedAt: record.updatedAt
+        });
+      }),
       normalizedQuery
     ),
     ...rankSearchResults(

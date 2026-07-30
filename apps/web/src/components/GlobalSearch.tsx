@@ -20,6 +20,7 @@ import {
   LoaderCircle,
   ReceiptText,
   Search,
+  UserRound,
   X
 } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
@@ -52,6 +53,7 @@ const kindMeta: Record<
 > = {
   request: { label: "Requests", icon: Inbox },
   client: { label: "Clients", icon: Building2 },
+  contact: { label: "Points of Contact", icon: UserRound },
   quote: { label: "Quotes", icon: FileText },
   project: { label: "Projects", icon: FolderKanban },
   invoice: { label: "Billing", icon: ReceiptText },
@@ -65,7 +67,7 @@ function resultEntry(result: GlobalSearchResult): SearchEntry {
     label: result.number ? `${result.number} · ${result.title}` : result.title,
     detail: result.context,
     meta: result.status,
-    href: searchResultHref(result.kind, result.id),
+    href: searchResultHref(result.kind, result.id, result.parentId),
     kindLabel: meta.label,
     icon: meta.icon
   };
@@ -115,7 +117,7 @@ function SearchResults({
       {!loading && !error && query.trim().length >= 2 && !entries.length ? (
         <div className="global-search-state">
           <strong>No matching records</strong>
-          <span>Try a number, title, item, client, or company name.</span>
+          <span>Try a number, title, item, client, contact, or company name.</span>
         </div>
       ) : null}
       {!loading && !error ? groups.map((group) => (
