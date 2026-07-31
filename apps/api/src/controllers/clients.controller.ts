@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import {
   addClientActivity,
@@ -8,6 +8,7 @@ import {
   createClient,
   getClientProfileById,
   importClientInfo,
+  listClientHistory,
   listClients,
   mergeClients,
   previewClientMerge,
@@ -23,6 +24,7 @@ import {
   addClientSiteSchema,
   createClientActivitySchema,
   createClientSchema,
+  clientHistoryQuerySchema,
   importClientInfoSchema,
   mergeClientsSchema,
   previewClientMergeSchema,
@@ -77,6 +79,16 @@ export class ClientsController {
   async relatedWork(@Req() request: Request, @Param("id") id: string) {
     const user = await this.auth.requireUser(request, "clients:read");
     return listClientRelatedWork(id, user);
+  }
+
+  @Get(":id/history")
+  async history(
+    @Req() request: Request,
+    @Param("id") id: string,
+    @Query() query: Record<string, unknown>
+  ) {
+    await this.auth.requireUser(request, "clients:read");
+    return listClientHistory(id, clientHistoryQuerySchema.parse(query));
   }
 
   @Patch(":id")
@@ -182,7 +194,8 @@ export class ClientsController {
     const user = await this.auth.requireUser(request, { allOf: ["clients:read", "activity:write"] });
     const payload = createClientActivitySchema.parse(body);
     const client = await addClientActivity(id, payload, user);
-    return { client };
+    const history = await listClientHistory(id, clientHistoryQuerySchema.parse({ take: 1 }));
+    return { client, activity: history.events[0] };
   }
 
   @Post(":id/import")

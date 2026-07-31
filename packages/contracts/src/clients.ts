@@ -149,6 +149,21 @@ export type ClientActivity = {
   date: string;
 };
 
+export type ClientHistoryEvent = {
+  id: string;
+  type: string;
+  title: string;
+  detail: string;
+  actor: string;
+  createdAt: string;
+};
+
+export type ClientHistoryResponse = {
+  events: ClientHistoryEvent[];
+  total: number;
+  nextCursor?: string;
+};
+
 export type ClientAlias = {
   id: string;
   name: string;
@@ -653,6 +668,7 @@ export const updateClientSchema = clientFieldsSchema
     paymentTerms: clientPaymentTermsSchema,
     serviceProfile: serviceProfileUpdateSchema,
     aliases: z.array(clientNameText.refine(Boolean, "Alias is required.")).max(100).optional(),
+    manualAliases: z.array(clientNameText.refine(Boolean, "Alias is required.")).max(100).optional(),
     updatedAt: optionalDateTimeText,
     primarySite: updatePrimarySiteSchema.optional(),
     primaryContact: updatePrimaryContactSchema.optional()
@@ -660,6 +676,14 @@ export const updateClientSchema = clientFieldsSchema
   .partial()
   .strict()
   .superRefine((data, context) => {
+    if (data.aliases !== undefined && data.manualAliases !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Send either aliases or manualAliases, not both.",
+        path: ["manualAliases"]
+      });
+    }
+
     if (
       ("legalName" in data || "displayName" in data) &&
       !data.legalName &&
@@ -700,10 +724,27 @@ export const updateClientSchema = clientFieldsSchema
   });
 
 export const createClientActivitySchema = z.object({
-  type: optionalText.default("Note"),
-  title: z.string().trim().min(1),
-  detail: optionalText,
+  type: z.enum(["Note", "Call", "Email", "Meeting", "Follow-up"]).default("Note"),
+  title: z.string().trim().min(1).max(160),
+  detail: z.string().trim().max(2000).optional().default(""),
   actor: optionalText.default("Alex Morgan")
+}).strict();
+
+export const clientHistoryQuerySchema = z.object({
+  q: z.string().trim().max(160).optional().transform((value) => value || undefined),
+  type: z.string().trim().max(80).optional().transform((value) => value || undefined),
+  from: z.string().date().optional(),
+  to: z.string().date().optional(),
+  cursor: z.string().trim().max(160).optional(),
+  take: z.coerce.number().int().min(1).max(50).default(25)
+}).strict().superRefine((data, context) => {
+  if (data.from && data.to && data.from > data.to) {
+    context.addIssue({
+      code: "custom",
+      message: "History start date must be on or before the end date.",
+      path: ["from"]
+    });
+  }
 });
 
 export const importClientInfoSchema = z.object({
@@ -755,6 +796,7 @@ export type UpdateClientContactInput = z.infer<
 export type CreateClientActivityInput = z.infer<
   typeof createClientActivitySchema
 >;
+export type ClientHistoryQuery = z.infer<typeof clientHistoryQuerySchema>;
 export type ImportClientInfoInput = z.infer<typeof importClientInfoSchema>;
 export type PreviewClientMergeInput = z.infer<typeof previewClientMergeSchema>;
 export type MergeClientsInput = z.infer<typeof mergeClientsSchema>;

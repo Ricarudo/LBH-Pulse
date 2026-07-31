@@ -74,7 +74,7 @@ type ClientEditState = {
   standardTechnologies: string;
   documentationRequirements: string;
   serviceProfileText: string;
-  aliasesText: string;
+  manualAliases: string[];
 };
 
 type ContactFormState = {
@@ -144,7 +144,9 @@ function clientToFormState(client: ClientRecord): ClientEditState {
     standardTechnologies: client.standardTechnologies,
     documentationRequirements: client.documentationRequirements,
     serviceProfileText: client.serviceProfile.join(", "),
-    aliasesText: client.aliases.map((alias) => alias.name).join("\n")
+    manualAliases: client.aliases
+      .filter((alias) => alias.source === "Manual")
+      .map((alias) => alias.name)
   };
 }
 
@@ -663,6 +665,8 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
   const [contacts, setContacts] = useState<ClientContact[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [contactErrors, setContactErrors] = useState<Record<string, string>>({});
+  const [aliasDraft, setAliasDraft] = useState("");
+  const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
   const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
   const [isLoadingClient, setIsLoadingClient] = useState(false);
@@ -702,6 +706,44 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
 
   function updateForm<K extends keyof ClientEditState>(key: K, value: ClientEditState[K]) {
     setFormState((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  function addAlias() {
+    if (!formState) return;
+    const nextAlias = aliasDraft.trim().replace(/\s+/g, " ");
+    const normalized = nextAlias.toLocaleLowerCase("en-US");
+    const existingNames = [
+      formState.displayName,
+      formState.legalName,
+      ...formState.manualAliases,
+      ...(client?.aliases.filter((alias) => alias.source !== "Manual").map((alias) => alias.name) ?? [])
+    ].map((name) => name.trim().toLocaleLowerCase("en-US"));
+    if (!nextAlias) {
+      setFieldErrors((current) => ({ ...current, manualAliases: "Enter an alternative name." }));
+      return;
+    }
+    if (existingNames.includes(normalized)) {
+      setFieldErrors((current) => ({ ...current, manualAliases: "That name is already represented on this client." }));
+      return;
+    }
+    if (formState.manualAliases.length >= 100) {
+      setFieldErrors((current) => ({ ...current, manualAliases: "A client can have up to 100 manual alternative names." }));
+      return;
+    }
+    updateForm("manualAliases", [...formState.manualAliases, nextAlias]);
+    setAliasDraft("");
+    setSelectedAlias(null);
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next.manualAliases;
+      return next;
+    });
+  }
+
+  function removeAlias(alias: string) {
+    if (!formState) return;
+    updateForm("manualAliases", formState.manualAliases.filter((item) => item !== alias));
+    setSelectedAlias(null);
   }
 
   function openAddContactModal() {
@@ -762,10 +804,7 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
         .split(",")
         .map((service) => service.trim())
         .filter(Boolean),
-      aliases: formState.aliasesText
-        .split(/\r?\n/)
-        .map((alias) => alias.trim())
-        .filter(Boolean)
+      manualAliases: formState.manualAliases
     };
 
     try {
@@ -959,13 +998,58 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
                 maxLength={2048}
                 onChange={(value) => updateForm("website", value)}
               />
-              <TextAreaField
-                label="Alternative names (one per line)"
-                name="aliases"
-                value={formState.aliasesText}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("aliasesText", value)}
-              />
+              <div className="client-alias-editor client-form-wide">
+                <span className="client-alias-label">Alternative names</span>
+                <p>Use names people may search for. Names preserved by a merge remain read-only.</p>
+                <div className="client-alias-token-list" aria-label="Manual alternative names">
+                  {formState.manualAliases.map((alias) => (
+                    <span className={selectedAlias === alias ? "client-alias-token selected" : "client-alias-token"} key={alias}>
+                      {alias}
+                      <button type="button" aria-label={`Remove ${alias}`} onClick={() => removeAlias(alias)}>
+                        <X size={13} />
+                      </button>
+                    </span>
+                  ))}
+                  {!formState.manualAliases.length ? <small>No manual alternative names.</small> : null}
+                </div>
+                {client?.aliases.some((alias) => alias.source !== "Manual") ? (
+                  <div className="client-alias-preserved-list">
+                    <strong>Preserved names</strong>
+                    {client.aliases.filter((alias) => alias.source !== "Manual").map((alias) => (
+                      <span className="client-alias-token preserved" key={alias.id}>
+                        {alias.name}
+                        <small>{alias.source}</small>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="client-alias-input-row">
+                  <input
+                    aria-label="Add alternative name"
+                    aria-invalid={Boolean(fieldErrors.manualAliases)}
+                    placeholder="Add another name"
+                    value={aliasDraft}
+                    onChange={(event) => {
+                      setAliasDraft(event.target.value);
+                      setSelectedAlias(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === ",") {
+                        event.preventDefault();
+                        addAlias();
+                      } else if (event.key === "Backspace" && !aliasDraft && formState.manualAliases.length) {
+                        if (selectedAlias) {
+                          removeAlias(selectedAlias);
+                        } else {
+                          setSelectedAlias(formState.manualAliases.at(-1) ?? null);
+                        }
+                      }
+                    }}
+                  />
+                  <button className="toolbar-button compact" type="button" onClick={addAlias}>Add name</button>
+                </div>
+                <FieldError name="manualAliases" errors={fieldErrors} />
+              </div>
             </div>
           </SectionCard>
 

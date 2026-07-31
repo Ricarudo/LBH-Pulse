@@ -85,6 +85,12 @@ const donutColors = ["#2563eb", "#7c3aed", "#16a34a", "#0f9f8f", "#d97706", "#64
 type SortKey = "reference" | "client" | "status" | "owner" | "date" | "value";
 type SortDirection = "asc" | "desc";
 type ChartDatum = Record<string, unknown> & { __point: AnalyticsPoint; label: string };
+type AnalyticsPeriod = "30" | "90" | "12m" | "ytd" | "all" | "custom";
+
+type AnalyticsWorkspaceProps = {
+  embeddedClientId?: string;
+  clientSince?: string;
+};
 
 function localDate(timeZone: string, date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -188,7 +194,8 @@ function qualityLabel(kpi: AnalyticsKpi) {
   return "Exact coverage";
 }
 
-function DeltaContext({ kpi }: { kpi: AnalyticsKpi }) {
+function DeltaContext({ kpi, allTime = false }: { kpi: AnalyticsKpi; allTime?: boolean }) {
+  if (allTime) return <em className="is-neutral">All recorded history</em>;
   if (kpi.scope === "asOf") return <em className="is-neutral">End-of-period snapshot</em>;
   if (kpi.value === null) return <em className="is-neutral">Calculation unavailable</em>;
   if (kpi.comparisonValue === 0 && kpi.value === 0) return <em className="is-neutral">No change · both periods 0</em>;
@@ -216,6 +223,7 @@ function KpiCard({
   selected,
   reduced,
   popoverOpen,
+  allTime,
   onTogglePopover,
   onSelect
 }: {
@@ -224,6 +232,7 @@ function KpiCard({
   selected: boolean;
   reduced: boolean;
   popoverOpen: boolean;
+  allTime?: boolean;
   onTogglePopover: () => void;
   onSelect: () => void;
 }) {
@@ -240,7 +249,7 @@ function KpiCard({
       <button type="button" className="analytics-kpi-open" onClick={onSelect}>
         <span className="analytics-kpi-heading"><span>{kpi.label}</span><Icon size={17} /></span>
         <strong><AnimatedMetric kpi={kpi} reduced={reduced} /></strong>
-        <span className="analytics-kpi-context"><DeltaContext kpi={kpi} /></span>
+        <span className="analytics-kpi-context"><DeltaContext kpi={kpi} allTime={allTime} /></span>
         <small>{kpi.description}</small>
       </button>
       <button
@@ -691,20 +700,27 @@ function DetailPanel({
   return modal ? <ViewportPortal>{panel}</ViewportPortal> : panel;
 }
 
-export function AnalyticsWorkspace() {
+export function AnalyticsWorkspace({
+  embeddedClientId,
+  clientSince = ""
+}: AnalyticsWorkspaceProps = {}) {
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = usePulseAuth();
   const { workspace, motionMode } = usePulsePreferences();
   const prefersReduced = useReducedMotion();
   const reduced = Boolean(prefersReduced || motionMode === "subtle");
-  const initialView = searchParams.get("view") as AnalyticsView | null;
+  const embedded = Boolean(embeddedClientId);
+  const initialView = searchParams.get(embedded ? "lens" : "view") as AnalyticsView | null;
   const [view, setView] = useState<AnalyticsView>(initialView && initialView in viewLabels ? initialView : "overview");
   const [from, setFrom] = useState(searchParams.get("from") ?? "");
   const [to, setTo] = useState(searchParams.get("to") ?? "");
-  const [preset, setPreset] = useState<"30" | "90" | "ytd" | "custom">(from ? "custom" : "30");
+  const initialPeriod = searchParams.get("period") as AnalyticsPeriod | null;
+  const [preset, setPreset] = useState<AnalyticsPeriod>(
+    from ? "custom" : embedded && initialPeriod ? initialPeriod : embedded ? "12m" : "30"
+  );
   const [trade, setTrade] = useState(searchParams.get("trade") ?? "");
   const [owner, setOwner] = useState(searchParams.get("owner") ?? "");
-  const [clientId, setClientId] = useState(searchParams.get("clientId") ?? "");
+  const [clientId, setClientId] = useState(embeddedClientId ?? searchParams.get("clientId") ?? "");
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -749,9 +765,20 @@ export function AnalyticsWorkspace() {
 
   useEffect(() => {
     if (!user || initialView) return;
+    if (embedded) return;
     const saved = window.localStorage.getItem(analyticsViewStorageKey) as AnalyticsView | null;
     setView(saved && saved in viewLabels ? saved : defaultViewForUser(user));
-  }, [initialView, user]);
+  }, [embedded, initialView, user]);
+
+  useEffect(() => {
+    if (!embeddedClientId) return;
+    setClientId(embeddedClientId);
+  }, [embeddedClientId]);
+
+  useEffect(() => {
+    if (!embedded || from || to) return;
+    applyPreset(preset);
+  }, [embedded, from, preset, to]);
 
   const params = useMemo(() => {
     const next = new URLSearchParams({ view });
@@ -763,9 +790,25 @@ export function AnalyticsWorkspace() {
   }, [clientId, from, owner, to, trade, view]);
 
   useEffect(() => {
+    if (embedded) {
+      const next = new URLSearchParams(window.location.search);
+      next.set("tab", "relationship");
+      next.set("lens", view);
+      next.set("period", preset);
+      next.delete("clientId");
+      if (preset === "custom") {
+        if (from) next.set("from", from);
+        if (to) next.set("to", to);
+      } else {
+        next.delete("from");
+        next.delete("to");
+      }
+      window.history.replaceState(null, "", `${window.location.pathname}?${next.toString()}`);
+      return;
+    }
     window.history.replaceState(null, "", `/statistics?${params.toString()}`);
     window.localStorage.setItem(analyticsViewStorageKey, view);
-  }, [params, view]);
+  }, [embedded, from, params, preset, to, view]);
 
   useEffect(() => {
     if (!user) return;
@@ -774,7 +817,18 @@ export function AnalyticsWorkspace() {
     setError("");
     apiRequest<AnalyticsResponse>(`/api/analytics?${params.toString()}`, { cache: "no-store", signal: controller.signal })
       .then((response) => {
-        setData(response);
+        setData(
+          preset === "all"
+            ? {
+                ...response,
+                kpis: response.kpis.map((kpi) => ({
+                  ...kpi,
+                  comparisonValue: undefined,
+                  deltaPercent: undefined
+                }))
+              }
+            : response
+        );
         setSelected(null);
         setDetails(null);
         if (!response.availableViews.includes(view)) setView(response.availableViews[0] ?? "overview");
@@ -785,7 +839,7 @@ export function AnalyticsWorkspace() {
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [params, refreshKey, user, view]);
+  }, [params, preset, refreshKey, user, view]);
 
   const loadDetails = useCallback(async (
     drilldown: AnalyticsDrilldown,
@@ -816,12 +870,22 @@ export function AnalyticsWorkspace() {
     }
   }, [direction, params, sort]);
 
-  function applyPreset(next: "30" | "90" | "ytd" | "custom") {
+  function applyPreset(next: AnalyticsPeriod) {
     setPreset(next);
     if (next === "custom") return;
     const today = localDate(workspace.timeZone);
     setTo(today);
-    setFrom(next === "30" ? shiftDate(today, -29) : next === "90" ? shiftDate(today, -89) : `${today.slice(0, 4)}-01-01`);
+    setFrom(
+      next === "30"
+        ? shiftDate(today, -29)
+        : next === "90"
+          ? shiftDate(today, -89)
+          : next === "12m"
+            ? shiftDate(today, -364)
+            : next === "all"
+              ? clientSince.slice(0, 10) || shiftDate(today, -364)
+              : `${today.slice(0, 4)}-01-01`
+    );
   }
 
   function selectDetail(drilldown: AnalyticsDrilldown) {
@@ -851,29 +915,33 @@ export function AnalyticsWorkspace() {
   if (authLoading || (loading && !data)) return <AnalyticsSkeleton />;
 
   return (
-    <main className="analytics-workspace">
-      <div className="analytics-aurora" aria-hidden="true"><i /><i /><i /></div>
+    <main className={embedded ? "analytics-workspace analytics-workspace-embedded" : "analytics-workspace"}>
+      {!embedded ? <div className="analytics-aurora" aria-hidden="true"><i /><i /><i /></div> : null}
       <div className="analytics-content">
-        <header className="analytics-hero">
+        {!embedded ? <header className="analytics-hero">
           <m.div initial={reduced ? false : { opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
             <span className="analytics-eyebrow"><Sparkles size={13} /> Pulse intelligence</span>
             <h1>Analytics</h1>
             <p>Company performance, from first request to final invoice.</p>
           </m.div>
           <div className="analytics-hero-meta"><span className="analytics-live-indicator"><i /> Live workspace data</span><button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading}><RefreshCw size={15} className={loading ? "is-spinning" : ""} /> Refresh</button></div>
-        </header>
+        </header> : null}
 
         <section className="analytics-command-bar" aria-label="Analytics controls">
-          <nav className="analytics-tabs" aria-label="Analytics views">
+          <nav className="analytics-tabs" aria-label="Analytics lenses" role="tablist">
             {(data?.availableViews ?? ["overview", "sales", "operations", "billing"]).map((item) => (
-              <button type="button" key={item} className={view === item ? "is-active" : ""} onClick={() => setView(item)}>
+              <button type="button" role="tab" aria-selected={view === item} key={item} className={view === item ? "is-active" : ""} onClick={() => setView(item)}>
                 {view === item ? <m.span layoutId="analytics-tab-indicator" className="analytics-tab-indicator" transition={{ type: "spring", bounce: 0.12, duration: reduced ? 0.1 : 0.38 }} /> : null}
-                <span>{viewLabels[item]}</span>
+                <span>{embedded && item === "operations" ? "Delivery" : viewLabels[item]}</span>
               </button>
             ))}
           </nav>
           <div className="analytics-periods" aria-label="Date range presets">
-            {(["30", "90", "ytd", "custom"] as const).map((item) => <button type="button" key={item} className={preset === item ? "is-active" : ""} onClick={() => applyPreset(item)}>{item === "30" ? "30D" : item === "90" ? "90D" : item === "ytd" ? "YTD" : "Custom"}</button>)}
+            {(embedded ? ["30", "90", "12m", "all", "custom"] as const : ["30", "90", "ytd", "custom"] as const).map((item) => (
+              <button type="button" aria-pressed={preset === item} key={item} className={preset === item ? "is-active" : ""} onClick={() => applyPreset(item)}>
+                {item === "30" ? "30D" : item === "90" ? "90D" : item === "12m" ? "12M" : item === "all" ? "All" : item === "ytd" ? "YTD" : "Custom"}
+              </button>
+            ))}
           </div>
         </section>
 
@@ -884,9 +952,9 @@ export function AnalyticsWorkspace() {
           <div className="analytics-filter-fields" id="analytics-filter-fields" hidden={!filtersOpen}>
             <label><span>Trade</span><select value={trade} onChange={(event) => setTrade(event.target.value)}><option value="">All trades</option>{data?.filters.trades.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <label><span>Owner</span><select value={owner} onChange={(event) => setOwner(event.target.value)}><option value="">All owners</option>{data?.filters.owners.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label><span>Client</span><select value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">All clients</option>{data?.filters.clients.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            {!embedded ? <label><span>Client</span><select value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">All clients</option>{data?.filters.clients.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label> : null}
             {preset === "custom" ? <><label><span>From</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label><span>To</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label></> : null}
-            <small><CalendarDays size={13} /><span>{data?.range.label ?? "Latest 30 days"}</span><em>vs {data?.range.comparisonLabel}</em></small>
+            <small><CalendarDays size={13} /><span>{data?.range.label ?? "Selected period"}</span>{preset !== "all" ? <em>vs {data?.range.comparisonLabel}</em> : <em>All recorded history</em>}</small>
           </div>
         </section>
 
@@ -894,7 +962,7 @@ export function AnalyticsWorkspace() {
         {data?.dataQuality.message ? <div className="analytics-quality"><Clock3 size={15} /><span>{data.dataQuality.message}</span><strong>{data.dataQuality.exactLifecycleEvents} exact · {data.dataQuality.estimatedLifecycleEvents} estimated</strong></div> : null}
 
         <section className="analytics-kpi-grid" aria-label={`${viewLabels[view]} key performance indicators`}>
-          {data?.kpis.map((item, index) => <KpiCard key={item.id} kpi={item} index={index} selected={selected?.metric === item.metric && !selected.segment && !selected.bucketFrom} reduced={reduced} popoverOpen={openKpi === item.id} onTogglePopover={() => setOpenKpi((current) => current === item.id ? null : item.id)} onSelect={() => selectDetail({ metric: item.metric, label: item.label })} />)}
+          {data?.kpis.map((item, index) => <KpiCard key={item.id} kpi={item} index={index} selected={selected?.metric === item.metric && !selected.segment && !selected.bucketFrom} reduced={reduced} popoverOpen={openKpi === item.id} allTime={preset === "all"} onTogglePopover={() => setOpenKpi((current) => current === item.id ? null : item.id)} onSelect={() => selectDetail({ metric: item.metric, label: item.label })} />)}
         </section>
 
         <div className="analytics-chart-grid">

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  clientHistoryQuerySchema,
+  createClientActivitySchema,
   mergeClientsSchema,
   previewClientMergeSchema,
   updateClientSchema
@@ -57,5 +59,65 @@ describe("client consolidation contracts", () => {
       aliases: [" Acme PR ", "Acme Caribbean"]
     });
     assert.deepEqual(parsed.aliases, ["Acme PR", "Acme Caribbean"]);
+  });
+
+  it("accepts manual aliases and rejects ambiguous alias payloads", () => {
+    const parsed = updateClientSchema.parse({
+      manualAliases: [" Acme PR ", "Acme Caribbean"]
+    });
+    assert.deepEqual(parsed.manualAliases, ["Acme PR", "Acme Caribbean"]);
+    assert.equal(
+      updateClientSchema.safeParse({
+        aliases: ["Legacy"],
+        manualAliases: ["Manual"]
+      }).success,
+      false
+    );
+  });
+
+  it("validates focused activity creation and bounded history queries", () => {
+    assert.deepEqual(
+      createClientActivitySchema.parse({
+        type: "Meeting",
+        title: " Quarterly review ",
+        detail: " Discussed delivery priorities. "
+      }),
+      {
+        type: "Meeting",
+        title: "Quarterly review",
+        detail: "Discussed delivery priorities.",
+        actor: "Alex Morgan"
+      }
+    );
+    assert.equal(
+      createClientActivitySchema.safeParse({
+        type: "Import",
+        title: "Unsupported user activity"
+      }).success,
+      false
+    );
+    assert.deepEqual(
+      clientHistoryQuerySchema.parse({
+        q: " owner ",
+        type: "Client",
+        from: "2026-01-01",
+        to: "2026-07-30",
+        take: "20"
+      }),
+      {
+        q: "owner",
+        type: "Client",
+        from: "2026-01-01",
+        to: "2026-07-30",
+        take: 20
+      }
+    );
+    assert.equal(
+      clientHistoryQuerySchema.safeParse({
+        from: "2026-08-01",
+        to: "2026-07-30"
+      }).success,
+      false
+    );
   });
 });

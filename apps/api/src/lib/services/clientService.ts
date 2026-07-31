@@ -12,6 +12,8 @@ import type {
 import type {
   ParsedClientContactInput as ClientContactInput,
   ParsedClientSiteInput as ClientSiteInput,
+  ClientHistoryQuery,
+  ClientHistoryResponse,
   CreateClientActivityInput,
   CreateClientInput,
   ImportClientInfoInput,
@@ -46,7 +48,8 @@ const clientInclude = {
   activities: {
     orderBy: {
       createdAt: "desc"
-    }
+    },
+    take: 5
   },
   aliases: {
     orderBy: {
@@ -528,9 +531,31 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
 }
 
 export async function updateClient(id: string, input: UpdateClientInput, user?: AuthenticatedUser) {
-  await getClientOrThrow(id);
+  const previous = await getClientOrThrow(id);
 
   const now = new Date();
+  const aliasUpdate = input.manualAliases !== undefined || input.aliases !== undefined;
+  const changeDetails = [
+    input.status !== undefined && input.status !== previous.status
+      ? `Status: ${previous.status} → ${input.status}`
+      : "",
+    input.accountOwner !== undefined && input.accountOwner !== previous.accountOwner
+      ? `Account owner: ${previous.accountOwner || "Unassigned"} → ${input.accountOwner || "Unassigned"}`
+      : "",
+    input.displayName !== undefined && input.displayName !== previous.displayName
+      ? `Display name: ${previous.displayName} → ${input.displayName}`
+      : "",
+    aliasUpdate ? "Alternative names updated." : ""
+  ].filter(Boolean);
+  const historyType = aliasUpdate ? "Alias" : "Client";
+  const historyTitle = aliasUpdate
+    ? "Alternative names updated"
+    : input.status !== undefined && input.status !== previous.status
+      ? "Client status changed"
+      : input.accountOwner !== undefined && input.accountOwner !== previous.accountOwner
+        ? "Account owner changed"
+        : "Client profile updated";
+  const historyDetail = changeDetails.join(" · ") || "Client account fields were updated.";
   const client = await prisma.client.update({
     where: { id },
     data: {
@@ -600,9 +625,9 @@ export async function updateClient(id: string, input: UpdateClientInput, user?: 
       lastActivityAt: now,
       activities: {
         create: {
-          type: "Client",
-          title: "Client updated",
-          detail: "Client account fields were updated.",
+          type: historyType,
+          title: historyTitle,
+          detail: historyDetail,
           actor: user?.name ?? "Pulse System",
           createdAt: now
         }
@@ -611,7 +636,23 @@ export async function updateClient(id: string, input: UpdateClientInput, user?: 
     include: clientInclude
   });
 
-  if (input.aliases !== undefined) {
+  if (input.manualAliases !== undefined) {
+    const aliases = Array.from(
+      new Map(
+        input.manualAliases
+          .map((name) => ({ name: name.trim(), normalizedName: normalizeClientIdentity(name) }))
+          .filter((alias) => alias.normalizedName && alias.normalizedName !== normalizeClientIdentity(client.displayName))
+          .map((alias) => [alias.normalizedName, alias])
+      ).values()
+    );
+    await prisma.$transaction([
+      prisma.clientAlias.deleteMany({ where: { clientId: id, source: "Manual" } }),
+      prisma.clientAlias.createMany({
+        data: aliases.map((alias) => ({ clientId: id, ...alias, source: "Manual" })),
+        skipDuplicates: true
+      })
+    ]);
+  } else if (input.aliases !== undefined) {
     const aliases = Array.from(
       new Map(
         input.aliases
@@ -640,6 +681,62 @@ export async function updateClient(id: string, input: UpdateClientInput, user?: 
   });
 
   return getClientById(client.id);
+}
+
+export async function listClientHistory(
+  id: string,
+  query: ClientHistoryQuery
+): Promise<ClientHistoryResponse> {
+  const requested = await prisma.client.findFirst({
+    where: { OR: [{ id }, { clientNumber: id }] },
+    select: { id: true, archivedAt: true, mergedIntoId: true }
+  });
+  if (!requested || (requested.archivedAt && !requested.mergedIntoId)) {
+    throw new Error("CLIENT_NOT_FOUND");
+  }
+  const clientId = requested.mergedIntoId ?? requested.id;
+  const createdAt = {
+    ...(query.from ? { gte: new Date(`${query.from}T00:00:00.000Z`) } : {}),
+    ...(query.to ? { lte: new Date(`${query.to}T23:59:59.999Z`) } : {})
+  };
+  const where: Prisma.ClientActivityWhereInput = {
+    clientId,
+    ...(query.type ? { type: query.type } : {}),
+    ...(Object.keys(createdAt).length ? { createdAt } : {}),
+    ...(query.q
+      ? {
+          OR: [
+            { title: { contains: query.q, mode: "insensitive" } },
+            { detail: { contains: query.q, mode: "insensitive" } },
+            { actor: { contains: query.q, mode: "insensitive" } },
+            { type: { contains: query.q, mode: "insensitive" } }
+          ]
+        }
+      : {})
+  };
+  const [total, rows] = await Promise.all([
+    prisma.clientActivity.count({ where }),
+    prisma.clientActivity.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: query.take + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
+    })
+  ]);
+  const hasMore = rows.length > query.take;
+  const events = rows.slice(0, query.take).map((activity) => ({
+    id: activity.id,
+    type: activity.type,
+    title: activity.title,
+    detail: activity.detail ?? "",
+    actor: activity.actor,
+    createdAt: activity.createdAt.toISOString()
+  }));
+  return {
+    events,
+    total,
+    ...(hasMore && events.length ? { nextCursor: events.at(-1)?.id } : {})
+  };
 }
 
 const mergeClientInclude = {
@@ -1387,7 +1484,9 @@ export async function removeClientContact(id: string, contactId: string, user?: 
 
 export async function addClientActivity(
   id: string,
-  input: CreateClientActivityInput,
+  input: Omit<CreateClientActivityInput, "type"> & {
+    type: CreateClientActivityInput["type"] | "Import";
+  },
   user?: AuthenticatedUser
 ) {
   await getClientOrThrow(id);
