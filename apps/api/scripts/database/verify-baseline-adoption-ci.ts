@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { Client } from "pg";
@@ -8,6 +8,7 @@ import { Client } from "pg";
 const apply = process.argv.includes("--apply");
 const targetDatabase = process.env.PULSE_CI_PREBASELINE_DATABASE?.trim() || "pulse_prebaseline_ci";
 const safeDatabaseName = /^[a-z][a-z0-9_]{5,62}$/;
+const migrationsDirectory = resolve(process.cwd(), "prisma/migrations");
 
 function required(name: string) {
   const value = process.env[name]?.trim();
@@ -206,7 +207,7 @@ async function main() {
   try {
     await migration.query("SET search_path = pulse, pg_catalog");
     const baselineSql = readFileSync(
-      resolve(process.cwd(), "prisma/migrations/202607210001_pulse_0_1_baseline/migration.sql"),
+      resolve(migrationsDirectory, "202607210001_pulse_0_1_baseline/migration.sql"),
       "utf8"
     );
     await migration.query(baselineSql);
@@ -244,7 +245,12 @@ async function main() {
         EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'pulse' AND table_name = 'ClientSite' AND column_name = 'isPlaceholder') AS placeholder_column
     `);
     const migrations = ledger.rows.map((row) => row.migration_name);
-    const expectedMigrations = ["202607210001_pulse_0_1_baseline", "202607210002_enterprise_security"];
+    // Derive this list from disk so adding a Prisma migration needs no matching CI maintenance.
+    const expectedMigrations = readdirSync(migrationsDirectory, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    // Exact equality catches missing, unexpected, and out-of-order applied migrations.
     const valid = beforeDigest === afterDigest &&
       JSON.stringify(migrations) === JSON.stringify(expectedMigrations) &&
       obsolete.rows[0]?.constraint_exists === false &&
@@ -257,6 +263,7 @@ async function main() {
       targetDatabase,
       preservedFixtureDigest: afterDigest,
       migrations,
+      expectedMigrations,
       obsoleteCompatibilityObjectsRemoved: !obsolete.rows[0]?.constraint_exists && !obsolete.rows[0]?.index_exists,
       enterpriseSchemaPresent: Number(enterprise.rows[0]?.security_tables ?? 0) === 4
     }, null, 2));
