@@ -10,6 +10,12 @@ For a local development environment, use the
 [Local development section in the repository README](../../README.md#local-development)
 instead.
 
+Windows operators should normally use the versioned `.exe` and the
+[Windows installer guide](./windows-installer.md). That path pulls immutable
+GHCR image digests and does not require this repository, Node.js, npm, or Git.
+The source-driven procedure below remains the advanced Linux/server path and
+the reference for controlled manual deployments.
+
 ## Production prerequisites
 
 Prepare these before an installation or update:

@@ -15,9 +15,10 @@ Pulse 0.1 separates development and production deliberately:
 - `compose.yaml` is development-only and retains source bind mounts/hot reload.
 - `compose.production.yaml` builds immutable production API/web images and exposes only Caddy ports.
 - `compose.maintenance.yaml` contains explicit role, migration, bootstrap, audit, backup, and restore jobs.
+- `compose.release.yaml` is the installer-only digest-pinned image overlay; it never builds source.
 - `compose.ci.yaml` is an isolated release-gate environment.
 
-Pulse 0.1 deploys into a new release database; the current development database is not promoted. Production operators should start with the [production setup and future updates guide](docs/production/setup-and-updates.md). Detailed procedures remain in the [production runbook](docs/production/runbook.md), [first-run and import guide](docs/production/initial-setup.md), [operator checklist](docs/production/operator-checklist.md), [migration guide](docs/production/migrations.md), and [rollback guide](docs/production/rollback.md). Never run `db:setup`, `prisma db push`, `prisma migrate reset`, `db:reset:demo`, or migrations in `legacy-migrations-pre-0.1` against a database whose data matters.
+Windows operators should download `Pulse-Setup-0.1.0.exe` from the GitHub release and follow the [Windows installer guide](docs/production/windows-installer.md); source ZIP/TAR files are developer assets. The installer requires Docker but not Node.js, npm, Git, or source code. Advanced Linux/source operators should use the [production setup and future updates guide](docs/production/setup-and-updates.md). Detailed procedures remain in the [production runbook](docs/production/runbook.md), [first-run and import guide](docs/production/initial-setup.md), [operator checklist](docs/production/operator-checklist.md), [migration guide](docs/production/migrations.md), and [rollback guide](docs/production/rollback.md). Never run `db:setup`, `prisma db push`, `prisma migrate reset`, `db:reset:demo`, or migrations in `legacy-migrations-pre-0.1` against a database whose data matters.
 
 ## Local development
 

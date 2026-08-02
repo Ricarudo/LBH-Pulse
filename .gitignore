@@ -33,3 +33,6 @@ pulse-local-ca.crt
 
 .DS_Store
 ._*
+
+installer/windows/generated/
+installer/windows/output/

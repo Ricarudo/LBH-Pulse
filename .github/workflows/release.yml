@@ -1,0 +1,308 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      bootstrap_packages:
+        description: Publish commit-SHA images so an owner can make the GHCR packages public
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      minor: ${{ steps.version.outputs.minor }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            [[ "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" == "${GITHUB_SHA}" ]] || { echo "Tag does not point to the checked-out commit." >&2; exit 1; }
+            data=$(node scripts/release/validate-version.mjs "${GITHUB_REF_NAME}")
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            # JavaScript template literals are intentionally quoted from Bash.
+            # shellcheck disable=SC2016
+            data=$(node -e 'const p=require("./package.json"); const [a,b]=p.version.split("."); process.stdout.write(JSON.stringify({version:p.version,minor:`${a}.${b}`}))')
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$(jq -r .version <<<"$data")" >> "$GITHUB_OUTPUT"
+          echo "minor=$(jq -r .minor <<<"$data")" >> "$GITHUB_OUTPUT"
+
+  release-gates:
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/ci.yml
+
+  resolve-bases:
+    needs: validate
+    if: github.ref_type == 'tag' || inputs.bootstrap_packages
+    runs-on: ubuntu-latest
+    outputs:
+      node: ${{ steps.resolve.outputs.node }}
+      minio_mc: ${{ steps.resolve.outputs.minio_mc }}
+      clamav: ${{ steps.resolve.outputs.clamav }}
+      caddy: ${{ steps.resolve.outputs.caddy }}
+      alpine: ${{ steps.resolve.outputs.alpine }}
+    steps:
+      - id: resolve
+        name: Resolve linux/amd64 build bases and third-party services
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p base-digests
+          resolve() {
+            key=$1
+            image=$2
+            docker pull --platform linux/amd64 "$image"
+            reference=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+            echo "$key=$reference" >> "$GITHUB_OUTPUT"
+          }
+          resolve node node:24-alpine
+          resolve minio_mc minio/mc:RELEASE.2025-04-16T18-13-26Z
+          resolve clamav clamav/clamav:stable
+          resolve caddy caddy:2.11.4-alpine
+          resolve alpine alpine:3.22.1
+          resolve postgres postgres:16.14-alpine
+          resolve minio minio/minio:RELEASE.2025-04-22T22-12-26Z
+          printf '{"component":"postgres","reference":"%s"}\n' "$(grep '^postgres=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)" > base-digests/postgres.json
+          printf '{"component":"minio","reference":"%s"}\n' "$(grep '^minio=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)" > base-digests/minio.json
+          printf '{"component":"minioMc","reference":"%s"}\n' "$(grep '^minio_mc=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)" > base-digests/minioMc.json
+          jq -n \
+            --arg node "$(grep '^node=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)" \
+            --arg minioMc "$(grep '^minio_mc=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)" \
+            --arg clamav "$(grep '^clamav=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)" \
+            --arg caddy "$(grep '^caddy=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)" \
+            --arg alpine "$(grep '^alpine=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)" \
+            '{node:$node,minioMc:$minioMc,clamav:$clamav,caddy:$caddy,alpine:$alpine}' > base-digests/build-bases.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: base-digests
+          path: base-digests/*.json
+          if-no-files-found: error
+
+  publish-images:
+    needs: [validate, resolve-bases]
+    if: github.ref_type == 'tag' || inputs.bootstrap_packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: api
+            image: pulse-api
+            file: apps/api/Dockerfile
+            target: production
+            suffix: ""
+          - component: web
+            image: pulse-web
+            file: apps/web/Dockerfile
+            target: production
+            suffix: ""
+          - component: maintenance
+            image: pulse-maintenance
+            file: apps/api/Dockerfile
+            target: maintenance
+            suffix: ""
+          - component: minioInit
+            image: pulse-minio-init
+            file: docker/minio/Dockerfile
+            target: ""
+            suffix: ""
+          - component: clamav
+            image: pulse-clamav
+            file: docker/clamav/Dockerfile
+            target: ""
+            suffix: ""
+          - component: backupCrypto
+            image: pulse-backup-crypto
+            file: docker/backup/Dockerfile
+            target: ""
+            suffix: ""
+          - component: gatewayInternal
+            image: pulse-gateway
+            file: docker/caddy/Dockerfile
+            target: internal
+            suffix: -internal
+          - component: gatewayPublic
+            image: pulse-gateway
+            file: docker/caddy/Dockerfile
+            target: public
+            suffix: -public
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse semantic-tag replacement
+        if: needs.validate.outputs.release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tag in '${{ needs.validate.outputs.version }}${{ matrix.suffix }}' '${{ needs.validate.outputs.minor }}${{ matrix.suffix }}'; do
+            reference="ghcr.io/ricarudo/${{ matrix.image }}:$tag"
+            if docker pull --platform linux/amd64 "$reference" >/dev/null 2>&1; then
+              revision=$(docker image inspect "$reference" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+              if [[ "$revision" != "${{ github.sha }}" ]]; then
+                echo "Refusing to replace existing semantic tag $reference from revision $revision." >&2
+                exit 1
+              fi
+            fi
+          done
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          build-args: |
+            NODE_BASE_IMAGE=${{ needs.resolve-bases.outputs.node }}
+            MINIO_MC_IMAGE=${{ needs.resolve-bases.outputs.minio_mc }}
+            CLAMAV_BASE_IMAGE=${{ needs.resolve-bases.outputs.clamav }}
+            CADDY_BASE_IMAGE=${{ needs.resolve-bases.outputs.caddy }}
+            ALPINE_BASE_IMAGE=${{ needs.resolve-bases.outputs.alpine }}
+          push: true
+          tags: |
+            ghcr.io/ricarudo/${{ matrix.image }}:sha-${{ github.sha }}${{ matrix.suffix }}
+            ${{ needs.validate.outputs.release == 'true' && format('ghcr.io/ricarudo/{0}:{1}{2}', matrix.image, needs.validate.outputs.version, matrix.suffix) || '' }}
+            ${{ needs.validate.outputs.release == 'true' && format('ghcr.io/ricarudo/{0}:{1}{2}', matrix.image, needs.validate.outputs.minor, matrix.suffix) || '' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+            org.opencontainers.image.description=Pulse ${{ matrix.component }} production image
+      - shell: bash
+        run: |
+          mkdir -p digest
+          printf '{"component":"%s","reference":"ghcr.io/ricarudo/%s@%s"}\n' \
+            '${{ matrix.component }}' '${{ matrix.image }}' '${{ steps.build.outputs.digest }}' \
+            > 'digest/${{ matrix.component }}.json'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.component }}
+          path: digest/*.json
+          if-no-files-found: error
+
+  release-bundle:
+    needs: [validate, release-gates, publish-images]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: release-digests
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: base-digests
+          path: release-digests
+      - run: >-
+          node scripts/release/create-release-manifest.mjs
+          --version '${{ needs.validate.outputs.version }}'
+          --commit '${{ github.sha }}'
+          --input release-digests
+          --build-bases release-digests/build-bases.json
+          --output release-bundle
+      - name: Prove anonymous digest pulls
+        shell: bash
+        run: |
+          docker logout ghcr.io || true
+          jq -r '.images[]' release-bundle/release-manifest.json | while read -r image; do docker pull "$image"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: release-bundle/release-manifest.json
+
+  build-installer:
+    needs: [validate, release-bundle]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: installer/windows/generated
+      - name: Install pinned PowerShell quality tools
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
+      - name: Run PowerShell quality checks
+        shell: pwsh
+        run: |
+          ./installer/windows/test-installation.ps1 -RepositoryRoot $PWD
+          $issues = @(Invoke-ScriptAnalyzer -Path ./installer/windows -Recurse -Severity Error,Warning)
+          $issues | Format-Table -AutoSize
+          $errors = @($issues | Where-Object Severity -eq Error)
+          if ($errors) { throw "PSScriptAnalyzer reported $($errors.Count) error(s)." }
+      - name: Install pinned Inno Setup compiler
+        shell: pwsh
+        run: choco install innosetup --version=6.7.3 --yes --no-progress --require-checksums
+      - name: Build installer
+        shell: pwsh
+        env:
+          PULSE_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          PULSE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+          PULSE_SIGNING_TIMESTAMP_URL: ${{ vars.WINDOWS_SIGNING_TIMESTAMP_URL }}
+        run: |
+          $arguments = @(
+            "/DAppVersion=${{ needs.validate.outputs.version }}",
+            "/DSourceRoot=$PWD"
+          )
+          if ($env:PULSE_SIGNING_CERTIFICATE_BASE64) {
+            $signer = Join-Path $PWD "installer\windows\sign-installer.ps1"
+            $signCommand = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File $q{0}$q -Installer $f' -f $signer
+            $arguments += "/DPulseSign=1", "/Spulse=$signCommand"
+          } else {
+            Write-Warning "No signing certificate is configured; publishing an unsigned installer."
+          }
+          $arguments += "installer/windows/pulse-setup.iss"
+          & '${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe' @arguments
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
+      - name: Create SHA-256 checksum
+        shell: pwsh
+        run: |
+          $file = Get-Item "installer/windows/output/Pulse-Setup-${{ needs.validate.outputs.version }}.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+          "$hash  $($file.Name)" | Set-Content -Encoding ascii "$($file.FullName).sha256"
+      - name: Publish draft release and assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PULSE_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+        run: |
+          $notes = Join-Path $env:RUNNER_TEMP "pulse-release-notes.md"
+          Copy-Item docs/releases/0.1.0.md $notes
+          if (-not $env:PULSE_SIGNING_CERTIFICATE_BASE64) {
+            Add-Content $notes "`n> **Signing notice:** This installer is unsigned. Verify its SHA-256 checksum before running it.`n"
+          }
+          if (gh release view "${{ github.ref_name }}" *> $null) {
+            gh release edit "${{ github.ref_name }}" --draft --title "Pulse ${{ needs.validate.outputs.version }}" --notes-file $notes
+          } else {
+            gh release create "${{ github.ref_name }}" --verify-tag --draft --title "Pulse ${{ needs.validate.outputs.version }}" --notes-file $notes
+          }
+          gh release upload "${{ github.ref_name }}" "installer/windows/output/Pulse-Setup-${{ needs.validate.outputs.version }}.exe" "installer/windows/output/Pulse-Setup-${{ needs.validate.outputs.version }}.exe.sha256" --clobber
+          gh release edit "${{ github.ref_name }}" --draft=false

@@ -1,0 +1,41 @@
+# Release-only image overlay. The installer writes every value from the
+# signed/checksummed release manifest; source deployments omit this file.
+services:
+  postgres:
+    image: ${PULSE_POSTGRES_IMAGE:?Released PostgreSQL image digest is required}
+  minio:
+    image: ${PULSE_MINIO_IMAGE:?Released MinIO image digest is required}
+  minio-init:
+    image: ${PULSE_MINIO_INIT_IMAGE:?Released MinIO initializer digest is required}
+  clamav:
+    image: ${PULSE_CLAMAV_IMAGE:?Released ClamAV image digest is required}
+  api:
+    image: ${PULSE_API_IMAGE:?Released API image digest is required}
+  web:
+    image: ${PULSE_WEB_IMAGE:?Released web image digest is required}
+  gateway:
+    image: ${PULSE_GATEWAY_IMAGE:?Released gateway image digest is required}
+  db-roles:
+    image: ${PULSE_MAINTENANCE_IMAGE:?Released maintenance image digest is required}
+  migrate:
+    image: ${PULSE_MAINTENANCE_IMAGE:?Released maintenance image digest is required}
+  reference-data:
+    image: ${PULSE_MAINTENANCE_IMAGE:?Released maintenance image digest is required}
+  db-role-verify:
+    image: ${PULSE_MAINTENANCE_IMAGE:?Released maintenance image digest is required}
+  data-integrity:
+    image: ${PULSE_MAINTENANCE_IMAGE:?Released maintenance image digest is required}
+  baseline:
+    image: ${PULSE_MAINTENANCE_IMAGE:?Released maintenance image digest is required}
+  bootstrap-admin:
+    image: ${PULSE_MAINTENANCE_IMAGE:?Released maintenance image digest is required}
+  credential-containment:
+    image: ${PULSE_MAINTENANCE_IMAGE:?Released maintenance image digest is required}
+  minio-backup:
+    image: ${PULSE_MINIO_MC_IMAGE:?Released MinIO client image digest is required}
+  minio-restore:
+    image: ${PULSE_MINIO_MC_IMAGE:?Released MinIO client image digest is required}
+  backup-encrypt:
+    image: ${PULSE_BACKUP_CRYPTO_IMAGE:?Released backup crypto image digest is required}
+  backup-decrypt:
+    image: ${PULSE_BACKUP_CRYPTO_IMAGE:?Released backup crypto image digest is required}

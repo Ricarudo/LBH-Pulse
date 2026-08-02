@@ -1,4 +1,5 @@
-FROM node:24-alpine AS workspace-deps
+ARG NODE_BASE_IMAGE=node:24-alpine
+FROM ${NODE_BASE_IMAGE} AS workspace-deps
 
 WORKDIR /workspace
 
@@ -45,7 +46,7 @@ RUN npm run build -w @pulse/contracts \
 USER node
 CMD ["npm", "run", "db:baseline:preview", "-w", "@pulse/api"]
 
-FROM node:24-alpine AS production-deps
+FROM ${NODE_BASE_IMAGE} AS production-deps
 
 WORKDIR /workspace
 
@@ -55,7 +56,7 @@ COPY apps/web/package.json ./apps/web/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 RUN npm ci --omit=dev -w @pulse/contracts -w @pulse/api
 
-FROM node:24-alpine AS production
+FROM ${NODE_BASE_IMAGE} AS production
 
 WORKDIR /workspace
 ENV NODE_ENV=production
