@@ -107,6 +107,7 @@ services:
   minio-backup:
     profiles: ["backup"]
     image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    user: "${PULSE_BACKUP_CONTAINER_USER:-0:0}"
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -132,6 +133,7 @@ services:
   minio-restore:
     profiles: ["restore"]
     image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    user: "${PULSE_BACKUP_CONTAINER_USER:-0:0}"
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
