@@ -24,13 +24,12 @@ jobs:
             [[ "$visibility" == "public" ]] || { echo "$package is not public before cleanup" >&2; exit 1; }
 
             if [[ "$package" == "pulse-gateway" ]]; then
-              tag_pattern='^(0\.1\.0|0\.1)-(internal|public)$'
+              version_filter='.[] | select(any(.metadata.container.tags[]; . == "0.1.0-internal" or . == "0.1-internal" or . == "0.1.0-public" or . == "0.1-public")) | .id'
             else
-              tag_pattern='^(0\.1\.0|0\.1)$'
+              version_filter='.[] | select(any(.metadata.container.tags[]; . == "0.1.0" or . == "0.1")) | .id'
             fi
 
-            version_ids=$(gh api --paginate "$endpoint/versions?per_page=100" \
-              --jq ".[] | select(any(.metadata.container.tags[]; test(\"$tag_pattern\"))) | .id")
+            version_ids=$(gh api --paginate "$endpoint/versions?per_page=100" --jq "$version_filter")
             [[ -n "$version_ids" ]] || { echo "No matching release version found for $package" >&2; exit 1; }
             while IFS= read -r version_id; do
               gh api --method DELETE "$endpoint/versions/$version_id"
