@@ -163,6 +163,7 @@ services:
         ALPINE_BASE_IMAGE: ${BACKUP_CRYPTO_BASE_IMAGE:-alpine:3.22.1}
     entrypoint: ["age"]
     command: ["--version"]
+    user: "${PULSE_BACKUP_CONTAINER_USER:-0:0}"
     network_mode: none
     read_only: true
     tmpfs: [/tmp]
@@ -176,6 +177,7 @@ services:
     image: pulse-backup-crypto:${PULSE_RELEASE_TAG:?Release tag is required}
     entrypoint: ["age"]
     command: ["--version"]
+    user: "${PULSE_BACKUP_CONTAINER_USER:-0:0}"
     network_mode: none
     read_only: true
     tmpfs: [/tmp]

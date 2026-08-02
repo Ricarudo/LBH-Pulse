@@ -25,6 +25,8 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 export PULSE_BACKUP_ARCHIVE_DIR="$validation_dir"
+# Match the host owner so capability-dropped crypto containers can use this private directory.
+export PULSE_BACKUP_CONTAINER_USER="$(id -u):$(id -g)"
 docker compose -f compose.production.yaml -f compose.maintenance.yaml \
   --env-file "$env_file" --profile backup run --rm --no-deps -T \
   --entrypoint age-keygen backup-encrypt -o /archives/age-identity.txt >/dev/null 2>&1
