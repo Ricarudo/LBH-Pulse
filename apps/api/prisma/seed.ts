@@ -6,6 +6,7 @@ import {
   type Item,
   type Project
 } from "../src/generated/prisma/client";
+import { reserveRecordNumberSequence } from "../src/lib/services/recordNumberService";
 import { ubiquitiCatalogItems } from "./ubiquiti-catalog";
 
 const adapter = new PrismaPg(
@@ -1734,6 +1735,24 @@ async function main() {
       .filter((project): project is Project => project !== null)
       .map((project) => [project.projectNumber, project])
   );
+
+  // Demo records bypass runtime allocation, so reserve their canonical numbers explicitly.
+  const demoSequenceDate = new Date("2026-01-01T00:00:00.000Z");
+  await prisma.$transaction(async (tx) => {
+    await reserveRecordNumberSequence(
+      tx,
+      "request",
+      sampleRequests.map((request) => request.requestNumber),
+      demoSequenceDate
+    );
+    await reserveRecordNumberSequence(tx, "quote", [quote.quoteNumber], demoSequenceDate);
+    await reserveRecordNumberSequence(
+      tx,
+      "project",
+      projectSeeds.map(([projectNumber]) => projectNumber),
+      demoSequenceDate
+    );
+  });
 
   const invoiceSeeds: Array<[
     invoiceNumber: string,

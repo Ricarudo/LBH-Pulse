@@ -2682,7 +2682,7 @@ a {
   justify-content: flex-end;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1023px) {
   .client-merge-grid {
     grid-template-columns: 1fr;
   }
@@ -2692,7 +2692,7 @@ a {
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 639px) {
   .client-merge-backdrop {
     align-items: end;
     padding: 0;
