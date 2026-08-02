@@ -260,7 +260,7 @@ jobs:
           if ($errors) { throw "PSScriptAnalyzer reported $($errors.Count) error(s)." }
       - name: Install pinned Inno Setup compiler
         shell: pwsh
-        run: choco install innosetup --version=6.7.3 --yes --no-progress --require-checksums
+        run: choco install innosetup --version=6.7.1 --yes --no-progress --require-checksums
       - name: Build installer
         shell: pwsh
         env:

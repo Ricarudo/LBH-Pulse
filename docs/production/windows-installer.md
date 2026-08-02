@@ -12,7 +12,7 @@
 
 Docker Desktop is not installed by Pulse. Review the current [Docker Desktop Windows requirements](https://docs.docker.com/desktop/setup/install/windows-install/) and [Docker subscription terms](https://www.docker.com/legal/docker-subscription-service-agreement/) before organizational or commercial use. Docker Desktop is not supported on Windows Server; use a reviewed Linux server deployment for external or enterprise production.
 
-The release process uses Inno Setup 6.7.3. Review [Inno Setup licensing](https://jrsoftware.org/isorder.php) before commercial distribution.
+The release process uses Inno Setup 6.7.1. Review [Inno Setup licensing](https://jrsoftware.org/isorder.php) before commercial distribution.
 
 ## Install
 
@@ -105,7 +105,7 @@ GHCR packages must be public before a customer release. Run the release workflow
 Build locally after supplying a generated release manifest:
 
 ```powershell
-choco install innosetup --version=6.7.3 --require-checksums
+choco install innosetup --version=6.7.1 --require-checksums
 Copy-Item .\release-manifest.json .\installer\windows\generated\release-manifest.json
 & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
   /DAppVersion=0.1.0 /DSourceRoot="$PWD" .\installer\windows\pulse-setup.iss
