@@ -1,0 +1,42 @@
+name: Temporary Pulse package cleanup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  delete-failed-release-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete only Pulse 0.1.0 and 0.1 package versions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          packages=(pulse-api pulse-web pulse-maintenance pulse-minio-init pulse-clamav pulse-backup-crypto pulse-gateway)
+          for package in "${packages[@]}"; do
+            endpoint="/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}"
+            visibility=$(gh api "$endpoint" --jq '.visibility')
+            [[ "$visibility" == "public" ]] || { echo "$package is not public before cleanup" >&2; exit 1; }
+
+            if [[ "$package" == "pulse-gateway" ]]; then
+              tag_pattern='^(0\.1\.0|0\.1)-(internal|public)$'
+            else
+              tag_pattern='^(0\.1\.0|0\.1)$'
+            fi
+
+            version_ids=$(gh api --paginate "$endpoint/versions?per_page=100" \
+              --jq ".[] | select(any(.metadata.container.tags[]; test(\"$tag_pattern\"))) | .id")
+            [[ -n "$version_ids" ]] || { echo "No matching release version found for $package" >&2; exit 1; }
+            while IFS= read -r version_id; do
+              gh api --method DELETE "$endpoint/versions/$version_id"
+            done <<< "$version_ids"
+
+            visibility=$(gh api "$endpoint" --jq '.visibility')
+            [[ "$visibility" == "public" ]] || { echo "$package is not public after cleanup" >&2; exit 1; }
+            echo "$package: removed failed release version; visibility remains public"
+          done
