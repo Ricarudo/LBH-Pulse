@@ -4,6 +4,7 @@ set -eu
 cd /workspace
 
 npm run build -w @pulse/contracts
+npm run prisma:generate -w @pulse/api
 if NODE_ENV=production npx tsx apps/api/prisma/assert-demo-reset.ts >/dev/null 2>&1; then
   echo "Production demo-reset guard failed." >&2
   exit 1
