@@ -101,6 +101,50 @@ function Write-PulseLog {
   [IO.File]::AppendAllText((Join-Path $paths.Logs "installer.log"), "$line`r`n", (New-Object Text.UTF8Encoding($false)))
 }
 
+function Write-PulseProgress {
+  param(
+    [ValidateRange(0, 100)][int]$Percent,
+    [Parameter(Mandatory = $true)][string]$Status,
+    [string]$Root = "$env:ProgramData\LBH\Pulse"
+  )
+  Write-Progress -Id 1 -Activity "Pulse Setup" -Status $Status -PercentComplete $Percent
+  Write-Host ("Pulse Setup [{0,3}%] {1}" -f $Percent, $Status)
+  Write-PulseLog -Root $Root -Message ("Setup progress {0}%: {1}" -f $Percent, $Status)
+}
+
+function Complete-PulseProgress {
+  Write-Progress -Id 1 -Activity "Pulse Setup" -Completed
+}
+
+function Remove-PulseFailureReport {
+  param([string]$Root = "$env:ProgramData\LBH\Pulse")
+  $path = Join-Path (Get-PulsePaths -Root $Root).Logs "installer-error.txt"
+  if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+}
+
+function Write-PulseFailureReport {
+  param(
+    [Parameter(Mandatory = $true)][string]$Operation,
+    [Parameter(Mandatory = $true)][string]$Message,
+    [string]$Root = "$env:ProgramData\LBH\Pulse"
+  )
+  $paths = Get-PulsePaths -Root $Root
+  if (-not (Test-Path -LiteralPath $paths.Logs)) { [void](New-Item -ItemType Directory -Path $paths.Logs -Force) }
+  $reportPath = Join-Path $paths.Logs "installer-error.txt"
+  $lines = @(
+    "Pulse setup stopped before completion.",
+    "",
+    "Operation: $(Protect-PulseLogText $Operation)",
+    "Reason: $(Protect-PulseLogText $Message)",
+    "",
+    "No Pulse configuration or Docker data was automatically deleted.",
+    "A corrected installer can safely inspect this state and resume when appropriate.",
+    "Full sanitized log: $(Join-Path $paths.Logs 'installer.log')"
+  )
+  [IO.File]::WriteAllLines($reportPath, $lines, (New-Object Text.UTF8Encoding($false)))
+  return $reportPath
+}
+
 function Invoke-PulseCommand {
   param(
     [Parameter(Mandatory = $true)][string]$FilePath,
@@ -124,7 +168,9 @@ function Invoke-PulseCommand {
   if (-not $NoLog -and -not $Quiet -and $output.Trim()) { Write-PulseLog -Root $Root -Message $output.Trim() }
   if (-not $NoLog) { Write-PulseLog -Root $Root -Message "Stage '$Stage' exited with code $exitCode." }
   if ($exitCode -ne 0 -and -not $AllowFailure) {
-    throw "Stage '$Stage' failed with exit code $exitCode. See the sanitized installer log."
+    $message = "Stage '$Stage' failed with exit code $exitCode."
+    [void](Write-PulseFailureReport -Root $Root -Operation $Stage -Message $message)
+    throw "$message See the sanitized installer log."
   }
   [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
 }
@@ -176,6 +222,14 @@ function Read-PulseState {
   $path = (Get-PulsePaths -Root $Root).State
   if (-not (Test-Path -LiteralPath $path)) { return $null }
   Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+}
+
+function Get-PulseInstallationStatus {
+  param($State)
+  if (-not $State) { return $null }
+  $property = $State.PSObject.Properties["installationStatus"]
+  if ($property -and [string]$property.Value) { return [string]$property.Value }
+  return "initializing"
 }
 
 function Write-PulseState {

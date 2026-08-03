@@ -123,6 +123,21 @@ begin
     '" -AcmeEmail "' + Email + '" -BackupPath "' + BackupPage.Values[0] + '"' + Trust;
 end;
 
+procedure RaisePulseFailure(Operation: String);
+var
+  ErrorPath: String;
+  OpenResult: Integer;
+begin
+  ErrorPath := ExpandConstant('{app}\logs\installer-error.txt');
+  if FileExists(ErrorPath) then
+    Exec(ExpandConstant('{sys}\notepad.exe'), '"' + ErrorPath + '"',
+      ExpandConstant('{app}\logs'), SW_SHOW, ewNoWait, OpenResult);
+  RaiseException(Operation + ' stopped before completion.' + #13#10 + #13#10 +
+    'Existing configuration and Docker data were preserved.' + #13#10 +
+    'A concise error report has been opened when available.' + #13#10 +
+    'Full sanitized log: ' + ExpandConstant('{app}\logs\installer.log'));
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
@@ -132,10 +147,10 @@ begin
       if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
         '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\installer\update-pulse.ps1') + '" -Root "' + ExpandConstant('{app}') + '"',
         ExpandConstant('{app}'), SW_SHOW, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
-        RaiseException('Pulse update failed. Review the sanitized installer log.');
+        RaisePulseFailure('Pulse update');
     end else if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), PowerShellParameters,
       ExpandConstant('{app}'), SW_SHOW, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
-      RaiseException('Pulse installation failed. Review the sanitized installer log.');
+      RaisePulseFailure('Pulse installation');
   end;
 end;
 

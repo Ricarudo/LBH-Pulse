@@ -13,14 +13,8 @@ $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "Pulse.Install.psm1") -Force
 $paths = Get-PulsePaths -Root $Root
 $existingState = Read-PulseState -Root $Root
-$existingStatus = if ($existingState -and $existingState.PSObject.Properties["installationStatus"]) {
-  [string]$existingState.installationStatus
-} elseif ($existingState) {
-  # Installers released before this marker could not pass recovery-key generation, so their state is resumable partial state.
-  "initializing"
-} else {
-  $null
-}
+# Installers released before this marker could not pass recovery-key generation, so their state is resumable partial state.
+$existingStatus = Get-PulseInstallationStatus -State $existingState
 
 if ($existingState) {
   $Mode = [string]$existingState.mode
@@ -28,7 +22,10 @@ if ($existingState) {
 }
 
 try {
+  Remove-PulseFailureReport -Root $Root
+  Write-PulseProgress -Root $Root -Percent 5 -Status "Checking Windows and Docker prerequisites"
   & (Join-Path $PSScriptRoot "validate-prerequisites.ps1") -Mode $Mode -Hostname $Hostname -AllowOccupiedPorts:([bool]$existingState)
+  Write-PulseProgress -Root $Root -Percent 10 -Status "Preparing protected configuration and deployment files"
   Initialize-PulseDirectories -Paths $paths -BackupPath $BackupPath
   $payload = Join-Path $paths.Installer "payload\deployment"
   foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {
@@ -37,8 +34,12 @@ try {
 
   if ($existingState -and $existingStatus -eq "installed") {
     Write-PulseLog -Root $Root -Message "Existing Pulse $($existingState.version) installation detected; preserving configuration and data."
+    Write-PulseProgress -Root $Root -Percent 70 -Status "Repairing the existing Pulse services"
     [void](Invoke-PulseCompose -Root $Root -Arguments @("up", "-d", "--no-build", "--wait", "--wait-timeout", "360") -Stage "repair existing stack")
+    Write-PulseProgress -Root $Root -Percent 95 -Status "Verifying Pulse health"
     & (Join-Path $PSScriptRoot "test-installation.ps1") -Root $Root
+    Write-PulseProgress -Root $Root -Percent 100 -Status "Pulse repair completed"
+    Complete-PulseProgress
     exit 0
   }
 
@@ -57,9 +58,12 @@ try {
   # Keep secrets locked down while allowing only the installing account's Docker Desktop backend to use this bind mount.
   Protect-PulsePath -Path $paths.Recovery -AllowCurrentUser
 
+  Write-PulseProgress -Root $Root -Percent 20 -Status "Validating the release configuration"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "--profile", "backup", "config", "--quiet") -Stage "release configuration validation")
+  Write-PulseProgress -Root $Root -Percent 30 -Status "Downloading verified Pulse images"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "--profile", "backup", "pull", "postgres", "minio", "minio-init", "clamav", "api", "web", "gateway", "db-roles", "backup-encrypt", "minio-backup") -Stage "immutable image pull")
 
+  Write-PulseProgress -Root $Root -Percent 45 -Status "Preparing the encrypted-backup recovery key"
   if (-not (Test-Path -LiteralPath $paths.Identity)) {
     [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "backup", "run", "--rm", "--no-deps", "-T", "--entrypoint", "age-keygen", "backup-encrypt", "-o", "/archives/age-identity.txt") -Stage "recovery identity generation" -Quiet)
     $recipient = Invoke-PulseCompose -Root $Root -Arguments @("--profile", "backup", "run", "--rm", "--no-deps", "-T", "--entrypoint", "age-keygen", "backup-encrypt", "-y", "/archives/age-identity.txt") -Stage "recovery recipient derivation" -Quiet
@@ -69,7 +73,9 @@ try {
     Protect-PulsePath -Path $paths.Identity -AllowCurrentUser
   }
 
+  Write-PulseProgress -Root $Root -Percent 55 -Status "Starting the database, storage, and antivirus services"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "up", "-d", "--no-build", "--wait", "--wait-timeout", "360", "postgres", "minio", "clamav") -Stage "stateful infrastructure startup")
+  Write-PulseProgress -Root $Root -Percent 65 -Status "Provisioning database roles"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "db-roles") -Stage "database role preview")
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "db-roles", "npm", "run", "db:roles:apply", "-w", "@pulse/api") -Stage "database role apply")
   [void](Invoke-PulseCompose -Root $Root -Arguments @("up", "-d", "--no-build", "minio-init") -Stage "MinIO application identity provisioning")
@@ -77,9 +83,11 @@ try {
   if ($minioInitContainer -notmatch '^[a-f0-9]{12,64}$') { throw "The MinIO initializer container could not be identified." }
   $minioInitExit = (Invoke-PulseCommand -FilePath "docker" -Arguments @("wait", $minioInitContainer) -Root $Root -Stage "MinIO initializer completion" -Quiet).Output.Trim()
   if ($minioInitExit -ne "0") { throw "MinIO application identity provisioning failed with exit code $minioInitExit." }
+  Write-PulseProgress -Root $Root -Percent 75 -Status "Applying database migrations and reference data"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "migrate") -Stage "database migrations")
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "reference-data") -Stage "reference data")
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "db-role-verify") -Stage "runtime database role verification")
+  Write-PulseProgress -Root $Root -Percent 85 -Status "Starting the Pulse application"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("up", "-d", "--no-build", "--wait", "--wait-timeout", "360") -Stage "Pulse application startup")
 
   if ($Mode -eq "internal") {
@@ -98,12 +106,17 @@ try {
     }
   }
 
+  Write-PulseProgress -Root $Root -Percent 95 -Status "Running HTTPS and service health checks"
   & (Join-Path $PSScriptRoot "test-installation.ps1") -Root $Root
   $state = Read-PulseState -Root $Root
   $state | Add-Member -NotePropertyName "installationStatus" -NotePropertyValue "installed" -Force
   Write-PulseState -State $state -Root $Root
   Write-PulseLog -Root $Root -Message "Pulse installation completed and awaits protected browser setup."
+  Write-PulseProgress -Root $Root -Percent 100 -Status "Pulse installation completed"
+  Complete-PulseProgress
 } catch {
+  Complete-PulseProgress
+  [void](Write-PulseFailureReport -Root $Root -Operation "Pulse installation" -Message $_.Exception.Message)
   Write-PulseLog -Root $Root -Level "ERROR" -Message "Installation failed: $($_.Exception.Message)"
   throw
 }

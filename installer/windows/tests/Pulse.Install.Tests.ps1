@@ -31,6 +31,23 @@ Describe "Pulse installer security primitives" {
     $redacted | Should -Match '\[REDACTED\]'
   }
 
+  It "redacts the concise installer failure report" {
+    $secret = New-PulseSecret
+    Add-PulseSecretValue -Value $secret
+    $report = Write-PulseFailureReport -Root $TestDrive -Operation "database migration" -Message "token=$secret"
+    $content = Get-Content -LiteralPath $report -Raw
+    $content | Should -Match 'Operation: database migration'
+    $content | Should -Match '\[REDACTED\]'
+    $content | Should -Not -Match ([regex]::Escape($secret))
+  }
+
+  It "classifies legacy and explicit incomplete installation state as resumable" {
+    (Get-PulseInstallationStatus -State $null) | Should -BeNullOrEmpty
+    (Get-PulseInstallationStatus -State ([pscustomobject]@{ version = '0.1.0' })) | Should -Be 'initializing'
+    (Get-PulseInstallationStatus -State ([pscustomobject]@{ installationStatus = 'initializing' })) | Should -Be 'initializing'
+    (Get-PulseInstallationStatus -State ([pscustomobject]@{ installationStatus = 'installed' })) | Should -Be 'installed'
+  }
+
   It "captures native stderr when a nonzero exit is explicitly allowed" {
     if ($IsWindows) {
       $result = Invoke-PulseCommand -FilePath "cmd.exe" -Arguments @("/d", "/c", "echo expected-probe-error 1>&2 & exit /b 7") -Root $TestDrive -AllowFailure -Quiet -NoLog
@@ -127,6 +144,20 @@ Describe "Pulse installer failure and preservation contracts" {
     $install | Should -Match 'NotePropertyName "installationStatus".*NotePropertyValue "installed"'
     $install | Should -Match 'Existing Pulse .* installation detected'
     $install | Should -Match 'if \(-not \$existingState\)'
+    $update | Should -Match '\$currentStatus -ne "installed"'
+    $update | Should -Match 'install-pulse\.ps1'
+    $update.IndexOf('$currentStatus -ne "installed"') | Should -BeLessThan $update.IndexOf('if ([version]$target.version')
+  }
+
+  It "shows progress and writes a concise sanitized failure report" {
+    $module = Get-Content -LiteralPath (Join-Path $windowsRoot "Pulse.Install.psm1") -Raw
+    $iss = Get-Content -LiteralPath (Join-Path $windowsRoot "pulse-setup.iss") -Raw
+    $module | Should -Match 'Write-Progress.*-Activity "Pulse Setup"'
+    $module | Should -Match 'Protect-PulseLogText \$Message'
+    $module | Should -Match 'installer-error\.txt'
+    $install | Should -Match 'Percent 100 -Status "Pulse installation completed"'
+    $iss | Should -Match 'RaisePulseFailure'
+    $iss | Should -Match 'installer-error\.txt'
   }
 
   It "backs up before beginning an update migration" {
