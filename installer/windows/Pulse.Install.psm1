@@ -127,7 +127,10 @@ function Get-PulseDockerDiagnostic {
   if (-not $DockerAvailable) { return "Docker is not installed. Install and license an approved Docker runtime, then retry." }
   if ($DaemonExitCode -ne 0) { return "Docker is installed but the Docker daemon is not running." }
   if ($Engine -notin @("linux/x86_64", "linux/amd64")) { return "Pulse requires Docker configured for linux/amd64 containers." }
-  if ($ComposeExitCode -ne 0 -or $ComposeVersion -notmatch '^v?2\.') { return "Docker Compose v2 is unavailable." }
+  if ($ComposeExitCode -ne 0) { return "Docker Compose v2 or newer is unavailable." }
+  $composeVersionMatch = [regex]::Match($ComposeVersion, '^v?(?<major>\d+)\.')
+  # "Compose v2" refers to the docker compose plugin interface; newer major versions remain compatible.
+  if (-not $composeVersionMatch.Success -or [int]$composeVersionMatch.Groups['major'].Value -lt 2) { return "Docker Compose v2 or newer is unavailable." }
   return $null
 }
 

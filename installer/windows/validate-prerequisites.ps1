@@ -32,7 +32,8 @@ $compose = if ($daemon.ExitCode -eq 0) {
 $dockerFailure = Get-PulseDockerDiagnostic -DockerAvailable $dockerAvailable -DaemonExitCode $daemon.ExitCode -Engine $daemon.Output.Trim() -ComposeExitCode $compose.ExitCode -ComposeVersion $compose.Output.Trim()
 if ($dockerFailure) { throw $dockerFailure }
 
-$drive = Get-PSDrive -Name ([IO.Path]::GetPathRoot($env:ProgramData).TrimEnd(':'))
+$programDataDriveName = (Get-Item -LiteralPath $env:ProgramData -Force).PSDrive.Name
+$drive = Get-PSDrive -Name $programDataDriveName
 if (($drive.Free / 1GB) -lt $MinimumFreeGb) { throw "At least $MinimumFreeGb GB free space is required on the ProgramData drive." }
 if (-not (Test-PulseHostname -Hostname $Hostname -AllowLocalhost:($Mode -eq "internal"))) { throw "The requested Pulse hostname is invalid." }
 
@@ -46,7 +47,7 @@ if ($udpOccupied -and -not $AllowOccupiedPorts) { throw "Required UDP port $($po
 
 if (-not $SkipNetworkCheck) {
   try {
-    [void](Invoke-WebRequest -UseBasicParsing -Uri "https://ghcr.io/v2/" -Method Head -TimeoutSec 15)
+    [void](Invoke-WebRequest -UseBasicParsing -Uri "https://ghcr.io/v2/" -Method Get -TimeoutSec 15)
   } catch {
     if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 401) {
       throw "GitHub Container Registry cannot be reached. Check DNS, proxy, firewall, and internet access."

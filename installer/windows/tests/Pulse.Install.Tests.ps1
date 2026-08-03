@@ -67,8 +67,9 @@ Describe "Pulse prerequisite diagnostics" {
   }
 
   It "distinguishes missing Compose v2" {
-    Get-PulseDockerDiagnostic -DockerAvailable $true -ComposeExitCode 1 | Should -Match 'Compose v2'
-    Get-PulseDockerDiagnostic -DockerAvailable $true -ComposeVersion '1.29.2' | Should -Match 'Compose v2'
+    Get-PulseDockerDiagnostic -DockerAvailable $true -ComposeExitCode 1 | Should -Match 'Compose v2 or newer'
+    Get-PulseDockerDiagnostic -DockerAvailable $true -ComposeVersion '1.29.2' | Should -Match 'Compose v2 or newer'
+    Get-PulseDockerDiagnostic -DockerAvailable $true -ComposeVersion 'v5.1.3' | Should -BeNullOrEmpty
   }
 
   It "rejects a non-linux or non-amd64 engine" {
@@ -81,6 +82,8 @@ Describe "Pulse installer failure and preservation contracts" {
   It "reports occupied ports and insufficient disk space separately" {
     $prerequisites | Should -Match 'GB free space is required'
     $prerequisites | Should -Match 'TCP port .* already occupied'
+    $prerequisites | Should -Match 'Get-Item -LiteralPath \$env:ProgramData -Force'
+    $prerequisites | Should -Match 'Uri "https://ghcr\.io/v2/" -Method Get'
   }
 
   It "fails image pulls, initialization, and migrations through strict compose stages" {
