@@ -1,7 +1,12 @@
 [CmdletBinding()]
 param(
   [string]$Root = "$env:ProgramData\LBH\Pulse",
-  [string]$PayloadDirectory
+  [string]$PayloadDirectory,
+  [ValidateSet("internal", "lan", "public")][string]$Mode,
+  [string]$Hostname,
+  [string]$AcmeEmail = "operator@example.invalid",
+  [string]$BackupPath,
+  [switch]$TrustInternalCa
 )
 
 Set-StrictMode -Version Latest
@@ -18,7 +23,7 @@ if (-not (Test-PulseReleaseManifest -Manifest $target)) { throw "The bundled upd
 $currentStatus = Get-PulseInstallationStatus -State $current
 
 function Set-ReleaseImages($manifest) {
-  $gateway = if ($current.mode -eq "internal") { $manifest.images.gatewayInternal } else { $manifest.images.gatewayPublic }
+  $gateway = if ($current.mode -eq "public") { $manifest.images.gatewayPublic } else { $manifest.images.gatewayInternal }
   $mapping = [ordered]@{
     PULSE_RELEASE_TAG = $manifest.version
     PULSE_API_IMAGE = $manifest.images.api
@@ -45,7 +50,16 @@ if ($currentStatus -ne "installed") {
   Write-PulseState -State $current -Root $Root
   Write-PulseLog -Root $Root -Message "Incomplete Pulse initialization detected; resuming the protected installation sequence."
   Write-PulseProgress -Root $Root -Percent 5 -Status "Resuming the incomplete Pulse installation"
-  & (Join-Path $PSScriptRoot "install-pulse.ps1") -Root $Root
+  $resumeArguments = @{ Root = $Root }
+  if ($PSBoundParameters.ContainsKey("Mode")) {
+    $resumeArguments.Mode = $Mode
+    $resumeArguments.Hostname = $Hostname
+    $resumeArguments.AcmeEmail = $AcmeEmail
+    $resumeArguments.BackupPath = $BackupPath
+    $resumeArguments.TrustInternalCa = [bool]$TrustInternalCa
+    $resumeArguments.AllowIncompleteModeChange = $true
+  }
+  & (Join-Path $PSScriptRoot "install-pulse.ps1") @resumeArguments
   exit 0
 }
 

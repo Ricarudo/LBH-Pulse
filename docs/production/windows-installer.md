@@ -8,7 +8,9 @@
 - Administrator access and PowerShell 5.1 or newer.
 - A running Docker engine configured for Linux/amd64 containers and Docker Compose v2.
 - At least 20 GB free on the ProgramData drive and internet access to `ghcr.io`.
-- Local mode: ports 8080 and 8443 available. Public mode: ports 80 and 443 available, public DNS already pointing at the machine, and inbound firewall/NAT configured.
+- Local-only mode: ports 8080 and 8443 available.
+- Private LAN mode: ports 80 and 443 available and a router or local-DNS hostname that resolves to the Pulse computer from the server and every client. No public DNS or inbound Internet forwarding is required.
+- Public mode: ports 80 and 443 available, public DNS already pointing at the machine, and inbound firewall/NAT configured.
 
 Docker Desktop is not installed by Pulse. Review the current [Docker Desktop Windows requirements](https://docs.docker.com/desktop/setup/install/windows-install/) and [Docker subscription terms](https://www.docker.com/legal/docker-subscription-service-agreement/) before organizational or commercial use. Docker Desktop is not supported on Windows Server; use a reviewed Linux server deployment for external or enterprise production.
 
@@ -25,13 +27,18 @@ The release process uses Inno Setup 6.7.1. Review [Inno Setup licensing](https:/
    Get-AuthenticodeSignature .\Pulse-Setup-0.1.0.exe
    ```
 
-3. Start the installer as Administrator. Choose local-only HTTPS unless the machine already has a public hostname and ports 80/443.
+3. Start the installer as Administrator and choose an HTTPS mode:
+   - **Local-only** uses `https://localhost:8443` on the Pulse computer.
+   - **Private LAN** uses a hostname supplied by your router or local DNS, such as `https://pulse.example.lan`. Pulse verifies that the name resolves on the server before changing configuration.
+   - **Public domain** requires public DNS and obtains an ACME certificate through Caddy.
 4. Choose an encrypted-backup destination. Docker continues to manage the PostgreSQL and MinIO named volumes; this selection does not move live data.
-5. In local mode, explicitly choose whether to trust the Pulse internal Caddy CA in `LocalMachine\Root`.
+5. In local-only or private LAN mode, explicitly choose whether to trust the Pulse internal Caddy CA in `LocalMachine\Root` on the server.
 6. When Pulse opens, enter the one-time setup code shown on the final installer page, then create the Administrator in the browser.
 7. Use **Pulse > Complete first-run setup** from the Start Menu. It verifies setup, removes the setup token and temporary code file, recreates the API, and reruns HTTPS health checks.
 
 An unsigned release is identified prominently in its GitHub release notes. A checksum proves download integrity, not publisher identity; organizations should configure the repository signing secrets before distribution.
+
+Private LAN clients must resolve the same hostname and trust the exported `C:\ProgramData\LBH\Pulse\config\caddy-root.crt`. Transfer that public certificate through an administrator-approved channel, verify its thumbprint against the server, and import only that certificate into each client's `LocalMachine\Root`. The private CA key never leaves the Caddy data volume.
 
 ## Installed layout and data
 
@@ -72,7 +79,7 @@ The new-install sequence is `config --quiet`, digest-only `pull`, infrastructure
 
 ## Repair, backup, update, and restore
 
-Rerunning the same installer detects protected state, preserves secrets and volumes, and performs a repair/start verification. It refuses to initialize a protected configuration or unmanaged Pulse volume without matching installer state.
+Rerunning the same installer detects protected state, preserves secrets and volumes, and performs a repair/start verification. An incomplete installation may change between local-only, private LAN, and public endpoint modes; only its non-secret URL, ports, Caddy target, and gateway image are changed. Completed installations retain their recorded mode. The installer refuses to initialize a protected configuration or unmanaged Pulse volume without matching installer state.
 
 Create and verify an encrypted backup:
 
@@ -126,10 +133,11 @@ Before publishing, test a Windows VM with no previous Pulse state:
 
 1. Confirm missing/stopped Docker and occupied-port messages are distinct and occur before initialization.
 2. Install in local mode, exercise both CA-consent choices, create the browser Administrator, and finalize setup.
-3. Reboot Windows and verify Docker starts Pulse and HTTPS readiness passes.
-4. Rerun 0.1.0 for repair, then test a staged newer manifest and verified pre-update backup.
-5. Uninstall once with preservation and reinstall against the retained volumes/configuration.
-6. On a disposable second install, confirm data deletion requires the exact phrase and removes only enumerated Pulse volumes.
-7. Inspect `logs` and `state.json` for secrets and verify the recovery identity is ACL-protected.
+3. On a separate run, configure private LAN mode with local DNS, trust the exported CA on a client, and verify the LAN hostname while public DNS remains absent.
+4. Reboot Windows and verify Docker starts Pulse and HTTPS readiness passes.
+5. Rerun 0.1.0 for repair, then test a staged newer manifest and verified pre-update backup.
+6. Uninstall once with preservation and reinstall against the retained volumes/configuration.
+7. On a disposable second install, confirm data deletion requires the exact phrase and removes only enumerated Pulse volumes.
+8. Inspect `logs` and `state.json` for secrets and verify the recovery identity is ACL-protected.
 
 Offline image bundles are not part of 0.1. A future release can pair the same manifest with verified `docker save`/`docker load` archives without changing the installed Compose model.

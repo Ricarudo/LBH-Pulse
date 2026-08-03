@@ -2,7 +2,7 @@
 param(
   [string]$Root = "$env:ProgramData\LBH\Pulse",
   [Parameter(Mandatory = $true)][string]$ManifestPath,
-  [ValidateSet("internal", "public")][string]$Mode = "internal",
+  [ValidateSet("internal", "lan", "public")][string]$Mode = "internal",
   [string]$Hostname = "localhost",
   [string]$AcmeEmail = "operator@example.invalid",
   [string]$BackupPath,
@@ -13,17 +13,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "Pulse.Install.psm1") -Force
 
-if ($Mode -eq "internal") { $Hostname = "localhost" }
-if (-not (Test-PulseHostname -Hostname $Hostname -AllowLocalhost:($Mode -eq "internal"))) {
-  throw "The Pulse hostname is invalid."
-}
-if ($Mode -eq "public") {
-  try { $mailAddress = New-Object Net.Mail.MailAddress -ArgumentList $AcmeEmail } catch { throw "The ACME contact email is invalid." }
-  if ($mailAddress.Address -ne $AcmeEmail) { throw "The ACME contact email is invalid." }
-}
-
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
 if (-not (Test-PulseReleaseManifest -Manifest $manifest)) { throw "The release manifest is invalid or contains an unpinned image." }
+$settings = Get-PulseModeConfiguration -Mode $Mode -Hostname $Hostname -AcmeEmail $AcmeEmail -Manifest $manifest
 
 $paths = Get-PulsePaths -Root $Root
 if (-not $BackupPath) { $BackupPath = $paths.Backups }
@@ -47,19 +39,16 @@ foreach ($secret in @($postgresAdminPassword, $migrationPassword, $appPassword, 
   Add-PulseSecretValue -Value $secret
 }
 
-$httpPort = if ($Mode -eq "internal") { 8080 } else { 80 }
-$httpsPort = if ($Mode -eq "internal") { 8443 } else { 443 }
-$publicUrl = if ($httpsPort -eq 443) { "https://$Hostname" } else { "https://$Hostname`:$httpsPort" }
-$gatewayImage = if ($Mode -eq "internal") { $manifest.images.gatewayInternal } else { $manifest.images.gatewayPublic }
+$publicUrl = $settings.Url
 $lines = @(
   "NODE_ENV=production",
   "PULSE_RELEASE_TAG=$($manifest.version)",
   "PULSE_PUBLIC_URL=$publicUrl",
-  "PULSE_HOSTNAME=$Hostname",
-  "PULSE_CADDY_TARGET=$Mode",
-  "PULSE_CADDY_EMAIL=$AcmeEmail",
-  "PULSE_HTTP_PORT=$httpPort",
-  "PULSE_HTTPS_PORT=$httpsPort",
+  "PULSE_HOSTNAME=$($settings.Hostname)",
+  "PULSE_CADDY_TARGET=$($settings.CaddyTarget)",
+  "PULSE_CADDY_EMAIL=$($settings.AcmeEmail)",
+  "PULSE_HTTP_PORT=$($settings.HttpPort)",
+  "PULSE_HTTPS_PORT=$($settings.HttpsPort)",
   "POSTGRES_DB=pulse",
   "POSTGRES_ADMIN_USER=pulse_admin",
   "POSTGRES_ADMIN_PASSWORD=$postgresAdminPassword",
@@ -123,7 +112,7 @@ $lines = @(
   "PULSE_MINIO_INIT_IMAGE=$($manifest.images.minioInit)",
   "PULSE_CLAMAV_IMAGE=$($manifest.images.clamav)",
   "PULSE_BACKUP_CRYPTO_IMAGE=$($manifest.images.backupCrypto)",
-  "PULSE_GATEWAY_IMAGE=$gatewayImage",
+  "PULSE_GATEWAY_IMAGE=$($settings.GatewayImage)",
   "PULSE_POSTGRES_IMAGE=$($manifest.images.postgres)",
   "PULSE_MINIO_IMAGE=$($manifest.images.minio)",
   "PULSE_MINIO_MC_IMAGE=$($manifest.images.minioMc)"

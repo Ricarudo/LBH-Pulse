@@ -33,7 +33,7 @@ switch ($Action) {
     do {
       $temporary = Join-Path $paths.Installer "setup-status.json"
       $arguments = @("--fail", "--silent", "--show-error", "--max-time", "30")
-      if ($state.mode -eq "internal") { $arguments += @("--cacert", (Join-Path $paths.Config "caddy-root.crt")) }
+      if ($state.mode -in @("internal", "lan")) { $arguments += @("--cacert", (Join-Path $paths.Config "caddy-root.crt")) }
       $arguments += @("--output", $temporary, "$($state.url.TrimEnd('/'))/api/auth/session")
       & curl.exe @arguments
       if ($LASTEXITCODE -ne 0) { throw "Pulse first-run status could not be checked." }

@@ -1,11 +1,12 @@
 [CmdletBinding()]
 param(
   [string]$Root = "$env:ProgramData\LBH\Pulse",
-  [ValidateSet("internal", "public")][string]$Mode = "internal",
+  [ValidateSet("internal", "lan", "public")][string]$Mode = "internal",
   [string]$Hostname = "localhost",
   [string]$AcmeEmail = "operator@example.invalid",
   [string]$BackupPath,
-  [switch]$TrustInternalCa
+  [switch]$TrustInternalCa,
+  [switch]$AllowIncompleteModeChange
 )
 
 Set-StrictMode -Version Latest
@@ -16,9 +17,11 @@ $existingState = Read-PulseState -Root $Root
 # Installers released before this marker could not pass recovery-key generation, so their state is resumable partial state.
 $existingStatus = Get-PulseInstallationStatus -State $existingState
 
-if ($existingState) {
+if ($existingState -and -not ($AllowIncompleteModeChange -and $existingStatus -ne "installed")) {
   $Mode = [string]$existingState.mode
   $Hostname = ([uri][string]$existingState.url).Host
+  $trustProperty = $existingState.PSObject.Properties["trustInternalCaRequested"]
+  $TrustInternalCa = [bool]($trustProperty -and $trustProperty.Value)
 }
 
 try {
@@ -30,6 +33,13 @@ try {
   $payload = Join-Path $paths.Installer "payload\deployment"
   foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {
     Copy-Item -LiteralPath (Join-Path $payload $name) -Destination (Join-Path $paths.Deployment $name) -Force
+  }
+
+  if ($existingState -and $existingStatus -ne "installed" -and $AllowIncompleteModeChange) {
+    # Only endpoint metadata is changed during an incomplete repair; generated secrets and named volumes remain untouched.
+    $manifest = Get-Content -LiteralPath (Join-Path $paths.Deployment "release-manifest.json") -Raw | ConvertFrom-Json
+    [void](Set-PulseDeploymentMode -Root $Root -Mode $Mode -Hostname $Hostname -AcmeEmail $AcmeEmail -Manifest $manifest -TrustInternalCa:$TrustInternalCa)
+    $existingState = Read-PulseState -Root $Root
   }
 
   if ($existingState -and $existingStatus -eq "installed") {
@@ -90,7 +100,7 @@ try {
   Write-PulseProgress -Root $Root -Percent 85 -Status "Starting the Pulse application"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("up", "-d", "--no-build", "--wait", "--wait-timeout", "360") -Stage "Pulse application startup")
 
-  if ($Mode -eq "internal") {
+  if ($Mode -in @("internal", "lan")) {
     $gateway = Invoke-PulseCompose -Root $Root -Arguments @("ps", "-q", "gateway") -Stage "gateway container lookup" -Quiet
     $containerId = $gateway.Output.Trim()
     if ($containerId -notmatch '^[a-f0-9]{12,64}$') { throw "The Pulse gateway container could not be identified." }

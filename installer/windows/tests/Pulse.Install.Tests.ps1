@@ -10,6 +10,7 @@ BeforeAll {
   $script:generator = Get-Content -LiteralPath (Join-Path $windowsRoot "generate-config.ps1") -Raw
   $script:backup = Get-Content -LiteralPath (Join-Path $windowsRoot "backup-pulse.ps1") -Raw
   $script:restore = Get-Content -LiteralPath (Join-Path $windowsRoot "restore-pulse.ps1") -Raw
+  $script:iss = Get-Content -LiteralPath (Join-Path $windowsRoot "pulse-setup.iss") -Raw
 }
 
 Describe "Pulse installer security primitives" {
@@ -49,7 +50,7 @@ Describe "Pulse installer security primitives" {
   }
 
   It "captures native stderr when a nonzero exit is explicitly allowed" {
-    if ($IsWindows) {
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
       $result = Invoke-PulseCommand -FilePath "cmd.exe" -Arguments @("/d", "/c", "echo expected-probe-error 1>&2 & exit /b 7") -Root $TestDrive -AllowFailure -Quiet -NoLog
     } else {
       $result = Invoke-PulseCommand -FilePath "/bin/sh" -Arguments @("-c", "echo expected-probe-error >&2; exit 7") -Root $TestDrive -AllowFailure -Quiet -NoLog
@@ -63,6 +64,54 @@ Describe "Pulse installer security primitives" {
     (Test-PulseHostname -Hostname "localhost" -AllowLocalhost) | Should -Be $true
     (Test-PulseHostname -Hostname "pulse.example.com") | Should -Be $true
     (Test-PulseHostname -Hostname "bad_host") | Should -Be $false
+  }
+
+  It "maps private LAN mode to the internal gateway on standard HTTPS ports" {
+    $manifest = [pscustomobject]@{ images = [pscustomobject]@{ gatewayInternal = "example/internal@sha256:$('a' * 64)"; gatewayPublic = "example/public@sha256:$('b' * 64)" } }
+    $lan = Get-PulseModeConfiguration -Mode lan -Hostname "pulse.example.lan" -Manifest $manifest
+    $lan.Url | Should -Be "https://pulse.example.lan"
+    $lan.HttpPort | Should -Be 80
+    $lan.HttpsPort | Should -Be 443
+    $lan.CaddyTarget | Should -Be "internal"
+    $lan.GatewayImage | Should -Be $manifest.images.gatewayInternal
+    $lan.UsesInternalCa | Should -Be $true
+  }
+
+  It "keeps localhost and public gateway behavior unchanged" {
+    $manifest = [pscustomobject]@{ images = [pscustomobject]@{ gatewayInternal = "internal"; gatewayPublic = "public" } }
+    $local = Get-PulseModeConfiguration -Mode internal -Hostname "ignored.example.com" -Manifest $manifest
+    $public = Get-PulseModeConfiguration -Mode public -Hostname "pulse.example.com" -AcmeEmail "operator@example.com" -Manifest $manifest
+    $local.Url | Should -Be "https://localhost:8443"
+    $local.CaddyTarget | Should -Be "internal"
+    $public.Url | Should -Be "https://pulse.example.com"
+    $public.CaddyTarget | Should -Be "public"
+  }
+
+  It "changes only endpoint values when converting an incomplete installation to LAN mode" {
+    Mock -ModuleName Pulse.Install Protect-PulsePath {}
+    $root = Join-Path $TestDrive "lan-conversion"
+    $paths = Get-PulsePaths -Root $root
+    [void](New-Item -ItemType Directory -Path $paths.Config, $paths.Installer -Force)
+    [IO.File]::WriteAllLines($paths.Environment, @(
+      "PULSE_SESSION_SECRET=unchanged-secret",
+      "PULSE_PUBLIC_URL=https://old.example.com",
+      "PULSE_CADDY_TARGET=public",
+      "PULSE_GATEWAY_IMAGE=old-public"
+    ))
+    $state = [pscustomobject]@{ mode = "public"; url = "https://old.example.com"; installationStatus = "initializing"; trustInternalCaRequested = $false }
+    [IO.File]::WriteAllText($paths.State, ($state | ConvertTo-Json))
+    $manifest = [pscustomobject]@{ images = [pscustomobject]@{ gatewayInternal = "internal-digest"; gatewayPublic = "public-digest" } }
+
+    [void](Set-PulseDeploymentMode -Root $root -Mode lan -Hostname "pulse.example.lan" -Manifest $manifest -TrustInternalCa)
+
+    (Get-PulseEnvironmentValue -Path $paths.Environment -Name "PULSE_SESSION_SECRET") | Should -Be "unchanged-secret"
+    (Get-PulseEnvironmentValue -Path $paths.Environment -Name "PULSE_CADDY_TARGET") | Should -Be "internal"
+    (Get-PulseEnvironmentValue -Path $paths.Environment -Name "PULSE_GATEWAY_IMAGE") | Should -Be "internal-digest"
+    $converted = Read-PulseState -Root $root
+    $converted.mode | Should -Be "lan"
+    $converted.url | Should -Be "https://pulse.example.lan"
+    $converted.installationStatus | Should -Be "initializing"
+    $converted.trustInternalCaRequested | Should -Be $true
   }
 
   It "rejects missing and non-digest release images" {
@@ -123,6 +172,7 @@ Describe "Pulse installer failure and preservation contracts" {
     $prerequisites | Should -Match 'TCP port .* already occupied'
     $prerequisites | Should -Match 'Get-Item -LiteralPath \$env:ProgramData -Force'
     $prerequisites | Should -Match 'Uri "https://ghcr\.io/v2/" -Method Get'
+    $prerequisites | Should -Match "Private LAN hostname.*does not resolve on this computer"
   }
 
   It "fails image pulls, initialization, and migrations through strict compose stages" {
@@ -135,6 +185,8 @@ Describe "Pulse installer failure and preservation contracts" {
   It "has an explicit health timeout" {
     $health | Should -Match 'health check timed out'
     $health | Should -Match 'TimeoutSeconds'
+    $health | Should -Match 'mode -in @\("internal", "lan"\)'
+    $health | Should -Match "Private LAN hostname.*does not resolve on this computer"
   }
 
   It "resumes incomplete initialization and repairs only completed installs" {
@@ -154,6 +206,10 @@ Describe "Pulse installer failure and preservation contracts" {
     $imageRefresh | Should -BeGreaterThan $resumeStart
     $imageRefresh | Should -BeLessThan $resumeInstall
     $stateRefresh | Should -BeLessThan $resumeInstall
+    $install | Should -Match 'AllowIncompleteModeChange'
+    $install | Should -Match 'Set-PulseDeploymentMode'
+    $update | Should -Match 'PSBoundParameters\.ContainsKey\("Mode"\)'
+    $update | Should -Match 'AllowIncompleteModeChange'
   }
 
   It "shows progress and writes a concise sanitized failure report" {
@@ -200,12 +256,20 @@ Describe "Pulse release inventory" {
   }
 
   It "embeds only deployment inputs and installer support files" {
-    $iss = Get-Content -LiteralPath (Join-Path $windowsRoot "pulse-setup.iss") -Raw
     $iss | Should -Match 'compose\.production\.yaml'
     $iss | Should -Match 'compose\.maintenance\.yaml'
     $iss | Should -Match 'compose\.release\.yaml'
     $iss | Should -Match 'release-manifest\.json'
     $iss | Should -Not -Match 'node_modules|\.git|apps\\api\\src|apps\\web\\src'
+  }
+
+  It "offers private LAN HTTPS without using the public ACME gateway" {
+    $iss | Should -Match "Private LAN HTTPS using a router or local DNS hostname"
+    $iss | Should -Match "Mode := 'lan'"
+    $iss | Should -Match "PowerShellParameters\('update-pulse\.ps1'\)"
+    $generator | Should -Match 'ValidateSet\("internal", "lan", "public"\)'
+    $generator | Should -Match 'PULSE_CADDY_TARGET=\$\(\$settings\.CaddyTarget\)'
+    $update | Should -Match '\$current\.mode -eq "public"'
   }
 
   It "does not expand the app directory before Inno initializes it" {

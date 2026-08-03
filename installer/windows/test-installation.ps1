@@ -46,11 +46,20 @@ if ([DateTime]::UtcNow -ge $deadline) { throw "Pulse service health check timed 
 $url = Get-PulseHealthUrl -Root $Root
 $curl = @("--fail", "--silent", "--show-error", "--max-time", "30")
 $caPath = Join-Path $paths.Config "caddy-root.crt"
-if ($state.mode -eq "internal") {
+if ($state.mode -in @("internal", "lan")) {
   if (-not (Test-Path -LiteralPath $caPath)) { throw "Pulse internal CA certificate is missing." }
   $curl += @("--cacert", $caPath)
 }
 $curl += $url
-[void](Invoke-PulseCommand -FilePath "curl.exe" -Arguments $curl -Root $Root -Stage "Pulse readiness endpoint" -Quiet)
+$readiness = Invoke-PulseCommand -FilePath "curl.exe" -Arguments $curl -Root $Root -Stage "Pulse readiness endpoint" -AllowFailure -Quiet
+if ($readiness.ExitCode -ne 0) {
+  if ($readiness.ExitCode -eq 6 -and $state.mode -eq "lan") {
+    throw "Private LAN hostname '$(([uri][string]$state.url).Host)' does not resolve on this computer. Check the router or local DNS entry and this computer's DNS server, then retry."
+  }
+  if ($readiness.ExitCode -eq 6 -and $state.mode -eq "public") {
+    throw "Public hostname '$(([uri][string]$state.url).Host)' does not exist in public DNS. Create its public DNS record and wait for propagation before retrying."
+  }
+  throw "Pulse HTTPS readiness failed with curl exit code $($readiness.ExitCode). Review the sanitized installer and gateway logs."
+}
 Write-PulseLog -Root $Root -Message "Pulse service and HTTPS readiness checks passed."
 [pscustomobject]@{ Status = "ok"; Url = $state.url; Version = $state.version }

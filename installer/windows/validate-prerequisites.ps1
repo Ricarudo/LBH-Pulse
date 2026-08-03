@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("internal", "public")][string]$Mode = "internal",
+  [ValidateSet("internal", "lan", "public")][string]$Mode = "internal",
   [string]$Hostname = "localhost",
   [int]$MinimumFreeGb = 20,
   [switch]$AllowOccupiedPorts,
@@ -36,6 +36,17 @@ $programDataDriveName = (Get-Item -LiteralPath $env:ProgramData -Force).PSDrive.
 $drive = Get-PSDrive -Name $programDataDriveName
 if (($drive.Free / 1GB) -lt $MinimumFreeGb) { throw "At least $MinimumFreeGb GB free space is required on the ProgramData drive." }
 if (-not (Test-PulseHostname -Hostname $Hostname -AllowLocalhost:($Mode -eq "internal"))) { throw "The requested Pulse hostname is invalid." }
+
+if ($Mode -eq "lan" -and -not $SkipNetworkCheck) {
+  try {
+    $lanAddresses = @([Net.Dns]::GetHostAddresses($Hostname))
+  } catch {
+    throw "Private LAN hostname '$Hostname' does not resolve on this computer. Add it to the router or local DNS, configure this computer to use that DNS server, then retry."
+  }
+  if ($lanAddresses.Count -eq 0) {
+    throw "Private LAN hostname '$Hostname' does not resolve on this computer. Add it to the router or local DNS, configure this computer to use that DNS server, then retry."
+  }
+}
 
 $ports = if ($Mode -eq "internal") { @(8080, 8443) } else { @(80, 443) }
 foreach ($port in $ports) {

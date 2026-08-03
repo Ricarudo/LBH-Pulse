@@ -281,6 +281,74 @@ function Test-PulseHostname {
   return $Hostname -match '^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$'
 }
 
+function Get-PulseModeConfiguration {
+  param(
+    [ValidateSet("internal", "lan", "public")][string]$Mode,
+    [string]$Hostname,
+    [string]$AcmeEmail = "operator@example.invalid",
+    [Parameter(Mandatory = $true)]$Manifest
+  )
+  if ($Mode -eq "internal") { $Hostname = "localhost" }
+  if (-not (Test-PulseHostname -Hostname $Hostname -AllowLocalhost:($Mode -eq "internal"))) {
+    throw "The Pulse hostname is invalid."
+  }
+  if ($Mode -eq "public") {
+    try { $mailAddress = New-Object Net.Mail.MailAddress -ArgumentList $AcmeEmail } catch { throw "The ACME contact email is invalid." }
+    if ($mailAddress.Address -ne $AcmeEmail) { throw "The ACME contact email is invalid." }
+  } else {
+    $AcmeEmail = "operator@example.invalid"
+  }
+
+  $usesInternalCa = $Mode -ne "public"
+  $httpPort = if ($Mode -eq "internal") { 8080 } else { 80 }
+  $httpsPort = if ($Mode -eq "internal") { 8443 } else { 443 }
+  [pscustomobject]@{
+    Mode = $Mode
+    Hostname = $Hostname
+    AcmeEmail = $AcmeEmail
+    Url = if ($httpsPort -eq 443) { "https://$Hostname" } else { "https://$Hostname`:$httpsPort" }
+    HttpPort = $httpPort
+    HttpsPort = $httpsPort
+    CaddyTarget = if ($usesInternalCa) { "internal" } else { "public" }
+    GatewayImage = if ($usesInternalCa) { $Manifest.images.gatewayInternal } else { $Manifest.images.gatewayPublic }
+    UsesInternalCa = $usesInternalCa
+  }
+}
+
+function Set-PulseDeploymentMode {
+  param(
+    [string]$Root = "$env:ProgramData\LBH\Pulse",
+    [ValidateSet("internal", "lan", "public")][string]$Mode,
+    [string]$Hostname,
+    [string]$AcmeEmail = "operator@example.invalid",
+    [Parameter(Mandatory = $true)]$Manifest,
+    [switch]$TrustInternalCa
+  )
+  $paths = Get-PulsePaths -Root $Root
+  $state = Read-PulseState -Root $Root
+  if (-not $state) { throw "Pulse installation state is missing." }
+  $settings = Get-PulseModeConfiguration -Mode $Mode -Hostname $Hostname -AcmeEmail $AcmeEmail -Manifest $Manifest
+  $mapping = [ordered]@{
+    PULSE_PUBLIC_URL = $settings.Url
+    PULSE_HOSTNAME = $settings.Hostname
+    PULSE_CADDY_TARGET = $settings.CaddyTarget
+    PULSE_CADDY_EMAIL = $settings.AcmeEmail
+    PULSE_HTTP_PORT = $settings.HttpPort
+    PULSE_HTTPS_PORT = $settings.HttpsPort
+    PULSE_ALLOWED_ORIGINS = $settings.Url
+    PULSE_GATEWAY_IMAGE = $settings.GatewayImage
+  }
+  foreach ($entry in $mapping.GetEnumerator()) {
+    Set-PulseEnvironmentValue -Path $paths.Environment -Name $entry.Key -Value ([string]$entry.Value)
+  }
+  $state | Add-Member -NotePropertyName "mode" -NotePropertyValue $settings.Mode -Force
+  $state | Add-Member -NotePropertyName "url" -NotePropertyValue $settings.Url -Force
+  $state | Add-Member -NotePropertyName "trustInternalCaRequested" -NotePropertyValue ([bool]$TrustInternalCa) -Force
+  Write-PulseState -State $state -Root $Root
+  Write-PulseLog -Root $Root -Message "Changed the incomplete Pulse endpoint mode to '$($settings.Mode)' at $($settings.Url); protected secrets and Docker data were preserved."
+  return $settings
+}
+
 function Get-PulseHealthUrl {
   param([string]$Root = "$env:ProgramData\LBH\Pulse", [string]$Path = "/api/health/ready")
   $state = Read-PulseState -Root $Root
