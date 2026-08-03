@@ -147,6 +147,13 @@ Describe "Pulse installer failure and preservation contracts" {
     $update | Should -Match '\$currentStatus -ne "installed"'
     $update | Should -Match 'install-pulse\.ps1'
     $update.IndexOf('$currentStatus -ne "installed"') | Should -BeLessThan $update.IndexOf('if ([version]$target.version')
+    $resumeStart = $update.IndexOf('$currentStatus -ne "installed"')
+    $imageRefresh = $update.IndexOf('Set-ReleaseImages $target', $resumeStart)
+    $stateRefresh = $update.IndexOf('Write-PulseState -State $current', $resumeStart)
+    $resumeInstall = $update.IndexOf('install-pulse.ps1', $resumeStart)
+    $imageRefresh | Should -BeGreaterThan $resumeStart
+    $imageRefresh | Should -BeLessThan $resumeInstall
+    $stateRefresh | Should -BeLessThan $resumeInstall
   }
 
   It "shows progress and writes a concise sanitized failure report" {

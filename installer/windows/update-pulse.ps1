@@ -17,8 +17,32 @@ $target = Get-Content -LiteralPath $targetManifestPath -Raw | ConvertFrom-Json
 if (-not (Test-PulseReleaseManifest -Manifest $target)) { throw "The bundled update manifest is invalid or contains an unpinned image." }
 $currentStatus = Get-PulseInstallationStatus -State $current
 
+function Set-ReleaseImages($manifest) {
+  $gateway = if ($current.mode -eq "internal") { $manifest.images.gatewayInternal } else { $manifest.images.gatewayPublic }
+  $mapping = [ordered]@{
+    PULSE_RELEASE_TAG = $manifest.version
+    PULSE_API_IMAGE = $manifest.images.api
+    PULSE_WEB_IMAGE = $manifest.images.web
+    PULSE_MAINTENANCE_IMAGE = $manifest.images.maintenance
+    PULSE_MINIO_INIT_IMAGE = $manifest.images.minioInit
+    PULSE_CLAMAV_IMAGE = $manifest.images.clamav
+    PULSE_BACKUP_CRYPTO_IMAGE = $manifest.images.backupCrypto
+    PULSE_GATEWAY_IMAGE = $gateway
+    PULSE_POSTGRES_IMAGE = $manifest.images.postgres
+    PULSE_MINIO_IMAGE = $manifest.images.minio
+    PULSE_MINIO_MC_IMAGE = $manifest.images.minioMc
+  }
+  foreach ($entry in $mapping.GetEnumerator()) { Set-PulseEnvironmentValue -Path $paths.Environment -Name $entry.Key -Value ([string]$entry.Value) }
+}
+
 # A state file is created before initialization finishes; route that state back through the resumable installer.
 if ($currentStatus -ne "installed") {
+  # Preserve generated secrets while replacing only stale release references from the immutable bundled manifest.
+  Set-ReleaseImages $target
+  $current | Add-Member -NotePropertyName "version" -NotePropertyValue ([string]$target.version) -Force
+  $current | Add-Member -NotePropertyName "commit" -NotePropertyValue ([string]$target.commit) -Force
+  $current | Add-Member -NotePropertyName "images" -NotePropertyValue $target.images -Force
+  Write-PulseState -State $current -Root $Root
   Write-PulseLog -Root $Root -Message "Incomplete Pulse initialization detected; resuming the protected installation sequence."
   Write-PulseProgress -Root $Root -Percent 5 -Status "Resuming the incomplete Pulse installation"
   & (Join-Path $PSScriptRoot "install-pulse.ps1") -Root $Root
@@ -45,24 +69,6 @@ foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "comp
 Write-PulseProgress -Root $Root -Percent 15 -Status "Creating and verifying a pre-update backup"
 $backup = & (Join-Path $PSScriptRoot "backup-pulse.ps1") -Root $Root
 $migrationStarted = $false
-
-function Set-ReleaseImages($manifest) {
-  $gateway = if ($current.mode -eq "internal") { $manifest.images.gatewayInternal } else { $manifest.images.gatewayPublic }
-  $mapping = [ordered]@{
-    PULSE_RELEASE_TAG = $manifest.version
-    PULSE_API_IMAGE = $manifest.images.api
-    PULSE_WEB_IMAGE = $manifest.images.web
-    PULSE_MAINTENANCE_IMAGE = $manifest.images.maintenance
-    PULSE_MINIO_INIT_IMAGE = $manifest.images.minioInit
-    PULSE_CLAMAV_IMAGE = $manifest.images.clamav
-    PULSE_BACKUP_CRYPTO_IMAGE = $manifest.images.backupCrypto
-    PULSE_GATEWAY_IMAGE = $gateway
-    PULSE_POSTGRES_IMAGE = $manifest.images.postgres
-    PULSE_MINIO_IMAGE = $manifest.images.minio
-    PULSE_MINIO_MC_IMAGE = $manifest.images.minioMc
-  }
-  foreach ($entry in $mapping.GetEnumerator()) { Set-PulseEnvironmentValue -Path $paths.Environment -Name $entry.Key -Value ([string]$entry.Value) }
-}
 
 try {
   Set-ReleaseImages $target
