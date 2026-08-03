@@ -192,10 +192,13 @@ Describe "Pulse installer failure and preservation contracts" {
     $health | Should -Match 'health check timed out'
     $health | Should -Match 'TimeoutSeconds'
     $health | Should -Match 'mode -in @\("internal", "lan"\)'
+    $health | Should -Match '"--ssl-revoke-best-effort"'
     $health | Should -Match '"--resolve", "\$\{lanHostname\}:443:127\.0\.0\.1"'
     $health | Should -Not -Match 'Private LAN hostname.*does not resolve on this computer'
     $script:health | Should -Match 'real TLS hostname and SNI'
-    (Get-Content -LiteralPath (Join-Path $windowsRoot "manage-pulse.ps1") -Raw) | Should -Match '"--resolve", "\$\{lanHostname\}:443:127\.0\.0\.1"'
+    $management = Get-Content -LiteralPath (Join-Path $windowsRoot "manage-pulse.ps1") -Raw
+    $management | Should -Match '"--resolve", "\$\{lanHostname\}:443:127\.0\.0\.1"'
+    $management | Should -Match '"--ssl-revoke-best-effort"'
   }
 
   It "resumes incomplete initialization and repairs only completed installs" {

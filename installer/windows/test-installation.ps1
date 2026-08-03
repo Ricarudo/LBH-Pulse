@@ -48,7 +48,8 @@ $curl = @("--fail", "--silent", "--show-error", "--max-time", "30")
 $caPath = Join-Path $paths.Config "caddy-root.crt"
 if ($state.mode -in @("internal", "lan")) {
   if (-not (Test-Path -LiteralPath $caPath)) { throw "Pulse internal CA certificate is missing." }
-  $curl += @("--cacert", $caPath)
+  # Schannel must tolerate unavailable revocation data for this private CA while still validating its chain and hostname.
+  $curl += @("--cacert", $caPath, "--ssl-revoke-best-effort")
 }
 if ($state.mode -eq "lan") {
   # The server may not use the router's client-facing DNS, so verify the local gateway with the real TLS hostname and SNI.
@@ -60,6 +61,9 @@ $readiness = Invoke-PulseCommand -FilePath "curl.exe" -Arguments $curl -Root $Ro
 if ($readiness.ExitCode -ne 0) {
   if ($readiness.ExitCode -eq 6 -and $state.mode -eq "public") {
     throw "Public hostname '$(([uri][string]$state.url).Host)' does not exist in public DNS. Create its public DNS record and wait for propagation before retrying."
+  }
+  if ($readiness.ExitCode -eq 60 -and $state.mode -in @("internal", "lan")) {
+    throw "Pulse internal certificate validation failed. The CA chain or hostname did not validate after allowing unavailable private-CA revocation data."
   }
   throw "Pulse HTTPS readiness failed with curl exit code $($readiness.ExitCode). Review the sanitized installer and gateway logs."
 }

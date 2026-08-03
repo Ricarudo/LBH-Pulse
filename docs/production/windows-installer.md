@@ -40,6 +40,8 @@ An unsigned release is identified prominently in its GitHub release notes. A che
 
 Private LAN clients must resolve the same hostname and trust the exported `C:\ProgramData\LBH\Pulse\config\caddy-root.crt`. Transfer that public certificate through an administrator-approved channel, verify its thumbprint against the server, and import only that certificate into each client's `LocalMachine\Root`. The private CA key never leaves the Caddy data volume.
 
+Windows installer health checks use Schannel's best-effort revocation mode for the private Caddy CA because it intentionally has no public revocation endpoint. Certificate-chain, expiry, and hostname validation remain enabled.
+
 ## Installed layout and data
 
 ```text

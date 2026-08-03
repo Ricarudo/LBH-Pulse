@@ -33,7 +33,9 @@ switch ($Action) {
     do {
       $temporary = Join-Path $paths.Installer "setup-status.json"
       $arguments = @("--fail", "--silent", "--show-error", "--max-time", "30")
-      if ($state.mode -in @("internal", "lan")) { $arguments += @("--cacert", (Join-Path $paths.Config "caddy-root.crt")) }
+      if ($state.mode -in @("internal", "lan")) {
+        $arguments += @("--cacert", (Join-Path $paths.Config "caddy-root.crt"), "--ssl-revoke-best-effort")
+      }
       if ($state.mode -eq "lan") {
         $lanHostname = ([uri][string]$state.url).Host
         $arguments += @("--resolve", "${lanHostname}:443:127.0.0.1")
