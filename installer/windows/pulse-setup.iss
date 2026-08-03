@@ -81,7 +81,8 @@ begin
   BackupPage := CreateInputDirPage(PublicPage.ID, 'Backup destination',
     'Choose where encrypted Pulse backups are stored.', '', False, 'New Folder');
   BackupPage.Add('');
-  BackupPage.Values[0] := ExpandConstant('{app}\backups');
+  // The {app} constant is not initialized while the wizard pages are being created.
+  BackupPage.Values[0] := ExpandConstant('{commonappdata}\LBH\Pulse\backups');
 
   TrustPage := CreateInputOptionPage(BackupPage.ID, 'Local HTTPS trust',
     'Trust the Pulse internal certificate on this computer?',

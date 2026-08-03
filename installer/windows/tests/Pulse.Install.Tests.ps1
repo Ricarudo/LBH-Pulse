@@ -130,4 +130,10 @@ Describe "Pulse release inventory" {
     $iss | Should -Match 'release-manifest\.json'
     $iss | Should -Not -Match 'node_modules|\.git|apps\\api\\src|apps\\web\\src'
   }
+
+  It "does not expand the app directory before Inno initializes it" {
+    $iss = Get-Content -LiteralPath (Join-Path $windowsRoot "pulse-setup.iss") -Raw
+    $wizardBody = [regex]::Match($iss, '(?s)procedure InitializeWizard;(?<body>.*?)end;\r?\n\r?\nfunction ShouldSkipPage').Groups['body'].Value
+    $wizardBody | Should -Not -Match "ExpandConstant\('\{app\}"
+  }
 }
