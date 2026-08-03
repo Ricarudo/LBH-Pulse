@@ -136,4 +136,10 @@ Describe "Pulse release inventory" {
     $wizardBody = [regex]::Match($iss, '(?s)procedure InitializeWizard;(?<body>.*?)end;\r?\n\r?\nfunction ShouldSkipPage').Groups['body'].Value
     $wizardBody | Should -Not -Match "ExpandConstant\('\{app\}"
   }
+
+  It "does not query uninstall-only state while Setup registers commands" {
+    $iss = Get-Content -LiteralPath (Join-Path $windowsRoot "pulse-setup.iss") -Raw
+    $parametersBody = [regex]::Match($iss, '(?s)function GetUninstallParameters\(.*?(?<body>begin.*?end;)\r?\n\r?\n\[Run\]').Groups['body'].Value
+    $parametersBody | Should -Match 'if IsUninstaller then\s+if UninstallSilent then'
+  }
 }

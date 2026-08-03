@@ -185,7 +185,8 @@ begin
     ExpandConstant('{app}\installer\uninstall-pulse.ps1') + '"';
   if DeletePulseData then Result := Result + ' -RemoveData';
   if RemovePulseCa then Result := Result + ' -RemoveInternalCa';
-  if UninstallSilent then Result := Result + ' -Silent';
+  if IsUninstaller then
+    if UninstallSilent then Result := Result + ' -Silent';
 end;
 
 [Run]
