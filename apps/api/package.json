@@ -21,6 +21,7 @@
     "db:roles:verify": "tsx scripts/database/verify-runtime-role.ts",
     "db:reference-data:preview": "npm run prisma:generate && tsx prisma/bootstrap.ts",
     "db:reference-data:apply": "npm run prisma:generate && tsx prisma/bootstrap.ts --apply",
+    "db:reference-data:apply:prebuilt": "tsx prisma/bootstrap.ts --apply",
     "db:import:ubiquiti:preview": "npm run prisma:generate && tsx prisma/import-ubiquiti-items.ts",
     "db:import:ubiquiti:apply": "npm run prisma:generate && tsx prisma/import-ubiquiti-items.ts --apply",
     "db:lifecycle-contexts:preview": "npm run prisma:generate && tsx prisma/backfill-lifecycle-contexts.ts",

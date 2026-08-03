@@ -181,6 +181,16 @@ Describe "Pulse installer failure and preservation contracts" {
 }
 
 Describe "Pulse release inventory" {
+  It "uses the prebuilt Prisma client in the read-only reference-data service" {
+    $maintenanceCompose = Get-Content -LiteralPath (Join-Path $repositoryRoot "compose.maintenance.yaml") -Raw
+    $apiPackage = Get-Content -LiteralPath (Join-Path $repositoryRoot "apps\api\package.json") -Raw | ConvertFrom-Json
+    $workflow = Get-Content -LiteralPath (Join-Path $repositoryRoot ".github\workflows\ci.yml") -Raw
+    $maintenanceCompose | Should -Match 'command: \["npm", "run", "db:reference-data:apply:prebuilt"'
+    $apiPackage.scripts.'db:reference-data:apply:prebuilt' | Should -Be 'tsx prisma/bootstrap.ts --apply'
+    $workflow | Should -Match 'Validate read-only reference data maintenance'
+    $workflow | Should -Match '--profile maintenance run --no-deps --rm reference-data'
+  }
+
   It "overrides every released service with an immutable-image variable" {
     $overlay = Get-Content -LiteralPath (Join-Path $repositoryRoot "compose.release.yaml") -Raw
     foreach ($service in @('postgres', 'minio', 'minio-init', 'clamav', 'api', 'web', 'gateway', 'db-roles', 'migrate', 'reference-data', 'db-role-verify', 'minio-backup', 'minio-restore', 'backup-encrypt', 'backup-decrypt')) {

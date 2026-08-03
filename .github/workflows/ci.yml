@@ -50,6 +50,12 @@ jobs:
           docker compose --env-file .env.ci -f compose.ci.yaml up -d --build --wait
           --wait-timeout 360 postgres minio clamav initialize api web
 
+      - name: Validate read-only reference data maintenance
+        run: >-
+          docker compose --project-name lbh-pulse-ci --env-file .env.ci
+          -f compose.production.yaml -f compose.maintenance.yaml
+          --profile maintenance run --no-deps --rm reference-data
+
       - name: Run release tests and reconciliation gates
         run: docker compose --env-file .env.ci -f compose.ci.yaml run --no-deps --rm checks
 

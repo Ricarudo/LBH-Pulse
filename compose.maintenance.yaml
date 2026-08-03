@@ -44,7 +44,8 @@ services:
   reference-data:
     <<: *maintenance-service
     profiles: ["maintenance"]
-    command: ["npm", "run", "db:reference-data:apply", "-w", "@pulse/api"]
+    # The maintenance image generates Prisma at build time; runtime generation would violate this read-only container.
+    command: ["npm", "run", "db:reference-data:apply:prebuilt", "-w", "@pulse/api"]
     environment:
       <<: *maintenance-environment
       DATABASE_URL: ${PULSE_DATABASE_MIGRATION_URL:?Migration database URL is required}
