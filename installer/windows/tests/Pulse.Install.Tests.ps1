@@ -28,6 +28,16 @@ Describe "Pulse installer security primitives" {
     $redacted | Should -Match '\[REDACTED\]'
   }
 
+  It "captures native stderr when a nonzero exit is explicitly allowed" {
+    if ($IsWindows) {
+      $result = Invoke-PulseCommand -FilePath "cmd.exe" -Arguments @("/d", "/c", "echo expected-probe-error 1>&2 & exit /b 7") -Root $TestDrive -AllowFailure -Quiet -NoLog
+    } else {
+      $result = Invoke-PulseCommand -FilePath "/bin/sh" -Arguments @("-c", "echo expected-probe-error >&2; exit 7") -Root $TestDrive -AllowFailure -Quiet -NoLog
+    }
+    $result.ExitCode | Should -Be 7
+    $result.Output | Should -Match 'expected-probe-error'
+  }
+
   It "accepts localhost only when explicitly allowed" {
     (Test-PulseHostname -Hostname "localhost") | Should -Be $false
     (Test-PulseHostname -Hostname "localhost" -AllowLocalhost) | Should -Be $true

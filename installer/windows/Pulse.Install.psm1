@@ -106,8 +106,15 @@ function Invoke-PulseCommand {
     [switch]$NoLog
   )
   if (-not $NoLog) { Write-PulseLog -Root $Root -Message "Starting stage '$Stage' with $FilePath." }
-  $output = & $FilePath @Arguments 2>&1 | Out-String
-  $exitCode = $LASTEXITCODE
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    # Windows PowerShell 5.1 surfaces native stderr as ErrorRecord objects; capture them before enforcing the exit code.
+    $ErrorActionPreference = "Continue"
+    $output = & $FilePath @Arguments 2>&1 | Out-String
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
   if (-not $NoLog -and -not $Quiet -and $output.Trim()) { Write-PulseLog -Root $Root -Message $output.Trim() }
   if (-not $NoLog) { Write-PulseLog -Root $Root -Message "Stage '$Stage' exited with code $exitCode." }
   if ($exitCode -ne 0 -and -not $AllowFailure) {
