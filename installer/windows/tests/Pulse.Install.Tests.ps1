@@ -7,6 +7,9 @@ BeforeAll {
   $script:uninstall = Get-Content -LiteralPath (Join-Path $windowsRoot "uninstall-pulse.ps1") -Raw
   $script:health = Get-Content -LiteralPath (Join-Path $windowsRoot "test-installation.ps1") -Raw
   $script:prerequisites = Get-Content -LiteralPath (Join-Path $windowsRoot "validate-prerequisites.ps1") -Raw
+  $script:generator = Get-Content -LiteralPath (Join-Path $windowsRoot "generate-config.ps1") -Raw
+  $script:backup = Get-Content -LiteralPath (Join-Path $windowsRoot "backup-pulse.ps1") -Raw
+  $script:restore = Get-Content -LiteralPath (Join-Path $windowsRoot "restore-pulse.ps1") -Raw
 }
 
 Describe "Pulse installer security primitives" {
@@ -65,6 +68,15 @@ Describe "Pulse installer security primitives" {
     $generator | Should -Match 'Protect-PulsePath -Path \$paths.Environment'
     $generator | Should -Match 'Protect-PulsePath -Path \$paths.SetupCode'
   }
+
+  It "allows Docker Desktop to access only its protected bind-mount paths" {
+    $generator | Should -Match 'Protect-PulsePath -Path \$paths.Recovery -AllowCurrentUser'
+    $generator | Should -Not -Match 'Protect-PulsePath -Path \$paths.Environment -AllowCurrentUser'
+    $generator | Should -Not -Match 'Protect-PulsePath -Path \$paths.SetupCode -AllowCurrentUser'
+    $install | Should -Match 'Protect-PulsePath -Path \$paths.Identity -AllowCurrentUser'
+    $backup | Should -Match 'Protect-PulsePath -Path \$workBase -AllowCurrentUser'
+    $restore | Should -Match 'Protect-PulsePath -Path \$workBase -AllowCurrentUser'
+  }
 }
 
 Describe "Pulse prerequisite diagnostics" {
@@ -108,9 +120,13 @@ Describe "Pulse installer failure and preservation contracts" {
     $health | Should -Match 'TimeoutSeconds'
   }
 
-  It "repairs reruns without regenerating configuration" {
+  It "resumes incomplete initialization and repairs only completed installs" {
+    $generator | Should -Match 'installationStatus = "initializing"'
+    $install | Should -Match '\$existingStatus -eq "installed"'
+    $install | Should -Match 'Resuming the incomplete Pulse'
+    $install | Should -Match 'NotePropertyName "installationStatus".*NotePropertyValue "installed"'
     $install | Should -Match 'Existing Pulse .* installation detected'
-    $install.IndexOf('if ($existingState)') | Should -BeLessThan $install.IndexOf('generate-config.ps1')
+    $install | Should -Match 'if \(-not \$existingState\)'
   }
 
   It "backs up before beginning an update migration" {

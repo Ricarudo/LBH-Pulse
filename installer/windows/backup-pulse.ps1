@@ -17,7 +17,8 @@ $workBase = Join-Path $paths.Installer ("work\backup-" + [guid]::NewGuid().ToStr
 $payload = Join-Path $workBase "payload"
 [void](New-Item -ItemType Directory -Path (Join-Path $payload "postgres") -Force)
 [void](New-Item -ItemType Directory -Path (Join-Path $payload "config") -Force)
-Protect-PulsePath -Path $workBase
+# The temporary plaintext staging directory is deleted in finally, but Docker Desktop must be able to mount it.
+Protect-PulsePath -Path $workBase -AllowCurrentUser
 
 try {
   [void](Invoke-PulseCompose -Root $Root -Arguments @("exec", "-T", "postgres", "sh", "-c", 'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom --no-owner --no-privileges --file=/tmp/pulse-installer.dump') -Stage "PostgreSQL backup")

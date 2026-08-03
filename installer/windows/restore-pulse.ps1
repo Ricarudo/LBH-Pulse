@@ -22,7 +22,8 @@ if ($expected -ne $actual) { throw "The encrypted backup checksum does not match
 
 $workBase = Join-Path $paths.Installer ("work\restore-" + [guid]::NewGuid().ToString("N"))
 [void](New-Item -ItemType Directory -Path $workBase -Force)
-Protect-PulsePath -Path $workBase
+# Docker Desktop must be able to write the temporary restore staging directory.
+Protect-PulsePath -Path $workBase -AllowCurrentUser
 try {
   $env:PULSE_BACKUP_ARCHIVE_DIR = Split-Path -Parent $BackupFile
   $env:PULSE_RESTORE_WORK_DIR = $workBase

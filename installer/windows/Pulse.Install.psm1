@@ -31,20 +31,26 @@ function Initialize-PulseDirectories {
 }
 
 function Protect-PulsePath {
-  param([Parameter(Mandatory = $true)][string]$Path)
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [switch]$AllowCurrentUser
+  )
   $item = Get-Item -LiteralPath $Path
   $administrators = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544")
   $system = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")
+  $currentUser = if ($AllowCurrentUser) { [System.Security.Principal.WindowsIdentity]::GetCurrent().User } else { $null }
   if ($item.PSIsContainer) {
     $acl = New-Object System.Security.AccessControl.DirectorySecurity
     $inherit = [System.Security.AccessControl.InheritanceFlags]"ContainerInherit, ObjectInherit"
     $propagate = [System.Security.AccessControl.PropagationFlags]::None
     $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($administrators, "FullControl", $inherit, $propagate, "Allow")))
     $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($system, "FullControl", $inherit, $propagate, "Allow")))
+    if ($currentUser) { $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, "FullControl", $inherit, $propagate, "Allow"))) }
   } else {
     $acl = New-Object System.Security.AccessControl.FileSecurity
     $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($administrators, "FullControl", "Allow")))
     $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($system, "FullControl", "Allow")))
+    if ($currentUser) { $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, "FullControl", "Allow"))) }
   }
   $acl.SetAccessRuleProtection($true, $false)
   Set-Acl -LiteralPath $Path -AclObject $acl

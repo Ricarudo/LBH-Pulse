@@ -30,7 +30,8 @@ if (-not $BackupPath) { $BackupPath = $paths.Backups }
 if (-not [IO.Path]::IsPathRooted($BackupPath)) { throw "The backup destination must be an absolute Windows path." }
 Initialize-PulseDirectories -Paths $paths -BackupPath $BackupPath
 Protect-PulsePath -Path $paths.Config
-Protect-PulsePath -Path $paths.Recovery
+# Docker Desktop accesses bind mounts as the installing user, even while Setup itself is elevated.
+Protect-PulsePath -Path $paths.Recovery -AllowCurrentUser
 [IO.File]::WriteAllText($paths.DisabledInput, "", (New-Object Text.UTF8Encoding($false)))
 Protect-PulsePath -Path $paths.DisabledInput
 
@@ -141,6 +142,7 @@ $state = [ordered]@{
   mode = $Mode
   url = $publicUrl
   installedAt = [DateTime]::UtcNow.ToString("o")
+  installationStatus = "initializing"
   firstRunComplete = $false
   trustInternalCaRequested = [bool]$TrustInternalCa
   caThumbprint = $null

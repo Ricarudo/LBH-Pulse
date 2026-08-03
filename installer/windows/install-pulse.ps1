@@ -13,34 +13,49 @@ $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "Pulse.Install.psm1") -Force
 $paths = Get-PulsePaths -Root $Root
 $existingState = Read-PulseState -Root $Root
+$existingStatus = if ($existingState -and $existingState.PSObject.Properties["installationStatus"]) {
+  [string]$existingState.installationStatus
+} elseif ($existingState) {
+  # Installers released before this marker could not pass recovery-key generation, so their state is resumable partial state.
+  "initializing"
+} else {
+  $null
+}
+
+if ($existingState) {
+  $Mode = [string]$existingState.mode
+  $Hostname = ([uri][string]$existingState.url).Host
+}
 
 try {
   & (Join-Path $PSScriptRoot "validate-prerequisites.ps1") -Mode $Mode -Hostname $Hostname -AllowOccupiedPorts:([bool]$existingState)
-  if ($existingState) {
-    Initialize-PulseDirectories -Paths $paths -BackupPath $BackupPath
-    $payload = Join-Path $paths.Installer "payload\deployment"
-    foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {
-      Copy-Item -LiteralPath (Join-Path $payload $name) -Destination (Join-Path $paths.Deployment $name) -Force
-    }
+  Initialize-PulseDirectories -Paths $paths -BackupPath $BackupPath
+  $payload = Join-Path $paths.Installer "payload\deployment"
+  foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {
+    Copy-Item -LiteralPath (Join-Path $payload $name) -Destination (Join-Path $paths.Deployment $name) -Force
+  }
+
+  if ($existingState -and $existingStatus -eq "installed") {
     Write-PulseLog -Root $Root -Message "Existing Pulse $($existingState.version) installation detected; preserving configuration and data."
     [void](Invoke-PulseCompose -Root $Root -Arguments @("up", "-d", "--no-build", "--wait", "--wait-timeout", "360") -Stage "repair existing stack")
     & (Join-Path $PSScriptRoot "test-installation.ps1") -Root $Root
     exit 0
   }
 
-  if (Test-Path -LiteralPath $paths.Environment) { throw "Protected Pulse configuration exists without installer state. Refusing to initialize or replace it." }
-  foreach ($volume in @("pulse-production-postgres", "pulse-production-minio", "pulse-production_clamav-data", "pulse-production_caddy-data", "pulse-production_caddy-config")) {
-    $probe = Invoke-PulseCommand -FilePath "docker" -Arguments @("volume", "inspect", $volume) -Root $Root -Stage "existing volume check" -AllowFailure -Quiet
-    if ($probe.ExitCode -eq 0) { throw "Docker volume '$volume' already exists without installer state. Refusing to initialize it." }
+  if (-not $existingState) {
+    if (Test-Path -LiteralPath $paths.Environment) { throw "Protected Pulse configuration exists without installer state. Refusing to initialize or replace it." }
+    foreach ($volume in @("pulse-production-postgres", "pulse-production-minio", "pulse-production_clamav-data", "pulse-production_caddy-data", "pulse-production_caddy-config")) {
+      $probe = Invoke-PulseCommand -FilePath "docker" -Arguments @("volume", "inspect", $volume) -Root $Root -Stage "existing volume check" -AllowFailure -Quiet
+      if ($probe.ExitCode -eq 0) { throw "Docker volume '$volume' already exists without installer state. Refusing to initialize it." }
+    }
+    $manifest = Join-Path $paths.Deployment "release-manifest.json"
+    & (Join-Path $PSScriptRoot "generate-config.ps1") -Root $Root -ManifestPath $manifest -Mode $Mode -Hostname $Hostname -AcmeEmail $AcmeEmail -BackupPath $BackupPath -TrustInternalCa:$TrustInternalCa
+  } else {
+    Write-PulseLog -Root $Root -Message "Resuming the incomplete Pulse $($existingState.version) initialization with its existing protected configuration."
   }
 
-  Initialize-PulseDirectories -Paths $paths -BackupPath $BackupPath
-  $payload = Join-Path $paths.Installer "payload\deployment"
-  foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {
-    Copy-Item -LiteralPath (Join-Path $payload $name) -Destination (Join-Path $paths.Deployment $name) -Force
-  }
-  $manifest = Join-Path $paths.Deployment "release-manifest.json"
-  & (Join-Path $PSScriptRoot "generate-config.ps1") -Root $Root -ManifestPath $manifest -Mode $Mode -Hostname $Hostname -AcmeEmail $AcmeEmail -BackupPath $BackupPath -TrustInternalCa:$TrustInternalCa
+  # Keep secrets locked down while allowing only the installing account's Docker Desktop backend to use this bind mount.
+  Protect-PulsePath -Path $paths.Recovery -AllowCurrentUser
 
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "--profile", "backup", "config", "--quiet") -Stage "release configuration validation")
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "--profile", "backup", "pull", "postgres", "minio", "minio-init", "clamav", "api", "web", "gateway", "db-roles", "backup-encrypt", "minio-backup") -Stage "immutable image pull")
@@ -51,7 +66,7 @@ try {
     $publicRecipient = ($recipient.Output -split "`r?`n" | Where-Object { $_ -match '^age1' } | Select-Object -Last 1).Trim()
     if ($publicRecipient -notmatch '^age1[a-z0-9]+$') { throw "The backup recovery recipient was not produced." }
     Set-PulseEnvironmentValue -Path $paths.Environment -Name "PULSE_BACKUP_AGE_RECIPIENT" -Value $publicRecipient
-    Protect-PulsePath -Path $paths.Identity
+    Protect-PulsePath -Path $paths.Identity -AllowCurrentUser
   }
 
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "up", "-d", "--no-build", "--wait", "--wait-timeout", "360", "postgres", "minio", "clamav") -Stage "stateful infrastructure startup")
@@ -84,6 +99,9 @@ try {
   }
 
   & (Join-Path $PSScriptRoot "test-installation.ps1") -Root $Root
+  $state = Read-PulseState -Root $Root
+  $state | Add-Member -NotePropertyName "installationStatus" -NotePropertyValue "installed" -Force
+  Write-PulseState -State $state -Root $Root
   Write-PulseLog -Root $Root -Message "Pulse installation completed and awaits protected browser setup."
 } catch {
   Write-PulseLog -Root $Root -Level "ERROR" -Message "Installation failed: $($_.Exception.Message)"
