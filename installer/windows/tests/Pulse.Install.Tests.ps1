@@ -66,6 +66,11 @@ Describe "Pulse installer security primitives" {
     (Test-PulseHostname -Hostname "bad_host") | Should -Be $false
   }
 
+  It "normalizes a hostname or pasted HTTPS URL for novice input" {
+    (ConvertTo-PulseHostname -Hostname " Pulse.R2.App. ") | Should -Be "pulse.r2.app"
+    (ConvertTo-PulseHostname -Hostname "https://Pulse.R2.App/") | Should -Be "pulse.r2.app"
+  }
+
   It "maps private LAN mode to the internal gateway on standard HTTPS ports" {
     $manifest = [pscustomobject]@{ images = [pscustomobject]@{ gatewayInternal = "example/internal@sha256:$('a' * 64)"; gatewayPublic = "example/public@sha256:$('b' * 64)" } }
     $lan = Get-PulseModeConfiguration -Mode lan -Hostname "pulse.example.lan" -Manifest $manifest
@@ -172,7 +177,8 @@ Describe "Pulse installer failure and preservation contracts" {
     $prerequisites | Should -Match 'TCP port .* already occupied'
     $prerequisites | Should -Match 'Get-Item -LiteralPath \$env:ProgramData -Force'
     $prerequisites | Should -Match 'Uri "https://ghcr\.io/v2/" -Method Get'
-    $prerequisites | Should -Match "Private LAN hostname.*does not resolve on this computer"
+    $prerequisites | Should -Match 'ConvertTo-PulseHostname'
+    $prerequisites | Should -Not -Match 'GetHostAddresses|Resolve-DnsName'
   }
 
   It "fails image pulls, initialization, and migrations through strict compose stages" {
@@ -186,7 +192,10 @@ Describe "Pulse installer failure and preservation contracts" {
     $health | Should -Match 'health check timed out'
     $health | Should -Match 'TimeoutSeconds'
     $health | Should -Match 'mode -in @\("internal", "lan"\)'
-    $health | Should -Match "Private LAN hostname.*does not resolve on this computer"
+    $health | Should -Match '"--resolve", "\$\{lanHostname\}:443:127\.0\.0\.1"'
+    $health | Should -Not -Match 'Private LAN hostname.*does not resolve on this computer'
+    $script:health | Should -Match 'real TLS hostname and SNI'
+    (Get-Content -LiteralPath (Join-Path $windowsRoot "manage-pulse.ps1") -Raw) | Should -Match '"--resolve", "\$\{lanHostname\}:443:127\.0\.0\.1"'
   }
 
   It "resumes incomplete initialization and repairs only completed installs" {
@@ -270,6 +279,8 @@ Describe "Pulse release inventory" {
     $generator | Should -Match 'ValidateSet\("internal", "lan", "public"\)'
     $generator | Should -Match 'PULSE_CADDY_TARGET=\$\(\$settings\.CaddyTarget\)'
     $update | Should -Match '\$current\.mode -eq "public"'
+    $iss | Should -Match 'function ShouldOpenPulse: Boolean'
+    $iss | Should -Match 'Result := ModePage\.SelectedValueIndex <> 1'
   }
 
   It "does not expand the app directory before Inno initializes it" {

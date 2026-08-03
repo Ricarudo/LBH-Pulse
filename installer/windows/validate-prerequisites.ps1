@@ -35,18 +35,8 @@ if ($dockerFailure) { throw $dockerFailure }
 $programDataDriveName = (Get-Item -LiteralPath $env:ProgramData -Force).PSDrive.Name
 $drive = Get-PSDrive -Name $programDataDriveName
 if (($drive.Free / 1GB) -lt $MinimumFreeGb) { throw "At least $MinimumFreeGb GB free space is required on the ProgramData drive." }
+$Hostname = ConvertTo-PulseHostname -Hostname $Hostname
 if (-not (Test-PulseHostname -Hostname $Hostname -AllowLocalhost:($Mode -eq "internal"))) { throw "The requested Pulse hostname is invalid." }
-
-if ($Mode -eq "lan" -and -not $SkipNetworkCheck) {
-  try {
-    $lanAddresses = @([Net.Dns]::GetHostAddresses($Hostname))
-  } catch {
-    throw "Private LAN hostname '$Hostname' does not resolve on this computer. Add it to the router or local DNS, configure this computer to use that DNS server, then retry."
-  }
-  if ($lanAddresses.Count -eq 0) {
-    throw "Private LAN hostname '$Hostname' does not resolve on this computer. Add it to the router or local DNS, configure this computer to use that DNS server, then retry."
-  }
-}
 
 $ports = if ($Mode -eq "internal") { @(8080, 8443) } else { @(80, 443) }
 foreach ($port in $ports) {

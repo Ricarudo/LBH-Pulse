@@ -9,7 +9,7 @@
 - A running Docker engine configured for Linux/amd64 containers and Docker Compose v2.
 - At least 20 GB free on the ProgramData drive and internet access to `ghcr.io`.
 - Local-only mode: ports 8080 and 8443 available.
-- Private LAN mode: ports 80 and 443 available and a router or local-DNS hostname that resolves to the Pulse computer from the server and every client. No public DNS or inbound Internet forwarding is required.
+- Private LAN mode: ports 80 and 443 available and a router or local-DNS hostname that resolves to the Pulse computer from every client. The server itself does not need to resolve the name; no public DNS or inbound Internet forwarding is required.
 - Public mode: ports 80 and 443 available, public DNS already pointing at the machine, and inbound firewall/NAT configured.
 
 Docker Desktop is not installed by Pulse. Review the current [Docker Desktop Windows requirements](https://docs.docker.com/desktop/setup/install/windows-install/) and [Docker subscription terms](https://www.docker.com/legal/docker-subscription-service-agreement/) before organizational or commercial use. Docker Desktop is not supported on Windows Server; use a reviewed Linux server deployment for external or enterprise production.
@@ -29,11 +29,11 @@ The release process uses Inno Setup 6.7.1. Review [Inno Setup licensing](https:/
 
 3. Start the installer as Administrator and choose an HTTPS mode:
    - **Local-only** uses `https://localhost:8443` on the Pulse computer.
-   - **Private LAN** uses a hostname supplied by your router or local DNS, such as `https://pulse.example.lan`. Pulse verifies that the name resolves on the server before changing configuration.
+   - **Private LAN** uses a hostname supplied by your router or local DNS, such as `https://pulse.example.lan`. Server-side health checks connect through loopback while retaining that hostname for TLS validation, so the server does not need the router's client-facing DNS response.
    - **Public domain** requires public DNS and obtains an ACME certificate through Caddy.
 4. Choose an encrypted-backup destination. Docker continues to manage the PostgreSQL and MinIO named volumes; this selection does not move live data.
 5. In local-only or private LAN mode, explicitly choose whether to trust the Pulse internal Caddy CA in `LocalMachine\Root` on the server.
-6. When Pulse opens, enter the one-time setup code shown on the final installer page, then create the Administrator in the browser.
+6. When Pulse opens, enter the one-time setup code shown on the final installer page, then create the Administrator in the browser. In private LAN mode, open the displayed URL from another LAN computer; the installer intentionally does not launch a server-side browser when the name may be client-only DNS.
 7. Use **Pulse > Complete first-run setup** from the Start Menu. It verifies setup, removes the setup token and temporary code file, recreates the API, and reruns HTTPS health checks.
 
 An unsigned release is identified prominently in its GitHub release notes. A checksum proves download integrity, not publisher identity; organizations should configure the repository signing secrets before distribution.

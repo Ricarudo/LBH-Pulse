@@ -50,12 +50,14 @@ if ($state.mode -in @("internal", "lan")) {
   if (-not (Test-Path -LiteralPath $caPath)) { throw "Pulse internal CA certificate is missing." }
   $curl += @("--cacert", $caPath)
 }
+if ($state.mode -eq "lan") {
+  # The server may not use the router's client-facing DNS, so verify the local gateway with the real TLS hostname and SNI.
+  $lanHostname = ([uri][string]$state.url).Host
+  $curl += @("--resolve", "${lanHostname}:443:127.0.0.1")
+}
 $curl += $url
 $readiness = Invoke-PulseCommand -FilePath "curl.exe" -Arguments $curl -Root $Root -Stage "Pulse readiness endpoint" -AllowFailure -Quiet
 if ($readiness.ExitCode -ne 0) {
-  if ($readiness.ExitCode -eq 6 -and $state.mode -eq "lan") {
-    throw "Private LAN hostname '$(([uri][string]$state.url).Host)' does not resolve on this computer. Check the router or local DNS entry and this computer's DNS server, then retry."
-  }
   if ($readiness.ExitCode -eq 6 -and $state.mode -eq "public") {
     throw "Public hostname '$(([uri][string]$state.url).Host)' does not exist in public DNS. Create its public DNS record and wait for propagation before retrying."
   }

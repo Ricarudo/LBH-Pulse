@@ -76,7 +76,7 @@ begin
   ModePage.SelectedValueIndex := 0;
 
   LanPage := CreateInputQueryPage(ModePage.ID, 'Private LAN HTTPS', 'Local network hostname',
-    'The hostname must already resolve to this computer through your router or local DNS.');
+    'Other computers must resolve this name through your router or local DNS. The Pulse server itself does not need to resolve it.');
   LanPage.Add('Pulse LAN hostname (for example pulse.company.lan):', False);
 
   PublicPage := CreateInputQueryPage(LanPage.ID, 'Public HTTPS', 'Domain and certificate contact',
@@ -178,7 +178,10 @@ begin
       SetupCodeLabel := TNewStaticText.Create(WizardForm);
       SetupCodeLabel.Parent := WizardForm.FinishedPage;
       SetupCodeLabel.Top := WizardForm.FinishedLabel.Top + WizardForm.FinishedLabel.Height + ScaleY(16);
-      SetupCodeLabel.Caption := 'One-time setup code (never share or log this value):';
+      if ModePage.SelectedValueIndex = 1 then
+        SetupCodeLabel.Caption := 'On another LAN computer, open Pulse using the LAN hostname and enter this one-time setup code:'
+      else
+        SetupCodeLabel.Caption := 'One-time setup code (never share or log this value):';
       SetupCodeEdit := TNewEdit.Create(WizardForm);
       SetupCodeEdit.Parent := WizardForm.FinishedPage;
       SetupCodeEdit.Top := SetupCodeLabel.Top + SetupCodeLabel.Height + ScaleY(6);
@@ -195,6 +198,12 @@ begin
   if ModePage.SelectedValueIndex = 0 then Result := 'https://localhost:8443'
   else if ModePage.SelectedValueIndex = 1 then Result := 'https://' + LanPage.Values[0]
   else Result := 'https://' + PublicPage.Values[0];
+end;
+
+function ShouldOpenPulse: Boolean;
+begin
+  // Router-only DNS may intentionally be unavailable on the server; LAN setup is completed from another computer.
+  Result := ModePage.SelectedValueIndex <> 1;
 end;
 
 function InitializeUninstall(): Boolean;
@@ -221,5 +230,5 @@ begin
 end;
 
 [Run]
-Filename: "{code:GetPulseUrl}"; Description: "Open Pulse to create the Administrator"; Flags: postinstall shellexec skipifsilent nowait
+Filename: "{code:GetPulseUrl}"; Description: "Open Pulse to create the Administrator"; Flags: postinstall shellexec skipifsilent nowait; Check: ShouldOpenPulse
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\manage-pulse.ps1"" -Action CompleteSetup -WaitForSetupSeconds 1800"; Description: "Finalize protected first-run setup"; Flags: postinstall runhidden skipifsilent waituntilterminated

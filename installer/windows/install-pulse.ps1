@@ -16,6 +16,7 @@ $paths = Get-PulsePaths -Root $Root
 $existingState = Read-PulseState -Root $Root
 # Installers released before this marker could not pass recovery-key generation, so their state is resumable partial state.
 $existingStatus = Get-PulseInstallationStatus -State $existingState
+$Hostname = ConvertTo-PulseHostname -Hostname $Hostname
 
 if ($existingState -and -not ($AllowIncompleteModeChange -and $existingStatus -ne "installed")) {
   $Mode = [string]$existingState.mode

@@ -281,6 +281,15 @@ function Test-PulseHostname {
   return $Hostname -match '^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$'
 }
 
+function ConvertTo-PulseHostname {
+  param([string]$Hostname)
+  $value = ([string]$Hostname).Trim().TrimEnd('/')
+  if ($value -match '^https?://') {
+    try { $value = ([uri]$value).Host } catch { return $Hostname }
+  }
+  return $value.TrimEnd('.').ToLowerInvariant()
+}
+
 function Get-PulseModeConfiguration {
   param(
     [ValidateSet("internal", "lan", "public")][string]$Mode,
@@ -288,6 +297,7 @@ function Get-PulseModeConfiguration {
     [string]$AcmeEmail = "operator@example.invalid",
     [Parameter(Mandatory = $true)]$Manifest
   )
+  $Hostname = ConvertTo-PulseHostname -Hostname $Hostname
   if ($Mode -eq "internal") { $Hostname = "localhost" }
   if (-not (Test-PulseHostname -Hostname $Hostname -AllowLocalhost:($Mode -eq "internal"))) {
     throw "The Pulse hostname is invalid."
