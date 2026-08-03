@@ -280,7 +280,7 @@ jobs:
             Write-Warning "No signing certificate is configured; publishing an unsigned installer."
           }
           $arguments += "installer/windows/pulse-setup.iss"
-          & '${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe' @arguments
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" @arguments
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
       - name: Create SHA-256 checksum
         shell: pwsh

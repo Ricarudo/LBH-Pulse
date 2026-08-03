@@ -27,7 +27,6 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=Pulse {#AppVersion}
 SetupLogging=yes
-UninstallNeedRestart=no
 #ifdef PulseSign
 SignTool=pulse
 SignedUninstaller=yes
