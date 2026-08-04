@@ -30,6 +30,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   clientIndustries,
   clientOwners,
+  clientSiteTypes,
   clientStatuses,
   type ClientIndustry,
   type ClientRecord,
@@ -581,6 +582,167 @@ export function ClientsModule() {
                     role="alert"
                   >
                     {quickCreateErrors.industry}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>
+                  Site Name <small>Required</small>
+                </span>
+                <input
+                  value={quickCreateForm.siteName}
+                  maxLength={quickCreateLimits.siteName + 16}
+                  aria-invalid={Boolean(quickCreateErrors.siteName)}
+                  aria-describedby={
+                    quickCreateErrors.siteName ? "quick-client-site-name-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("siteName", event.target.value)
+                  }
+                />
+                {quickCreateErrors.siteName ? (
+                  <small id="quick-client-site-name-error" className="field-error" role="alert">
+                    {quickCreateErrors.siteName}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>
+                  Site Type <small>Required</small>
+                </span>
+                <select
+                  value={quickCreateForm.siteType}
+                  aria-invalid={Boolean(quickCreateErrors.siteType)}
+                  aria-describedby={
+                    quickCreateErrors.siteType ? "quick-client-site-type-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("siteType", event.target.value)
+                  }
+                >
+                  {clientSiteTypes.map((siteType) => (
+                    <option key={siteType} value={siteType}>
+                      {siteType}
+                    </option>
+                  ))}
+                </select>
+                {quickCreateErrors.siteType ? (
+                  <small id="quick-client-site-type-error" className="field-error" role="alert">
+                    {quickCreateErrors.siteType}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>Address Line 1</span>
+                <input
+                  value={quickCreateForm.addressLine1}
+                  maxLength={quickCreateLimits.addressLine1}
+                  aria-invalid={Boolean(quickCreateErrors.addressLine1)}
+                  aria-describedby={
+                    quickCreateErrors.addressLine1 ? "quick-client-address-1-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("addressLine1", event.target.value)
+                  }
+                />
+                {quickCreateErrors.addressLine1 ? (
+                  <small id="quick-client-address-1-error" className="field-error" role="alert">
+                    {quickCreateErrors.addressLine1}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>Address Line 2</span>
+                <input
+                  value={quickCreateForm.addressLine2}
+                  maxLength={quickCreateLimits.addressLine2}
+                  aria-invalid={Boolean(quickCreateErrors.addressLine2)}
+                  aria-describedby={
+                    quickCreateErrors.addressLine2 ? "quick-client-address-2-error" : undefined
+                  }
+                  disabled={isCreatingClient}
+                  onChange={(event) =>
+                    updateQuickCreateField("addressLine2", event.target.value)
+                  }
+                />
+                {quickCreateErrors.addressLine2 ? (
+                  <small id="quick-client-address-2-error" className="field-error" role="alert">
+                    {quickCreateErrors.addressLine2}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>City</span>
+                <input
+                  value={quickCreateForm.city}
+                  maxLength={quickCreateLimits.city}
+                  aria-invalid={Boolean(quickCreateErrors.city)}
+                  aria-describedby={quickCreateErrors.city ? "quick-client-city-error" : undefined}
+                  disabled={isCreatingClient}
+                  onChange={(event) => updateQuickCreateField("city", event.target.value)}
+                />
+                {quickCreateErrors.city ? (
+                  <small id="quick-client-city-error" className="field-error" role="alert">
+                    {quickCreateErrors.city}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>State</span>
+                <input
+                  value={quickCreateForm.state}
+                  maxLength={quickCreateLimits.state}
+                  aria-invalid={Boolean(quickCreateErrors.state)}
+                  aria-describedby={quickCreateErrors.state ? "quick-client-state-error" : undefined}
+                  disabled={isCreatingClient}
+                  onChange={(event) => updateQuickCreateField("state", event.target.value)}
+                />
+                {quickCreateErrors.state ? (
+                  <small id="quick-client-state-error" className="field-error" role="alert">
+                    {quickCreateErrors.state}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>Postal Code</span>
+                <input
+                  value={quickCreateForm.postalCode}
+                  maxLength={quickCreateLimits.postalCode}
+                  aria-invalid={Boolean(quickCreateErrors.postalCode)}
+                  aria-describedby={quickCreateErrors.postalCode ? "quick-client-postal-code-error" : undefined}
+                  disabled={isCreatingClient}
+                  onChange={(event) => updateQuickCreateField("postalCode", event.target.value)}
+                />
+                {quickCreateErrors.postalCode ? (
+                  <small id="quick-client-postal-code-error" className="field-error" role="alert">
+                    {quickCreateErrors.postalCode}
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="material-field">
+                <span>Country</span>
+                <input
+                  value={quickCreateForm.country}
+                  maxLength={quickCreateLimits.country}
+                  aria-invalid={Boolean(quickCreateErrors.country)}
+                  aria-describedby={quickCreateErrors.country ? "quick-client-country-error" : undefined}
+                  disabled={isCreatingClient}
+                  onChange={(event) => updateQuickCreateField("country", event.target.value)}
+                />
+                {quickCreateErrors.country ? (
+                  <small id="quick-client-country-error" className="field-error" role="alert">
+                    {quickCreateErrors.country}
                   </small>
                 ) : null}
               </label>

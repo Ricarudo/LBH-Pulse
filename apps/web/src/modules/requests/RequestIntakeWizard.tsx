@@ -868,8 +868,8 @@ export function RequestIntakeWizard({
 
       onClientChanged(data.client);
       setSelectedClientId(data.client.id);
-      // Quick client creation can include an initial PoC, but it intentionally
-      // does not create a site. Step 2 will require a site before continuing.
+      // The quick-create payload includes the initial primary site and optional
+      // PoC, so both records are available for the next intake step.
       const primaryContact =
         data.client.contacts.find((contact) => contact.isPrimary || contact.isPrimaryContact) ??
         data.client.contacts[0];
@@ -1263,7 +1263,7 @@ export function RequestIntakeWizard({
               >
                 <div className="request-wizard-guided-intro">
                   <strong>Add a client without leaving intake</strong>
-                  <span>Capture the account and its first contact now. You can enrich the Directory record later.</span>
+                  <span>Capture the account, first site, and first contact now. You can enrich the Directory record later.</span>
                 </div>
                 <div className="request-wizard-field-grid">
                   <TextField
@@ -1286,6 +1286,87 @@ export function RequestIntakeWizard({
                     prefix="guided-client"
                     required
                     onChange={(value) => updateQuickClientField("industry", value)}
+                  />
+                  <TextField
+                    label="Site Name"
+                    name="siteName"
+                    value={quickClient.siteName}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="organization"
+                    maxLength={quickCreateLimits.siteName + 16}
+                    required
+                    onChange={(value) => updateQuickClientField("siteName", value)}
+                  />
+                  <SelectField
+                    label="Site Type"
+                    name="siteType"
+                    value={quickClient.siteType}
+                    options={clientSiteTypes}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    required
+                    onChange={(value) => updateQuickClientField("siteType", value)}
+                  />
+                  <TextField
+                    label="Address Line 1"
+                    name="addressLine1"
+                    value={quickClient.addressLine1}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="address-line1"
+                    maxLength={quickCreateLimits.addressLine1 + 16}
+                    onChange={(value) => updateQuickClientField("addressLine1", value)}
+                  />
+                  <TextField
+                    label="Address Line 2"
+                    name="addressLine2"
+                    value={quickClient.addressLine2}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="address-line2"
+                    maxLength={quickCreateLimits.addressLine2 + 16}
+                    onChange={(value) => updateQuickClientField("addressLine2", value)}
+                  />
+                  <TextField
+                    label="City"
+                    name="city"
+                    value={quickClient.city}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="address-level2"
+                    maxLength={quickCreateLimits.city + 16}
+                    onChange={(value) => updateQuickClientField("city", value)}
+                  />
+                  <TextField
+                    label="State"
+                    name="state"
+                    value={quickClient.state}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="address-level1"
+                    maxLength={quickCreateLimits.state + 16}
+                    onChange={(value) => updateQuickClientField("state", value)}
+                  />
+                  <TextField
+                    label="Postal Code"
+                    name="postalCode"
+                    value={quickClient.postalCode}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="postal-code"
+                    maxLength={quickCreateLimits.postalCode + 16}
+                    onChange={(value) => updateQuickClientField("postalCode", value)}
+                  />
+                  <TextField
+                    label="Country"
+                    name="country"
+                    value={quickClient.country}
+                    errors={quickClientErrors}
+                    prefix="guided-client"
+                    autoComplete="country-name"
+                    maxLength={quickCreateLimits.country + 16}
+                    onChange={(value) => updateQuickClientField("country", value)}
                   />
                   <TextField
                     label="Point of Contact Name"
@@ -2204,6 +2285,80 @@ export function RequestIntakeWizard({
                       prefix="quick-client"
                       required
                       onChange={(value) => updateQuickClientField("industry", value)}
+                    />
+                    <TextField
+                      label="Site Name"
+                      name="siteName"
+                      value={quickClient.siteName}
+                      errors={quickClientErrors}
+                      prefix="quick-client"
+                      maxLength={quickCreateLimits.siteName + 16}
+                      required
+                      onChange={(value) => updateQuickClientField("siteName", value)}
+                    />
+                    <SelectField
+                      label="Site Type"
+                      name="siteType"
+                      value={quickClient.siteType}
+                      options={clientSiteTypes}
+                      errors={quickClientErrors}
+                      prefix="quick-client"
+                      required
+                      onChange={(value) => updateQuickClientField("siteType", value)}
+                    />
+                    <TextField
+                      label="Address Line 1"
+                      name="addressLine1"
+                      value={quickClient.addressLine1}
+                      errors={quickClientErrors}
+                      prefix="quick-client"
+                      maxLength={quickCreateLimits.addressLine1 + 16}
+                      onChange={(value) => updateQuickClientField("addressLine1", value)}
+                    />
+                    <TextField
+                      label="Address Line 2"
+                      name="addressLine2"
+                      value={quickClient.addressLine2}
+                      errors={quickClientErrors}
+                      prefix="quick-client"
+                      maxLength={quickCreateLimits.addressLine2 + 16}
+                      onChange={(value) => updateQuickClientField("addressLine2", value)}
+                    />
+                    <TextField
+                      label="City"
+                      name="city"
+                      value={quickClient.city}
+                      errors={quickClientErrors}
+                      prefix="quick-client"
+                      maxLength={quickCreateLimits.city + 16}
+                      onChange={(value) => updateQuickClientField("city", value)}
+                    />
+                    <TextField
+                      label="State"
+                      name="state"
+                      value={quickClient.state}
+                      errors={quickClientErrors}
+                      prefix="quick-client"
+                      maxLength={quickCreateLimits.state + 16}
+                      onChange={(value) => updateQuickClientField("state", value)}
+                    />
+                    <TextField
+                      label="Postal Code"
+                      name="postalCode"
+                      value={quickClient.postalCode}
+                      errors={quickClientErrors}
+                      prefix="quick-client"
+                      maxLength={quickCreateLimits.postalCode + 16}
+                      onChange={(value) => updateQuickClientField("postalCode", value)}
+                    />
+                    <TextField
+                      label="Country"
+                      name="country"
+                      value={quickClient.country}
+                      errors={quickClientErrors}
+                      prefix="quick-client"
+                      maxLength={quickCreateLimits.country + 16}
+                      onChange={(value) => updateQuickClientField("country", value)}
                     />
                     <TextField
                       label="Point of Contact Name"
