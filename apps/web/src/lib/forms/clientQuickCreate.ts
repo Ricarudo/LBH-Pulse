@@ -3,8 +3,10 @@
 // client creation experiences from drifting over time.
 import {
   clientIndustries,
+  clientSiteTypes,
   type ClientCreatePayload,
-  type ClientIndustry
+  type ClientIndustry,
+  type ClientSiteType
 } from "@pulse/contracts/clients";
 import {
   type FieldErrors,
@@ -21,6 +23,14 @@ import {
 export type QuickCreateForm = {
   clientName: string;
   industry: string;
+  siteName: string;
+  siteType: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
   contactName: string;
   contactEmail: string;
   contactPhone: string;
@@ -32,6 +42,14 @@ export type QuickCreateErrors = FieldErrors<QuickCreateField>;
 
 export const quickCreateLimits = {
   clientName: 160,
+  siteName: 160,
+  siteType: 40,
+  addressLine1: 2000,
+  addressLine2: 2000,
+  city: 2000,
+  state: 2000,
+  postalCode: 2000,
+  country: 2000,
   contactName: 120,
   contactEmail: 254,
   contactPhone: 40,
@@ -42,6 +60,14 @@ export function createBlankQuickCreateForm(): QuickCreateForm {
   return {
     clientName: "",
     industry: "",
+    siteName: "",
+    siteType: "Main Office",
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    state: "PR",
+    postalCode: "",
+    country: "Puerto Rico",
     contactName: "",
     contactEmail: "",
     contactPhone: "",
@@ -59,6 +85,14 @@ export function validateQuickCreateForm(form: QuickCreateForm) {
   const normalized: QuickCreateForm = {
     clientName: normalizeText(form.clientName, true),
     industry: normalizeText(form.industry),
+    siteName: normalizeText(form.siteName, true),
+    siteType: normalizeText(form.siteType),
+    addressLine1: normalizeText(form.addressLine1),
+    addressLine2: normalizeText(form.addressLine2),
+    city: normalizeText(form.city),
+    state: normalizeText(form.state),
+    postalCode: normalizeText(form.postalCode),
+    country: normalizeText(form.country),
     contactName: normalizeText(form.contactName, true),
     contactEmail: normalizeEmail(form.contactEmail),
     contactPhone: normalizePhone(form.contactPhone),
@@ -77,6 +111,23 @@ export function validateQuickCreateForm(form: QuickCreateForm) {
   } else if (!isClientIndustry(normalized.industry)) {
     errors.industry = "Select a valid client industry.";
   }
+
+  if (!normalized.siteName) {
+    errors.siteName = "Site Name is required.";
+  } else {
+    validateCleanText(errors, "siteName", normalized.siteName, quickCreateLimits.siteName);
+  }
+
+  if (!isAllowedValue(normalized.siteType, clientSiteTypes)) {
+    errors.siteType = "Select a valid site type.";
+  }
+
+  validateCleanText(errors, "addressLine1", normalized.addressLine1, quickCreateLimits.addressLine1);
+  validateCleanText(errors, "addressLine2", normalized.addressLine2, quickCreateLimits.addressLine2);
+  validateCleanText(errors, "city", normalized.city, quickCreateLimits.city);
+  validateCleanText(errors, "state", normalized.state, quickCreateLimits.state);
+  validateCleanText(errors, "postalCode", normalized.postalCode, quickCreateLimits.postalCode);
+  validateCleanText(errors, "country", normalized.country, quickCreateLimits.country);
 
   validateCleanText(errors, "contactName", normalized.contactName, quickCreateLimits.contactName);
   validateCleanText(errors, "contactPhone", normalized.contactPhone, quickCreateLimits.contactPhone);
@@ -121,12 +172,14 @@ export function buildQuickCreatePayload(form: QuickCreateForm): ClientCreatePayl
     form.contactName || form.contactEmail || form.contactPhone || form.contactRole
   );
   const contacts: ClientCreatePayload["contacts"] = [];
+  const quickSiteLocalId = "quick-create-site";
 
   if (contactProvided) {
     const { firstName, lastName } = splitContactName(form.contactName);
 
     contacts.push({
       name: form.contactName,
+      siteLocalId: quickSiteLocalId,
       role: form.contactRole || "Primary",
       firstName,
       lastName,
@@ -174,7 +227,26 @@ export function buildQuickCreatePayload(form: QuickCreateForm): ClientCreatePayl
     invoiceRequirements: "",
     insuranceRequirements: "",
     purchaseOrderRequired: false,
-    sites: [],
+    sites: [
+      {
+        localId: quickSiteLocalId,
+        siteName: form.siteName,
+        siteType: form.siteType as ClientSiteType,
+        addressLine1: form.addressLine1,
+        addressLine2: form.addressLine2,
+        city: form.city,
+        state: form.state,
+        postalCode: form.postalCode,
+        country: form.country,
+        googleMapsUrl: "",
+        operationalHours: "",
+        accessInstructions: "",
+        parkingInstructions: "",
+        securityRequirements: "",
+        siteNotes: "",
+        isPrimarySite: true
+      }
+    ],
     contacts,
     serviceProfile: []
   };
@@ -189,6 +261,38 @@ export function quickCreateFieldFromApiPath(path: string): QuickCreateField | "f
 
   if (path === "industry") {
     return "industry";
+  }
+
+  if (path === "sites.0.siteName") {
+    return "siteName";
+  }
+
+  if (path === "sites.0.siteType") {
+    return "siteType";
+  }
+
+  if (path === "sites.0.addressLine1") {
+    return "addressLine1";
+  }
+
+  if (path === "sites.0.addressLine2") {
+    return "addressLine2";
+  }
+
+  if (path === "sites.0.city") {
+    return "city";
+  }
+
+  if (path === "sites.0.state") {
+    return "state";
+  }
+
+  if (path === "sites.0.postalCode") {
+    return "postalCode";
+  }
+
+  if (path === "sites.0.country") {
+    return "country";
   }
 
   if (path.startsWith("contacts.0.")) {
