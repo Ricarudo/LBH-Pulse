@@ -24,6 +24,7 @@ import type {
   RequestUpdate,
   RequestUpdateFilter
 } from "@pulse/contracts/requests";
+import type { ParsedClientContactInput, ParsedClientSiteInput } from "@pulse/contracts/clients";
 import { apiRequest, type ApiRequestOptions } from "@/lib/api/client";
 
 type ReadOptions = Pick<ApiRequestOptions, "cache" | "signal">;
@@ -78,6 +79,33 @@ export function fetchQuoteUpdateTeamMembers(options: ReadOptions = {}) {
   return apiRequest<{ teamMembers: RequestAssignee[] }>("/api/quotes/team-members", {
     ...options,
     method: "GET"
+  });
+}
+
+export function addQuoteCollaborator(quoteId: string, userId: string) {
+  return apiRequest<QuotePayloadResponse>(quotePath(quoteId, "/collaborators"), {
+    method: "POST",
+    json: { userId }
+  });
+}
+
+export function removeQuoteCollaborator(quoteId: string, userId: string) {
+  return apiRequest<QuotePayloadResponse>(quotePath(quoteId, `/collaborators/${encodeURIComponent(userId)}`), {
+    method: "DELETE"
+  });
+}
+
+export function addClientContact(clientId: string, input: ParsedClientContactInput) {
+  return apiRequest<{ client: { contacts: Array<{ id: string }> } }>(`/api/clients/${encodeURIComponent(clientId)}/contacts`, {
+    method: "POST",
+    json: input
+  });
+}
+
+export function addClientSite(clientId: string, input: ParsedClientSiteInput) {
+  return apiRequest<{ client: { sites: Array<{ id: string }> } }>(`/api/clients/${encodeURIComponent(clientId)}/sites`, {
+    method: "POST",
+    json: input
   });
 }
 

@@ -136,6 +136,8 @@ export type QuoteRecord = {
   site: LifecycleSiteSummary | null;
   assignedToId: string | null;
   assignedTo: RequestAssignee | null;
+  dueDate: string;
+  collaborators: RequestAssignee[];
   status: QuoteStatus;
   /** Display-only compatibility value. Mutations use assignedToId. */
   owner: string;
@@ -173,6 +175,8 @@ export type QuoteContextSnapshot = {
 
 export type QuoteDetailRecord = QuoteRecord & {
   context: QuoteContextSnapshot;
+  contactOptions: ClientContact[];
+  siteOptions: LifecycleSiteSummary[];
   proposalNotes: string;
   proposalPreparedAt: string;
   items: QuoteItemRecord[];
@@ -359,6 +363,7 @@ const assignedToId = z
   .nullish()
   .transform((value) => value || null);
 const optionalDate = z.string().trim().optional().transform((value) => value || undefined);
+const nullableDate = z.string().trim().nullish().transform((value) => value || null);
 const money = z.coerce.number().min(0).max(9999999999);
 const durationBusinessDays = z.coerce.number().int().min(0).max(100000).nullable();
 const quoteTrades = z
@@ -373,6 +378,7 @@ export const createQuoteSchema = z.object({
   contactId: id,
   siteId: id,
   assignedToId: id,
+  dueDate: optionalDate,
   lifecycleDetails,
   status: z.enum(quoteStatuses).default("Draft"),
   calculationMode: z.enum(quoteCalculationModes),
@@ -386,9 +392,14 @@ export const updateQuoteSchema = z.object({
   contactId: assignedToId.optional(),
   siteId: assignedToId.optional(),
   assignedToId: assignedToId.optional(),
+  dueDate: nullableDate.optional(),
   lifecycleDetails,
   status: z.enum(quoteStatuses).optional(),
   trades: quoteTrades.optional()
+}).strict();
+
+export const lifecycleCollaboratorSchema = z.object({
+  userId: id
 }).strict();
 
 export const replaceLegacyQuoteFinancialsSchema = z.object({
@@ -502,6 +513,7 @@ export const reorderProjectTasksSchema = z.object({
 
 export type CreateQuoteInput = z.infer<typeof createQuoteSchema>;
 export type UpdateQuoteInput = z.infer<typeof updateQuoteSchema>;
+export type LifecycleCollaboratorInput = z.infer<typeof lifecycleCollaboratorSchema>;
 export type ReplaceLegacyQuoteFinancialsInput = z.infer<typeof replaceLegacyQuoteFinancialsSchema>;
 export type SwitchQuoteCalculationModeInput = z.infer<typeof switchQuoteCalculationModeSchema>;
 export type CreateQuoteRevisionInput = z.infer<typeof createQuoteRevisionSchema>;

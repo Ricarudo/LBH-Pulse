@@ -54,7 +54,12 @@ const requestInclude = {
   client: true,
   contact: true,
   site: true,
-  lifecycleContext: { include: { updatedBy: { include: { accessRole: true } } } },
+  lifecycleContext: {
+    include: {
+      updatedBy: { include: { accessRole: true } },
+      collaborators: { include: { user: { include: { accessRole: true } } }, orderBy: { createdAt: "asc" } }
+    }
+  },
   relatedQuote: true,
   checklistTemplate: true,
   trades: {
@@ -356,7 +361,7 @@ function toRequestRecord(request: RequestWithRelations, viewerId?: string): Requ
   const updates = request.updates.map((update) => toRequestUpdateRecord(update, viewerId));
   const currentStep = updates.find((update) => update.id === request.currentStepId) ?? null;
   const lead = toAssigneeSnapshot(request.assignedTo);
-  const collaborators = request.collaborators
+  const collaborators = (request.lifecycleContext?.collaborators ?? [])
     .map((collaborator) => toAssigneeSnapshot(collaborator.user))
     .filter((collaborator): collaborator is RequestAssignee => Boolean(collaborator));
   const unreadMentionCount = viewerId
@@ -693,7 +698,7 @@ async function createRequestUpdateInternal(
     await tx.$queryRaw`SELECT "id" FROM "Request" WHERE "id" = ${id} FOR UPDATE`;
     const locked = await tx.request.findUnique({
       where: { id },
-      select: { id: true, status: true, currentStepId: true, assignedToId: true, requestNumber: true, title: true }
+      select: { id: true, status: true, currentStepId: true, assignedToId: true, lifecycleContextId: true, requestNumber: true, title: true }
     });
     if (!locked) throw new Error("REQUEST_NOT_FOUND");
     if (input.kind === "step" && isClosedOrConverted(locked.status)) {
@@ -740,6 +745,13 @@ async function createRequestUpdateInternal(
       if (!existingCollaborator && locked.assignedToId !== assignee.id) {
         await tx.requestCollaborator.create({
           data: { requestId: id, userId: assignee.id, addedById: user?.id ?? null }
+        });
+      }
+      if (locked.lifecycleContextId && locked.assignedToId !== assignee.id) {
+        await tx.lifecycleCollaborator.upsert({
+          where: { lifecycleContextId_userId: { lifecycleContextId: locked.lifecycleContextId, userId: assignee.id } },
+          create: { lifecycleContextId: locked.lifecycleContextId, userId: assignee.id, addedById: user?.id ?? null },
+          update: {}
         });
       }
     }
@@ -797,7 +809,8 @@ export async function listRequestUpdates(
   take = 25,
   viewerId?: string
 ) {
-  await getRequestOrThrow(id);
+  const request = await getRequestOrThrow(id);
+  if (!request.lifecycleContextId) throw new Error("REQUEST_LIFECYCLE_CONTEXT_REQUIRED");
   const limit = Math.min(Math.max(take, 1), 50);
   const updates = await prisma.requestUpdate.findMany({
     where: {
@@ -969,9 +982,15 @@ export async function addRequestCollaborator(
   userId: string,
   actor?: AuthenticatedUser
 ) {
-  await getRequestOrThrow(id);
+  const request = await getRequestOrThrow(id);
+  if (!request.lifecycleContextId) throw new Error("REQUEST_LIFECYCLE_CONTEXT_REQUIRED");
   const collaborator = await resolveRequestUpdateAssignee(userId);
   if (!collaborator) throw new Error("REQUEST_COLLABORATOR_INVALID");
+  await prisma.lifecycleCollaborator.upsert({
+    where: { lifecycleContextId_userId: { lifecycleContextId: request.lifecycleContextId, userId } },
+    create: { lifecycleContextId: request.lifecycleContextId, userId, addedById: actor?.id ?? null },
+    update: {}
+  });
   await prisma.requestCollaborator.upsert({
     where: { requestId_userId: { requestId: id, userId } },
     create: { requestId: id, userId, addedById: actor?.id ?? null },
@@ -981,7 +1000,7 @@ export async function addRequestCollaborator(
     prisma,
     id,
     "Collaborator added",
-    `${collaborator.name} joined the request team.`,
+    `${collaborator.name} joined the lifecycle team.`,
     actor
   );
   await recordActivity({
@@ -989,8 +1008,8 @@ export async function addRequestCollaborator(
     relatedEntityType: "Request",
     relatedEntityId: id,
     type: "Collaborator Added",
-    title: `${collaborator.name} added to request team`,
-    detail: `Collaborator ${collaborator.name} was added to the request.`,
+    title: `${collaborator.name} added to lifecycle team`,
+    detail: `Collaborator ${collaborator.name} was added to the lifecycle.`,
     metadata: { collaboratorId: collaborator.id }
   });
   return getRequestById(id, actor?.id);
@@ -1006,15 +1025,17 @@ export async function removeRequestCollaborator(
   if (currentStep?.assignee?.id === userId && currentStep.stepStatus === "open") {
     throw new Error("REQUEST_CURRENT_ASSIGNEE_REQUIRED");
   }
-  const result = await prisma.requestCollaborator.deleteMany({
-    where: { requestId: id, userId }
+  if (!request.lifecycleContextId) throw new Error("REQUEST_LIFECYCLE_CONTEXT_REQUIRED");
+  const result = await prisma.lifecycleCollaborator.deleteMany({
+    where: { lifecycleContextId: request.lifecycleContextId, userId }
   });
+  await prisma.requestCollaborator.deleteMany({ where: { requestId: id, userId } });
   if (!result.count) throw new Error("REQUEST_COLLABORATOR_NOT_FOUND");
   await createRequestSystemUpdate(
     prisma,
     id,
     "Collaborator removed",
-    "A collaborator left the request team.",
+    "A collaborator left the lifecycle team.",
     actor
   );
   await recordActivity({
@@ -1022,8 +1043,8 @@ export async function removeRequestCollaborator(
     relatedEntityType: "Request",
     relatedEntityId: id,
     type: "Collaborator Removed",
-    title: "Collaborator removed from request team",
-    detail: `Collaborator ${userId} was removed from the request.`,
+    title: "Collaborator removed from lifecycle team",
+    detail: `Collaborator ${userId} was removed from the lifecycle.`,
     metadata: { collaboratorId: userId }
   });
   return getRequestById(id, actor?.id);
@@ -2050,6 +2071,7 @@ export async function convertRequest(
             contactId: existingRequest.contactId,
             siteId: existingRequest.siteId,
             assignedToId: existingRequest.assignedToId,
+            dueDate: existingRequest.dueDate,
             lifecycleContextId,
             clientName: existingRequest.client?.displayName || existingRequest.companyName || null,
             status: "Draft",

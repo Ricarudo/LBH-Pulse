@@ -360,6 +360,8 @@ model LocalUser {
   updatedLifecycleContexts       LifecycleContext[]     @relation("LifecycleContextEditors")
   requestCollaborations          RequestCollaborator[]  @relation("RequestCollaboratorUsers")
   addedRequestCollaborators      RequestCollaborator[]  @relation("RequestCollaboratorAddedBy")
+  lifecycleCollaborations        LifecycleCollaborator[] @relation("LifecycleCollaboratorUsers")
+  addedLifecycleCollaborators    LifecycleCollaborator[] @relation("LifecycleCollaboratorAddedBy")
   requestUpdateMentions          RequestUpdateMention[] @relation("RequestUpdateMentions")
   completedRequestChecklistItems RequestChecklistItem[]
   uploadedDocuments              LifecycleDocument[]    @relation("UploadedDocuments")
@@ -568,6 +570,7 @@ model Quote {
   contactId                           String?
   siteId                              String?
   assignedToId                        String?
+  dueDate                             DateTime?
   lifecycleContextId                  String?
   clientName                          String?
   status                              String                   @default("Draft")
@@ -628,6 +631,7 @@ model Quote {
   @@index([contactId])
   @@index([siteId])
   @@index([assignedToId])
+  @@index([dueDate])
   @@index([lifecycleContextId])
   @@index([sourceRequestIdSnapshot])
   @@index([currentStepId])
@@ -788,9 +792,24 @@ model LifecycleContext {
   quotes                Quote[]
   projects              Project[]
   invoices              Invoice[]
+  collaborators         LifecycleCollaborator[]
 
   @@index([updatedById])
   @@index([updatedAt])
+}
+
+model LifecycleCollaborator {
+  id                 String           @id @default(cuid())
+  lifecycleContextId String
+  userId             String
+  addedById          String?
+  createdAt          DateTime         @default(now())
+  lifecycleContext   LifecycleContext @relation(fields: [lifecycleContextId], references: [id], onDelete: Cascade)
+  user               LocalUser        @relation("LifecycleCollaboratorUsers", fields: [userId], references: [id], onDelete: Cascade)
+  addedBy            LocalUser?       @relation("LifecycleCollaboratorAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([lifecycleContextId, userId])
+  @@index([userId])
 }
 
 model Project {

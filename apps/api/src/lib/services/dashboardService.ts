@@ -124,7 +124,7 @@ function requestMatchesScope(
   request: {
     assignedToId: string | null;
     assignedTo: { name: string; role: string } | null;
-    collaborators: Array<{ user: { id: string; name: string; role: string } }>;
+    lifecycleContext: { collaborators: Array<{ user: { id: string; name: string; role: string } }> } | null;
     updates: Array<{ assigneeId: string | null; assignee: { name: string; role: string } | null }>;
   },
   teamNames: Set<string>
@@ -133,12 +133,12 @@ function requestMatchesScope(
   if (scope === "mine") {
     return request.assignedToId === user.id ||
       request.updates.some((update) => update.assigneeId === user.id) ||
-      request.collaborators.some((collaborator) => collaborator.user.id === user.id) ||
+      (request.lifecycleContext?.collaborators ?? []).some((collaborator) => collaborator.user.id === user.id) ||
       normalizeDashboardOwner(request.assignedTo?.name) === normalizeDashboardOwner(user.name);
   }
   return request.assignedTo?.role === user.role ||
     request.updates.some((update) => update.assignee?.role === user.role) ||
-    request.collaborators.some((collaborator) => collaborator.user.role === user.role) ||
+    (request.lifecycleContext?.collaborators ?? []).some((collaborator) => collaborator.user.role === user.role) ||
     teamNames.has(normalizeDashboardOwner(request.assignedTo?.name));
 }
 
@@ -288,8 +288,12 @@ export async function getDashboardData(
                 assignee: { select: { name: true, role: true } }
               }
             },
-            collaborators: {
-              select: { user: { select: { id: true, name: true, role: true } } }
+            lifecycleContext: {
+              select: {
+                collaborators: {
+                  select: { user: { select: { id: true, name: true, role: true } } }
+                }
+              }
             }
           }
         }),

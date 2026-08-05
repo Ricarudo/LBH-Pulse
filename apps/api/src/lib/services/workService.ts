@@ -111,11 +111,19 @@ const lifecycleSiteSelect = {
 } satisfies Prisma.ClientSiteSelect;
 
 const lifecycleContextInclude = {
-  updatedBy: { include: { accessRole: true } }
+  updatedBy: { include: { accessRole: true } },
+  collaborators: { include: { user: { include: { accessRole: true } } }, orderBy: { createdAt: "asc" } }
 } satisfies Prisma.LifecycleContextInclude;
 
 export const quoteInclude = {
-  client: { select: { id: true, displayName: true } },
+  client: {
+    select: {
+      id: true,
+      displayName: true,
+      contacts: { select: quoteContactSelect, orderBy: { name: "asc" } },
+      sites: { select: lifecycleSiteSelect, orderBy: { siteName: "asc" } }
+    }
+  },
   contact: { select: quoteContactSelect },
   site: { select: lifecycleSiteSelect },
   assignedTo: { include: { accessRole: true } },
@@ -148,6 +156,7 @@ export const quoteInclude = {
       state: true,
       description: true,
       internalNotes: true,
+      dueDate: true,
       trades: { select: { serviceCategory: true } },
       contact: { select: { name: true, email: true, phone: true } },
       site: {
@@ -233,6 +242,7 @@ type QuoteRecordSource = Omit<QuoteWithRelations, "requests"> & {
   requests: Array<{
     id: string;
     requestNumber: string;
+    dueDate: Date | null;
     serviceCategory?: string | null;
     trades?: Array<{ serviceCategory: string }>;
   }>;
@@ -587,6 +597,10 @@ export function toQuoteRecord(
     site: toLifecycleSite(quote.site),
     assignedToId: quote.assignedToId,
     assignedTo: toWorkAssignee(quote.assignedTo),
+    dueDate: dateOutput(quote.dueDate ?? request?.dueDate),
+    collaborators: quote.lifecycleContext?.collaborators
+      .map((collaborator) => toWorkAssignee(collaborator.user))
+      .filter((collaborator): collaborator is NonNullable<ReturnType<typeof toWorkAssignee>> => Boolean(collaborator)) ?? [],
     status: quote.status as QuoteRecord["status"],
     owner: quote.assignedTo?.name ?? quote.owner,
     calculationMode: quote.calculationMode,
@@ -702,6 +716,8 @@ export function toQuoteDetailRecord(
   return {
     ...toQuoteRecord(quote, documents),
     context: toQuoteContextSnapshot(quote),
+    contactOptions: quote.client?.contacts?.map(toQuoteContact).filter((contact): contact is ClientContact => Boolean(contact)) ?? [],
+    siteOptions: quote.client?.sites?.map(toLifecycleSite).filter((site): site is LifecycleSiteSummary => Boolean(site)) ?? [],
     proposalNotes: empty(quote.proposalNotes),
     proposalPreparedAt: dateTimeOutput(quote.proposalPreparedAt),
     items: quote.items.map(toQuoteItemRecord),
@@ -1721,6 +1737,7 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
         contactId: contact.id,
         siteId: site?.id ?? null,
         assignedToId: assignedTo?.id ?? null,
+        dueDate: dateInput(input.dueDate),
         lifecycleContextId: lifecycleContext.id,
         clientName: client.displayName,
         owner: assignedTo?.name ?? "Unassigned",
@@ -1823,6 +1840,7 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
         ...(input.assignedToId !== undefined
           ? { assignedToId: assignedTo?.id ?? null, owner: assignedTo?.name ?? "Unassigned" }
           : {}),
+        ...(input.dueDate !== undefined ? { dueDate: dateInput(input.dueDate) } : {}),
         ...(lifecycleContextId !== existing.lifecycleContextId ? { lifecycleContextId } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(statusChanged && input.status === "Sent"
@@ -1886,6 +1904,28 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
     metadata: { status: quote.status, total: Number(quote.total) }
   });
   return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+export async function addQuoteCollaborator(id: string, userId: string, actor?: AuthenticatedUser) {
+  const quote = await quoteOrThrow(id);
+  if (!quote.lifecycleContextId) throw new Error("QUOTE_LIFECYCLE_CONTEXT_REQUIRED");
+  await activeUserOrThrow(userId);
+  await prisma.lifecycleCollaborator.upsert({
+    where: { lifecycleContextId_userId: { lifecycleContextId: quote.lifecycleContextId, userId } },
+    create: { lifecycleContextId: quote.lifecycleContextId, userId, addedById: actor?.id ?? null },
+    update: {}
+  });
+  return getQuoteById(id, actor?.id);
+}
+
+export async function removeQuoteCollaborator(id: string, userId: string, actor?: AuthenticatedUser) {
+  const quote = await quoteOrThrow(id);
+  if (!quote.lifecycleContextId) throw new Error("QUOTE_LIFECYCLE_CONTEXT_REQUIRED");
+  const result = await prisma.lifecycleCollaborator.deleteMany({
+    where: { lifecycleContextId: quote.lifecycleContextId, userId }
+  });
+  if (!result.count) throw new Error("QUOTE_COLLABORATOR_NOT_FOUND");
+  return getQuoteById(id, actor?.id);
 }
 
 export async function replaceLegacyQuoteFinancials(
