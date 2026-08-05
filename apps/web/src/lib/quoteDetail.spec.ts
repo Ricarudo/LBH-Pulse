@@ -20,6 +20,8 @@ const legacyQuote: QuoteRecord = {
   site: null,
   assignedToId: null,
   assignedTo: null,
+  dueDate: "",
+  collaborators: [],
   status: "Draft",
   owner: "Sales User",
   calculationMode: "LEGACY",

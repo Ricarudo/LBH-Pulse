@@ -32,6 +32,10 @@ export function normalizeQuoteDetailRecord(
     ...quote,
     contactId: quote.contactId ?? null,
     contact: quote.contact ?? null,
+    dueDate: quote.dueDate ?? "",
+    collaborators: quote.collaborators ?? [],
+    contactOptions: quote.contactOptions ?? (quote.contact ? [quote.contact] : []),
+    siteOptions: quote.siteOptions ?? (quote.site ? [quote.site] : []),
     trades: quote.trades ?? categoriesFromContext(quote.context?.serviceCategory),
     context: {
       ...fallbackContext(quote),

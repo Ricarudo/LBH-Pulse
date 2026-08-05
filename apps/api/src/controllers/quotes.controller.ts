@@ -10,7 +10,8 @@ import {
   createQuoteSchema,
   replaceLegacyQuoteFinancialsSchema,
   switchQuoteCalculationModeSchema,
-  updateQuoteSchema
+  updateQuoteSchema,
+  lifecycleCollaboratorSchema
 } from "@pulse/contracts/work";
 import {
   createRequestUpdateSchema,
@@ -20,6 +21,7 @@ import {
 import { AuthService } from "@/shared/auth.service";
 import { uploadDocument } from "@/lib/services/documentService";
 import { QuotesService } from "@/modules/quotes/quotes.service";
+import { addQuoteCollaborator, removeQuoteCollaborator } from "@/lib/services/workService";
 import {
   completeQuoteUpdate,
   createQuoteUpdate,
@@ -63,6 +65,16 @@ export class QuotesController {
   @Patch(":id") async update(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, "quotes:write");
     return { quote: await this.quotes.update(id, updateQuoteSchema.parse(body), user) };
+  }
+  @Post(":id/collaborators")
+  async addCollaborator(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, "quotes:write");
+    return { quote: await addQuoteCollaborator(id, lifecycleCollaboratorSchema.parse(body).userId, user) };
+  }
+  @Delete(":id/collaborators/:userId")
+  async removeCollaborator(@Req() request: Request, @Param("id") id: string, @Param("userId") userId: string) {
+    const user = await this.auth.requireUser(request, "quotes:write");
+    return { quote: await removeQuoteCollaborator(id, userId, user) };
   }
   @Put(":id/legacy-financials") async replaceLegacyFinancials(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, "quotes:write");
