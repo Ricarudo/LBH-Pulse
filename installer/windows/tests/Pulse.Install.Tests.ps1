@@ -295,6 +295,8 @@ Describe "Pulse installer failure and preservation contracts" {
     $update.IndexOf('backup-pulse.ps1') | Should -BeLessThan $update.IndexOf('$migrationStarted = $true')
     $update.IndexOf('update migrations') | Should -BeLessThan $update.IndexOf('$targetLedger = Get-AppliedMigrationLedger')
     $update | Should -Match 'automatic downgrade is prohibited'
+    $update | Should -Match 'Add-Member -NotePropertyName "updatedAt"'
+    $update | Should -Match 'Add-Member -NotePropertyName "preUpdateBackup"'
   }
 
   It "preserves volumes by default and prohibits silent deletion" {

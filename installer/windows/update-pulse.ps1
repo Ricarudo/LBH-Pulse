@@ -132,11 +132,11 @@ try {
   [void](Invoke-PulseCompose -Root $Root -Arguments @("up", "-d", "--no-build", "--wait", "--wait-timeout", "360") -Stage "updated Pulse startup")
   Write-PulseProgress -Root $Root -Percent 95 -Status "Verifying the updated installation"
   & (Join-Path $PSScriptRoot "test-installation.ps1") -Root $Root
-  $current.version = [string]$target.version
-  $current.commit = [string]$target.commit
-  $current.images = $target.images
-  $current.updatedAt = [DateTime]::UtcNow.ToString("o")
-  $current.preUpdateBackup = $backup.Archive
+  $current | Add-Member -NotePropertyName "version" -NotePropertyValue ([string]$target.version) -Force
+  $current | Add-Member -NotePropertyName "commit" -NotePropertyValue ([string]$target.commit) -Force
+  $current | Add-Member -NotePropertyName "images" -NotePropertyValue $target.images -Force
+  $current | Add-Member -NotePropertyName "updatedAt" -NotePropertyValue ([DateTime]::UtcNow.ToString("o")) -Force
+  $current | Add-Member -NotePropertyName "preUpdateBackup" -NotePropertyValue ([string]$backup.Archive) -Force
   Write-PulseState -State $current -Root $Root
   Write-PulseLog -Root $Root -Message "Pulse update to $($target.version) completed."
   Write-PulseProgress -Root $Root -Percent 100 -Status "Pulse update completed"
