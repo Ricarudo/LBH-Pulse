@@ -13,6 +13,18 @@ type LoginKeys = {
   ip: string;
 };
 
+export type LoginBlockStatus = {
+  blocked: boolean;
+  blockedUntil: Date | null;
+};
+
+function latestBlockedUntil(blockedUntilValues: Array<Date | null | undefined>, now: Date) {
+  return blockedUntilValues.reduce<Date | null>((latest, blockedUntil) => {
+    if (!blockedUntil || blockedUntil <= now) return latest;
+    return !latest || blockedUntil > latest ? blockedUntil : latest;
+  }, null);
+}
+
 @Injectable()
 export class AuthProtectionService {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
@@ -28,8 +40,8 @@ export class AuthProtectionService {
     return verifyPassword(password, passwordHash || fakePasswordHash);
   }
 
-  async isBlocked(keys: LoginKeys, now = new Date()) {
-    if (!runtimeEnvironment().rateLimitEnabled) return false;
+  async getBlockStatus(keys: LoginKeys, now = new Date()): Promise<LoginBlockStatus> {
+    if (!runtimeEnvironment().rateLimitEnabled) return { blocked: false, blockedUntil: null };
     const buckets = await prisma.authThrottleBucket.findMany({
       where: {
         OR: [
@@ -38,9 +50,14 @@ export class AuthProtectionService {
         ],
         blockedUntil: { gt: now }
       },
-      select: { kind: true }
+      select: { blockedUntil: true }
     });
-    return buckets.length > 0;
+    const blockedUntil = latestBlockedUntil(buckets.map((bucket) => bucket.blockedUntil), now);
+    return { blocked: Boolean(blockedUntil), blockedUntil };
+  }
+
+  async isBlocked(keys: LoginKeys, now = new Date()) {
+    return (await this.getBlockStatus(keys, now)).blocked;
   }
 
   private async incrementBucket(
@@ -87,21 +104,23 @@ export class AuthProtectionService {
     });
   }
 
-  async recordFailure(keys: LoginKeys, now = new Date()) {
-    if (!runtimeEnvironment().rateLimitEnabled) return false;
+  async recordFailureStatus(keys: LoginKeys, now = new Date()): Promise<LoginBlockStatus> {
+    if (!runtimeEnvironment().rateLimitEnabled) return { blocked: false, blockedUntil: null };
     const config = runtimeEnvironment();
     const [account, ip] = await Promise.all([
       this.incrementBucket("ACCOUNT", keys.account, config.loginAccountMaxAttempts, now),
       this.incrementBucket("IP", keys.ip, config.loginIpMaxAttempts, now)
     ]);
-    const blocked = Boolean(
-      (account.blockedUntil && account.blockedUntil > now) ||
-      (ip.blockedUntil && ip.blockedUntil > now)
-    );
+    const blockedUntil = latestBlockedUntil([account.blockedUntil, ip.blockedUntil], now);
+    const blocked = Boolean(blockedUntil);
     await this.recordSecurityEvent(blocked ? "LOGIN_LOCKED" : "LOGIN_FAILED", keys, {
       blocked
     });
-    return blocked;
+    return { blocked, blockedUntil };
+  }
+
+  async recordFailure(keys: LoginKeys, now = new Date()) {
+    return (await this.recordFailureStatus(keys, now)).blocked;
   }
 
   async recordSuccess(keys: LoginKeys) {
@@ -110,6 +129,16 @@ export class AuthProtectionService {
       where: { kind: "ACCOUNT", keyDigest: keys.account }
     });
     await prisma.authThrottleBucket.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  }
+
+  async clearAccountFailures(email: string) {
+    const account = this.keys(email, "unknown").account;
+    await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ACCOUNT:${account}`}))`;
+      await transaction.authThrottleBucket.deleteMany({
+        where: { kind: "ACCOUNT", keyDigest: account }
+      });
+    });
   }
 
   async recordSecurityEvent(

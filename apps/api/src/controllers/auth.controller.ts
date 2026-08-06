@@ -7,7 +7,10 @@ import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
 import { changeLocalUserPasswordSchema } from "@pulse/contracts/local-users";
 import { AuthError, AuthService } from "@/shared/auth.service";
-import { AuthProtectionService } from "@/shared/auth-protection.service";
+import {
+  AuthProtectionService,
+  type LoginBlockStatus
+} from "@/shared/auth-protection.service";
 import { FirstRunSetupService } from "@/shared/first-run-setup.service";
 import { runtimeEnvironment } from "@/config/runtimeEnvironment";
 import {
@@ -22,7 +25,18 @@ const loginSchema = z.object({
 });
 
 const genericLoginError = "Unable to sign in.";
+const lockedLoginError = "Sign-in is temporarily locked.";
 const genericSetupError = "Setup could not be completed.";
+
+function lockoutResponse(response: Response, status: LoginBlockStatus) {
+  const retryAfterSeconds = Math.max(
+    1,
+    Math.ceil(((status.blockedUntil?.getTime() ?? Date.now()) - Date.now()) / 1_000)
+  );
+  response.status(429);
+  response.set("Retry-After", String(retryAfterSeconds));
+  return { error: lockedLoginError, retryAfterSeconds };
+}
 
 const firstRunSetupSchema = z.object({
   setupToken: z.string().min(1).max(1_024),
@@ -117,10 +131,10 @@ export class AuthController {
     const normalizedEmail = payload.email.toLowerCase();
     const keys = this.protection.keys(normalizedEmail, request.ip || request.socket.remoteAddress || "unknown");
 
-    if (await this.protection.isBlocked(keys)) {
+    const currentBlock = await this.protection.getBlockStatus(keys);
+    if (currentBlock.blocked) {
       await this.protection.recordSecurityEvent("LOGIN_BLOCKED", keys, { blocked: true });
-      response.status(429);
-      return { error: genericLoginError };
+      return lockoutResponse(response, currentBlock);
     }
 
     const user = await prisma.localUser.findUnique({
@@ -138,8 +152,9 @@ export class AuthController {
     );
 
     if (!accountValid || !user) {
-      const blocked = await this.protection.recordFailure(keys);
-      response.status(blocked ? 429 : 401);
+      const blockStatus = await this.protection.recordFailureStatus(keys);
+      if (blockStatus.blocked) return lockoutResponse(response, blockStatus);
+      response.status(401);
       return { error: genericLoginError };
     }
 

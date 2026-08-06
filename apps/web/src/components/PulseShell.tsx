@@ -30,6 +30,7 @@ import type {
 } from "@pulse/contracts/settings";
 import { setWorkspaceFormatting } from "@/lib/formatting";
 import { apiFetch, setCsrfToken } from "@/lib/api/client";
+import { lockoutMessage, retryAfterSeconds } from "@/lib/authLockout";
 import { responsiveBreakpoints } from "@/lib/responsive";
 import {
   getMobileActiveKey,
@@ -289,6 +290,9 @@ function PulseShellFrame({
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loginLockedEmail, setLoginLockedEmail] = useState("");
+  const [loginLockoutDeadline, setLoginLockoutDeadline] = useState<number | null>(null);
+  const [loginRetryAfterSeconds, setLoginRetryAfterSeconds] = useState(0);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
@@ -331,6 +335,8 @@ function PulseShellFrame({
   const environmentLabel =
     process.env.NEXT_PUBLIC_PULSE_ENV_LABEL ||
     (process.env.NODE_ENV === "development" ? "Local Dev" : "");
+  const loginAttemptIsLocked = loginRetryAfterSeconds > 0 &&
+    loginLockedEmail === loginEmail.trim().toLowerCase();
 
   const refreshCurrentUser = useCallback(async () => {
     try {
@@ -379,6 +385,20 @@ function PulseShellFrame({
   useEffect(() => {
     void refreshCurrentUser();
   }, [pathname, refreshCurrentUser]);
+
+  useEffect(() => {
+    if (loginLockoutDeadline === null) return;
+
+    const updateRemainingTime = () => {
+      const remaining = Math.max(0, Math.ceil((loginLockoutDeadline - Date.now()) / 1_000));
+      setLoginRetryAfterSeconds(remaining);
+      if (remaining === 0) setLoginLockoutDeadline(null);
+    };
+
+    updateRemainingTime();
+    const timer = window.setInterval(updateRemainingTime, 1_000);
+    return () => window.clearInterval(timer);
+  }, [loginLockoutDeadline]);
 
   useEffect(() => {
     const refreshOnFocus = () => void refreshCurrentUser();
@@ -670,6 +690,7 @@ function PulseShellFrame({
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loginAttemptIsLocked) return;
     setLoginError("");
 
     try {
@@ -687,13 +708,25 @@ function PulseShellFrame({
         user?: AuthenticatedUser;
         csrfToken?: string;
         error?: string;
+        retryAfterSeconds?: number;
       };
 
       if (!response.ok || !data.user) {
+        if (response.status === 429) {
+          const seconds = retryAfterSeconds(data.retryAfterSeconds, response.headers.get("Retry-After"));
+          setLoginLockedEmail(loginEmail.trim().toLowerCase());
+          setLoginLockoutDeadline(Date.now() + seconds * 1_000);
+          setLoginRetryAfterSeconds(seconds);
+          setLoginPassword("");
+          return;
+        }
         setLoginError(data.error || "Unable to sign in.");
         return;
       }
 
+      setLoginLockoutDeadline(null);
+      setLoginLockedEmail("");
+      setLoginRetryAfterSeconds(0);
       setCsrfToken(data.csrfToken);
       setCurrentUser(data.user);
       setLoginPassword("");
@@ -854,6 +887,10 @@ function PulseShellFrame({
   }
 
   if (!currentUser) {
+    const displayedLoginError = loginAttemptIsLocked
+      ? lockoutMessage(loginRetryAfterSeconds)
+      : loginError;
+
     return (
       <main className="login-page">
         <form className="login-card" aria-labelledby="login-title" onSubmit={login}>
@@ -883,11 +920,16 @@ function PulseShellFrame({
             type="password"
             value={loginPassword}
             onChange={(event) => setLoginPassword(event.target.value)}
+            aria-describedby={displayedLoginError ? "login-error" : undefined}
           />
 
-          {loginError ? <div className="form-alert error">{loginError}</div> : null}
+          {displayedLoginError ? (
+            <div id="login-error" className="form-alert error" role="alert" aria-live="polite">
+              {displayedLoginError}
+            </div>
+          ) : null}
 
-          <button className="primary-button" type="submit">
+          <button className="primary-button" type="submit" disabled={loginAttemptIsLocked}>
             Sign In
           </button>
         </form>

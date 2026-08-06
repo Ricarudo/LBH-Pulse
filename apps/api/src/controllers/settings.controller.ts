@@ -40,6 +40,7 @@ import {
   updateRecordNumberSequence
 } from "@/lib/services/recordNumberService";
 import { AuthService } from "@/shared/auth.service";
+import { AuthProtectionService } from "@/shared/auth-protection.service";
 import {
   archiveAccessRole,
   createAccessRole,
@@ -58,7 +59,10 @@ import { getDataPractices } from "@/lib/services/auditService";
 
 @Controller("settings")
 export class SettingsController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(AuthProtectionService) private readonly protection: AuthProtectionService
+  ) {}
 
   @Get("preferences")
   async preferences(@Req() request: Request) {
@@ -148,6 +152,7 @@ export class SettingsController {
     const user = await this.auth.requireUser(request, "users:manage");
     const payload = resetLocalUserPasswordSchema.parse(body);
     const account = await resetLocalUserPassword(userId, payload, user);
+    await this.protection.clearAccountFailures(account.email);
     return { user: account };
   }
 
