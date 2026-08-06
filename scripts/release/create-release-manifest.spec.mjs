@@ -82,3 +82,16 @@ test("accepts the release tag only when every workspace version agrees", () => {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.deepEqual(JSON.parse(result.stdout), { tag: "v0.1.1", version: "0.1.1", minor: "0.1" });
 });
+
+test("keeps exact release tags immutable while allowing the minor channel to advance", () => {
+  const workflow = readFileSync(resolve(repositoryRoot, ".github/workflows/release.yml"), "utf8");
+  const guardStart = workflow.indexOf("- name: Refuse semantic-tag replacement");
+  const buildStart = workflow.indexOf("- id: build", guardStart);
+  assert.notEqual(guardStart, -1);
+  assert.notEqual(buildStart, -1);
+
+  const guard = workflow.slice(guardStart, buildStart);
+  assert.match(guard, /needs\.validate\.outputs\.version/);
+  assert.doesNotMatch(guard, /needs\.validate\.outputs\.minor/);
+  assert.match(workflow.slice(buildStart), /needs\.validate\.outputs\.minor/);
+});

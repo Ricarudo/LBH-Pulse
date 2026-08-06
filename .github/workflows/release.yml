@@ -156,16 +156,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for tag in '${{ needs.validate.outputs.version }}${{ matrix.suffix }}' '${{ needs.validate.outputs.minor }}${{ matrix.suffix }}'; do
-            reference="ghcr.io/ricarudo/${{ matrix.image }}:$tag"
-            if docker pull --platform linux/amd64 "$reference" >/dev/null 2>&1; then
-              revision=$(docker image inspect "$reference" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
-              if [[ "$revision" != "${{ github.sha }}" ]]; then
-                echo "Refusing to replace existing semantic tag $reference from revision $revision." >&2
-                exit 1
-              fi
+          # Exact release tags are immutable. The minor channel intentionally
+          # advances from 0.1.0 to 0.1.1 and later patch releases.
+          reference="ghcr.io/ricarudo/${{ matrix.image }}:${{ needs.validate.outputs.version }}${{ matrix.suffix }}"
+          if docker pull --platform linux/amd64 "$reference" >/dev/null 2>&1; then
+            revision=$(docker image inspect "$reference" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+            if [[ "$revision" != "${{ github.sha }}" ]]; then
+              echo "Refusing to replace existing release tag $reference from revision $revision." >&2
+              exit 1
             fi
-          done
+          fi
       - id: build
         uses: docker/build-push-action@v6
         with:
