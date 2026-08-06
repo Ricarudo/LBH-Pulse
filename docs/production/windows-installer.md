@@ -124,7 +124,7 @@ Create a release only from a clean, reviewed commit whose `package.json` version
 
 ```sh
 git tag -a v0.1.1 -m "Pulse 0.1.1"
-git push origin v0.1.1
+git push origin refs/tags/v0.1.1
 ```
 
 The workflow reruns Linux release gates, resolves build bases, builds Linux/amd64 images, publishes semantic/minor/full-SHA tags, records immutable digests, proves anonymous pulls, runs PowerShell/Pester/PSScriptAnalyzer checks, compiles and optionally Authenticode-signs Setup and Uninstall, writes SHA-256, then publishes the draft GitHub release only after every job succeeds.
