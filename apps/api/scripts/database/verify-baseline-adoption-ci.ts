@@ -129,7 +129,7 @@ async function preservationState(client: Client) {
     SELECT jsonb_build_object(
       'request', (SELECT to_jsonb(r) - 'updatedAt' - 'createdAt' FROM "Request" r WHERE id = 'ci-request'),
       'update', (SELECT to_jsonb(u) - 'updatedAt' - 'createdAt' FROM "RequestUpdate" u WHERE id = 'ci-update'),
-      'quote', (SELECT to_jsonb(q) - 'updatedAt' - 'createdAt' FROM "Quote" q WHERE id = 'ci-quote'),
+      'quote', (SELECT to_jsonb(q) - 'updatedAt' - 'createdAt' - 'dueDate' FROM "Quote" q WHERE id = 'ci-quote'),
       'line', (SELECT to_jsonb(qi) - 'updatedAt' - 'createdAt' FROM "QuoteItem" qi WHERE id = 'ci-line'),
       'revision', (SELECT to_jsonb(qr) - 'createdAt' FROM "QuoteRevision" qr WHERE id = 'ci-revision'),
       'price', (SELECT to_jsonb(ph) FROM "ItemPriceHistory" ph WHERE id = 'ci-price'),

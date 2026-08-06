@@ -17,5 +17,9 @@ DATABASE_URL=$PULSE_DATABASE_MIGRATION_URL npm run auth:first-run:verify-ci -w @
 # migrate deploy above, and adoption of a representative pre-baseline schema.
 DATABASE_URL=$PULSE_DATABASE_MIGRATION_URL npm run db:baseline:verify-ci -w @pulse/api -- --apply
 
+# Prove the exact released 0.1.0 migration ledger upgrades through every
+# current migration while preserving the source records and collaborator data.
+DATABASE_URL=$PULSE_DATABASE_MIGRATION_URL npm run db:release-upgrade:verify-ci -w @pulse/api
+
 touch /tmp/pulse-initialized
 tail -f /dev/null

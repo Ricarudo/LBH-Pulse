@@ -66,11 +66,37 @@ function New-PulseSecret {
 
 function Test-PulseReleaseManifest {
   param([Parameter(Mandatory = $true)]$Manifest)
-  if ($Manifest.schemaVersion -ne 1 -or $Manifest.product -ne "Pulse" -or $Manifest.platform -ne "linux/amd64") { return $false }
+  if ($Manifest.schemaVersion -ne 2 -or $Manifest.product -ne "Pulse" -or $Manifest.platform -ne "linux/amd64") { return $false }
   foreach ($name in @("api", "web", "maintenance", "minioInit", "clamav", "backupCrypto", "gatewayInternal", "gatewayPublic", "postgres", "minio", "minioMc")) {
     if ([string]$Manifest.images.$name -notmatch '@sha256:[a-f0-9]{64}$') { return $false }
   }
-  return [string]$Manifest.version -match '^\d+\.\d+\.\d+$' -and [string]$Manifest.commit -match '^[a-f0-9]{40}$'
+  if ([string]$Manifest.version -notmatch '^\d+\.\d+\.\d+$' -or [string]$Manifest.commit -notmatch '^[a-f0-9]{40}$') { return $false }
+  if ([string]$Manifest.upgrade.minimumVersion -notmatch '^\d+\.\d+\.\d+$') { return $false }
+  if ([version]$Manifest.upgrade.minimumVersion -ge [version]$Manifest.version) { return $false }
+  foreach ($migration in @($Manifest.upgrade.sourceMigrations) + @($Manifest.upgrade.targetMigrations)) {
+    if ([string]$migration -notmatch '^\d{12}_[a-z0-9_]+$') { return $false }
+  }
+  return [string]$Manifest.upgrade.rollbackPolicy -eq "restore-required-after-migration"
+}
+
+function Test-PulseMigrationLedger {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$Rows,
+    [Parameter(Mandatory = $true)][string[]]$ExpectedMigrations
+  )
+  $actual = New-Object System.Collections.Generic.List[string]
+  foreach ($row in $Rows) {
+    $value = ([string]$row).Trim()
+    if (-not $value) { continue }
+    $parts = $value.Split('|')
+    if ($parts.Count -ne 3 -or $parts[1] -ne "true" -or $parts[2] -ne "true") { return $false }
+    [void]$actual.Add($parts[0])
+  }
+  if ($actual.Count -ne $ExpectedMigrations.Count) { return $false }
+  for ($index = 0; $index -lt $ExpectedMigrations.Count; $index++) {
+    if ($actual[$index] -ne $ExpectedMigrations[$index]) { return $false }
+  }
+  return $true
 }
 
 function Add-PulseSecretValue {

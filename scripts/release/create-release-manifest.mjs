@@ -14,6 +14,34 @@ const buildBasesPath = args.get("--build-bases");
 if (!/^\d+\.\d+\.\d+$/.test(version || "")) throw new Error("A semantic --version is required.");
 if (!/^[a-f0-9]{40}$/.test(commit || "")) throw new Error("A full lowercase --commit SHA is required.");
 
+const upgrade = JSON.parse(readFileSync(resolve(`docs/releases/${version}.json`), "utf8"));
+if (!/^\d+\.\d+\.\d+$/.test(upgrade.minimumVersion || "")) {
+  throw new Error("Release metadata requires a semantic minimumVersion.");
+}
+const numericVersion = (value) => value.split(".").map(Number);
+const [minimumMajor, minimumMinor, minimumPatch] = numericVersion(upgrade.minimumVersion);
+const [targetMajor, targetMinor, targetPatch] = numericVersion(version);
+if (
+  minimumMajor > targetMajor ||
+  (minimumMajor === targetMajor && minimumMinor > targetMinor) ||
+  (minimumMajor === targetMajor && minimumMinor === targetMinor && minimumPatch >= targetPatch)
+) {
+  throw new Error("Release metadata minimumVersion must be lower than the target version.");
+}
+for (const name of ["sourceMigrations", "targetMigrations"]) {
+  if (!Array.isArray(upgrade[name]) || upgrade[name].some((migration) => !/^\d{12}_[a-z0-9_]+$/.test(migration))) {
+    throw new Error(`Release metadata ${name} must contain only migration directory names.`);
+  }
+}
+const diskMigrations = readdirSync(resolve("apps/api/prisma/migrations"), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
+const declaredMigrations = [...upgrade.sourceMigrations, ...upgrade.targetMigrations];
+if (JSON.stringify(diskMigrations) !== JSON.stringify(declaredMigrations)) {
+  throw new Error("Release metadata migrations do not exactly match the Prisma migration directories.");
+}
+
 const required = [
   "api", "web", "maintenance", "minioInit", "clamav", "backupCrypto",
   "gatewayInternal", "gatewayPublic", "postgres", "minio", "minioMc"
@@ -44,12 +72,18 @@ for (const component of required) {
 
 mkdirSync(output, { recursive: true });
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   product: "Pulse",
   version,
   tag: `v${version}`,
   commit,
   platform: "linux/amd64",
+  upgrade: {
+    minimumVersion: upgrade.minimumVersion,
+    sourceMigrations: upgrade.sourceMigrations,
+    targetMigrations: upgrade.targetMigrations,
+    rollbackPolicy: "restore-required-after-migration"
+  },
   buildBases: Object.fromEntries(Object.entries(buildBases).sort(([left], [right]) => left.localeCompare(right))),
   images: Object.fromEntries(Object.entries(images).sort(([left], [right]) => left.localeCompare(right)))
 };

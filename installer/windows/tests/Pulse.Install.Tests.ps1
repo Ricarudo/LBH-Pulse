@@ -124,10 +124,32 @@ Describe "Pulse installer security primitives" {
     foreach ($name in @('api', 'web', 'maintenance', 'minioInit', 'clamav', 'backupCrypto', 'gatewayInternal', 'gatewayPublic', 'postgres', 'minio', 'minioMc')) {
       $images[$name] = "example/$name@sha256:$('a' * 64)"
     }
-    $manifest = [pscustomobject]@{ schemaVersion = 1; product = 'Pulse'; platform = 'linux/amd64'; version = '0.1.0'; commit = ('b' * 40); images = [pscustomobject]$images }
+    $upgrade = [pscustomobject]@{
+      minimumVersion = '0.1.0'
+      sourceMigrations = @('202607210001_pulse_0_1_baseline')
+      targetMigrations = @('202608030001_quote_due_date')
+      rollbackPolicy = 'restore-required-after-migration'
+    }
+    $manifest = [pscustomobject]@{ schemaVersion = 2; product = 'Pulse'; platform = 'linux/amd64'; version = '0.1.1'; commit = ('b' * 40); upgrade = $upgrade; images = [pscustomobject]$images }
     (Test-PulseReleaseManifest -Manifest $manifest) | Should -Be $true
     $manifest.images.api = 'example/api:latest'
     (Test-PulseReleaseManifest -Manifest $manifest) | Should -Be $false
+  }
+
+  It "accepts only the exact successful release migration ledger" {
+    $expected = @(
+      '202607210001_pulse_0_1_baseline',
+      '202607210002_enterprise_security'
+    )
+    $valid = @(
+      '202607210001_pulse_0_1_baseline|true|true',
+      '202607210002_enterprise_security|true|true'
+    )
+    (Test-PulseMigrationLedger -Rows $valid -ExpectedMigrations $expected) | Should -Be $true
+    (Test-PulseMigrationLedger -Rows @($valid[0]) -ExpectedMigrations $expected) | Should -Be $false
+    (Test-PulseMigrationLedger -Rows @($valid[1], $valid[0]) -ExpectedMigrations $expected) | Should -Be $false
+    (Test-PulseMigrationLedger -Rows @($valid[0], '202607210002_enterprise_security|false|true') -ExpectedMigrations $expected) | Should -Be $false
+    (Test-PulseMigrationLedger -Rows @($valid[0], '202607210002_enterprise_security|true|false') -ExpectedMigrations $expected) | Should -Be $false
   }
 
   It "hardens generated secret and state files with explicit ACL protection" {
@@ -236,7 +258,9 @@ Describe "Pulse installer failure and preservation contracts" {
   }
 
   It "backs up before beginning an update migration" {
+    $update.IndexOf('$sourceLedger = Get-AppliedMigrationLedger') | Should -BeLessThan $update.IndexOf('backup-pulse.ps1')
     $update.IndexOf('backup-pulse.ps1') | Should -BeLessThan $update.IndexOf('$migrationStarted = $true')
+    $update.IndexOf('update migrations') | Should -BeLessThan $update.IndexOf('$targetLedger = Get-AppliedMigrationLedger')
     $update | Should -Match 'automatic downgrade is prohibited'
   }
 

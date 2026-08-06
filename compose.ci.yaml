@@ -108,6 +108,7 @@ services:
       PULSE_ALLOW_CI_DATABASE_CREATE: "1"
       PULSE_CI_PREBASELINE_DATABASE: pulse_prebaseline_ci
       PULSE_CI_FIRST_RUN_DATABASE: pulse_first_run_ci
+      PULSE_CI_RELEASE_UPGRADE_DATABASE: pulse_release_upgrade_ci
     networks: [backend]
     depends_on:
       postgres:

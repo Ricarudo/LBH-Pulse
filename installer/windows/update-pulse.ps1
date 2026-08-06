@@ -75,6 +75,22 @@ if ([version]$target.version -le [version]$current.version) {
   exit 0
 }
 
+if ([version]$current.version -lt [version]$target.upgrade.minimumVersion) {
+  throw "Pulse $($current.version) cannot update directly to $($target.version). Install every supported intermediate release beginning with $($target.upgrade.minimumVersion)."
+}
+
+function Get-AppliedMigrationLedger {
+  $command = 'psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --tuples-only --no-align --quiet --command=''SELECT concat_ws(chr(124), migration_name, (finished_at IS NOT NULL)::text, (rolled_back_at IS NULL)::text) FROM pulse."_prisma_migrations" ORDER BY started_at, migration_name;'''
+  $result = Invoke-PulseCompose -Root $Root -Arguments @("exec", "-T", "postgres", "sh", "-c", $command) -Stage "migration ledger verification" -Quiet
+  return @($result.Output -split '\r?\n')
+}
+
+$sourceMigrations = @($target.upgrade.sourceMigrations | ForEach-Object { [string]$_ })
+$sourceLedger = Get-AppliedMigrationLedger
+if (-not (Test-PulseMigrationLedger -Rows $sourceLedger -ExpectedMigrations $sourceMigrations)) {
+  throw "The installed database migration ledger does not match the supported $($current.version) source state. No update or backup was started."
+}
+
 $history = Join-Path $paths.Installer ("history\" + $current.version)
 [void](New-Item -ItemType Directory -Path $history -Force)
 foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {
@@ -93,6 +109,11 @@ try {
   $migrationStarted = $true
   Write-PulseProgress -Root $Root -Percent 60 -Status "Applying update migrations and reference data"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "migrate") -Stage "update migrations")
+  $targetMigrations = @($sourceMigrations) + @($target.upgrade.targetMigrations | ForEach-Object { [string]$_ })
+  $targetLedger = Get-AppliedMigrationLedger
+  if (-not (Test-PulseMigrationLedger -Rows $targetLedger -ExpectedMigrations $targetMigrations)) {
+    throw "The database migration ledger did not reach the release-declared $($target.version) state."
+  }
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "reference-data") -Stage "update reference data")
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "db-role-verify") -Stage "updated runtime role verification")
   foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {

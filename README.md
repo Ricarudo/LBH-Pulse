@@ -18,7 +18,7 @@ Pulse 0.1 separates development and production deliberately:
 - `compose.release.yaml` is the installer-only digest-pinned image overlay; it never builds source.
 - `compose.ci.yaml` is an isolated release-gate environment.
 
-Windows operators should download `Pulse-Setup-0.1.0.exe` from the GitHub release and follow the [Windows installer guide](docs/production/windows-installer.md); source ZIP/TAR files are developer assets. The installer requires Docker but not Node.js, npm, Git, or source code. Advanced Linux/source operators should use the [production setup and future updates guide](docs/production/setup-and-updates.md). Detailed procedures remain in the [production runbook](docs/production/runbook.md), [first-run and import guide](docs/production/initial-setup.md), [operator checklist](docs/production/operator-checklist.md), [migration guide](docs/production/migrations.md), and [rollback guide](docs/production/rollback.md). Never run `db:setup`, `prisma db push`, `prisma migrate reset`, `db:reset:demo`, or migrations in `legacy-migrations-pre-0.1` against a database whose data matters.
+Windows operators should download `Pulse-Setup-0.1.1.exe` from the GitHub release and follow the [Windows installer guide](docs/production/windows-installer.md); source ZIP/TAR files are developer assets. The installer requires Docker but not Node.js, npm, Git, or source code. Advanced Linux/source operators should use the [production setup and future updates guide](docs/production/setup-and-updates.md). Detailed procedures remain in the [production runbook](docs/production/runbook.md), [first-run and import guide](docs/production/initial-setup.md), [operator checklist](docs/production/operator-checklist.md), [migration guide](docs/production/migrations.md), and [rollback guide](docs/production/rollback.md). Never run `db:setup`, `prisma db push`, `prisma migrate reset`, `db:reset:demo`, or migrations in `legacy-migrations-pre-0.1` against a database whose data matters.
 
 ## Local development
 
@@ -79,4 +79,4 @@ The CI project validates type checks/tests/responsive checks/builds, clean migra
 - PostgreSQL and MinIO are not publicly exposed in production; only the gateway publishes ports 80/443.
 - The local `client-list-cleaned.csv`, populated environment files, reports, plaintext secret files, and backup archives are excluded from Git and production build contexts.
 
-Pulse 0.1 release scope and accepted limitations are recorded in [release notes](docs/releases/0.1.0.md), [data-repair policy](docs/production/data-repairs.md), and the [technical-debt register](docs/technical-debt.md).
+Pulse 0.1 release scope and accepted limitations are recorded in the [0.1.1 release notes](docs/releases/0.1.1.md), [data-repair policy](docs/production/data-repairs.md), and the [technical-debt register](docs/technical-debt.md).

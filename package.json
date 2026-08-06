@@ -1,13 +1,13 @@
 {
   "name": "lbh-pulse",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "engines": {
     "node": ">=24"
   },
   "overrides": {
     "@prisma/dev": "0.24.16",
-    "fast-uri": "3.1.4",
+    "fast-uri": "3.1.5",
     "next": {
       "postcss": "8.5.22",
       "sharp": "0.35.3"
@@ -20,7 +20,8 @@
   "scripts": {
     "build": "npm run build -w @pulse/contracts && npm run build -w @pulse/api && npm run build -w @pulse/web",
     "typecheck": "npm run build -w @pulse/contracts && npm run typecheck -w @pulse/api && npm run typecheck -w @pulse/web",
-    "test": "npm run build -w @pulse/contracts && npm run test -w @pulse/contracts && npm run test -w @pulse/api && npm run test -w @pulse/web",
+    "test": "npm run build -w @pulse/contracts && npm run test -w @pulse/contracts && npm run test -w @pulse/api && npm run test -w @pulse/web && npm run test:release",
+    "test:release": "node --test scripts/release/*.spec.mjs",
     "dev:api": "npm run build -w @pulse/contracts && npm run dev -w @pulse/api",
     "dev:web": "npm run build -w @pulse/contracts && npm run dev -w @pulse/web",
     "responsive:check": "npm run responsive:check -w @pulse/web",

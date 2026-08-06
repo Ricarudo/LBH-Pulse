@@ -10,6 +10,8 @@ RUN npm ci
 
 COPY packages ./packages
 COPY apps ./apps
+COPY scripts ./scripts
+COPY docs/releases ./docs/releases
 # Prisma validates URL syntax but does not connect while generating the checks image.
 RUN DATABASE_URL=postgresql://prisma-build@127.0.0.1:1/pulse?schema=pulse npm run prisma:generate -w @pulse/api
 COPY docker/ci/smoke.mjs ./docker/ci/smoke.mjs

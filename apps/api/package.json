@@ -1,6 +1,6 @@
 {
   "name": "@pulse/api",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "scripts": {
     "dev": "npm run prisma:generate && tsx watch src/main.ts",
@@ -16,6 +16,7 @@
     "db:baseline:preview": "tsx scripts/database/adopt-baseline.ts",
     "db:baseline:apply": "tsx scripts/database/adopt-baseline.ts --apply",
     "db:baseline:verify-ci": "tsx scripts/database/verify-baseline-adoption-ci.ts",
+    "db:release-upgrade:verify-ci": "tsx scripts/database/verify-release-upgrade-ci.ts --apply",
     "db:roles:preview": "tsx scripts/database/provision-roles.ts",
     "db:roles:apply": "tsx scripts/database/provision-roles.ts --apply",
     "db:roles:verify": "tsx scripts/database/verify-runtime-role.ts",
