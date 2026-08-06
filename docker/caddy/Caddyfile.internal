@@ -5,13 +5,30 @@
 
 {$PULSE_HOSTNAME} {
 	tls internal
-	header {
-		-Server
-		X-Content-Type-Options nosniff
-		X-Frame-Options DENY
-		Referrer-Policy no-referrer
-		Permissions-Policy "camera=(), microphone=(), geolocation=()"
-		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	@documentPreview path_regexp documentPreview ^/api/documents/[^/]+/preview$
+	handle @documentPreview {
+		header {
+			-Server
+			-X-Frame-Options
+			-Content-Security-Policy
+			X-Content-Type-Options nosniff
+			X-Frame-Options SAMEORIGIN
+			Referrer-Policy no-referrer
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+			Content-Security-Policy "frame-ancestors 'self'"
+		}
+		reverse_proxy web:4300
 	}
-	reverse_proxy web:4300
+
+	handle {
+		header {
+			-Server
+			X-Content-Type-Options nosniff
+			X-Frame-Options DENY
+			Referrer-Policy no-referrer
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+			Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		}
+		reverse_proxy web:4300
+	}
 }

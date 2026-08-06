@@ -98,7 +98,7 @@ test("domain clients target the NestJS API and encode payloads", async () => {
   }) as typeof fetch;
 
   try {
-    await fetchItems({ q: "PoE switch", includeInactive: true });
+    await fetchItems({ q: "PoE switch", category: "Networking", includeInactive: true });
     await convertRequestToQuote("request/1", {
       createQuote: true,
       calculationMode: "PULSE"
@@ -106,7 +106,7 @@ test("domain clients target the NestJS API and encode payloads", async () => {
 
     assert.equal(
       calls[0]?.input,
-      "/api/items?q=PoE+switch&includeInactive=true"
+      "/api/items?q=PoE+switch&category=Networking&includeInactive=true"
     );
     assert.equal(calls[0]?.init?.method, "GET");
     assert.equal(calls[1]?.input, "/api/requests/request%2F1/convert");

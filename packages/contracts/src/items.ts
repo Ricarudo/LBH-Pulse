@@ -94,6 +94,8 @@ export type ItemDetailResponse = {
   recentQuotes: ItemQuoteUsageRecord[];
 };
 
+export type ItemCategoriesResponse = { categories: string[] };
+
 export type QuoteItemRecord = {
   id: string;
   quoteId: string;
@@ -237,6 +239,12 @@ export const itemSearchSchema = z.object({
   q: z.string().trim().max(100).optional().default(""),
   type: itemTypeSchema.optional(),
   status: itemStatusSchema.optional(),
+  category: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .transform((value) => value?.replace(/\s+/g, " ")),
   includeInactive: queryBoolean
 }).strict();
 
@@ -306,7 +314,9 @@ export const reorderQuoteItemsSchema = z.object({
 
 export type CreateItemInput = z.infer<typeof createItemSchema>;
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;
-export type ItemSearchInput = z.infer<typeof itemSearchSchema>;
+export type ItemSearchInput = Omit<z.infer<typeof itemSearchSchema>, "category"> & {
+  category?: string;
+};
 export type AddQuoteItemInput = z.infer<typeof addQuoteItemSchema>;
 export type AddQuoteKitInput = z.infer<typeof addQuoteKitSchema>;
 export type AddAdHocQuoteItemInput = z.infer<typeof addAdHocQuoteItemSchema>;

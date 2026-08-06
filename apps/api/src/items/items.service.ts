@@ -214,6 +214,7 @@ function searchWhere(input: ItemSearchInput): Prisma.ItemWhereInput {
     ...(input.includeInactive ? {} : { status: "ACTIVE" }),
     ...(input.status ? { status: input.status } : {}),
     ...(input.type ? { itemType: input.type } : {}),
+    ...(input.category ? { category: input.category } : {}),
     ...(query
       ? {
           OR: [
@@ -252,6 +253,19 @@ export class ItemsService {
     });
 
     return items.map(toItemRecord);
+  }
+
+  async listCategories(): Promise<string[]> {
+    const categories = await this.prisma.item.findMany({
+      where: { category: { not: null } },
+      select: { category: true },
+      distinct: ["category"],
+      orderBy: { category: "asc" }
+    });
+
+    return categories
+      .map((item) => item.category?.trim() ?? "")
+      .filter(Boolean);
   }
 
   async searchActiveItems(input: ItemSearchInput): Promise<ItemRecord[]> {
