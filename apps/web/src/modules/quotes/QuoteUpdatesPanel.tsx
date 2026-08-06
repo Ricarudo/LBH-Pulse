@@ -323,7 +323,7 @@ export function QuoteUpdatesPanel({
                 <li key={update.id} className={`request-update-item kind-${update.kind}${update.stepStatus ? ` status-${update.stepStatus}` : ""}`}>
                   <div className="request-update-item-marker" aria-hidden="true">{update.kind === "step" ? <CheckCircle2 size={16} /> : update.kind === "comment" ? <AtSign size={16} /> : <CalendarClock size={16} />}</div>
                   <div className="request-update-item-content">
-                    <div className="request-update-item-headline"><strong>{update.title}</strong><span className="request-update-item-status">{update.kind === "step" ? update.stepStatus : update.kind === "system" ? "System" : "Comment"}</span></div>
+                    <div className="request-update-item-headline"><strong>{update.kind === "comment" ? `${update.author.name} comments:` : update.title}</strong>{update.kind !== "comment" ? <span className="request-update-item-status">{update.kind === "step" ? update.stepStatus : "System"}</span> : null}</div>
                     {update.body ? <p>{update.body}</p> : null}
                     <div className="request-update-item-meta">
                       <span className="quote-update-stage">{update.quoteId ? "Quote" : "Request"}</span>

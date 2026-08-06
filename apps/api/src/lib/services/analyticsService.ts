@@ -29,7 +29,7 @@ import type {
 } from "@pulse/contracts/analytics";
 
 const dayMs = 86_400_000;
-const activeQuoteStatuses = new Set(["Draft", "Review", "Sent"]);
+const activeQuoteStatuses = new Set(["Draft", "Review", "On Hold", "Sent"]);
 const activeProjectStatuses = new Set(["Ready", "In Progress", "Field Work", "On Hold"]);
 const receivableStatuses = new Set(["Sent", "Overdue"]);
 const decisionStatuses = new Set(["Approved", "Rejected", "Expired"]);
@@ -1516,7 +1516,7 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
         favorableDirection: "up",
         metric: "quotes.pipeline",
         calculation: calculation(
-          "Sum of captured quote value in Draft, Review, or Sent",
+          "Sum of captured quote value in Draft, Review, On Hold, or Sent",
           `As of ${data.range.to}`,
           [
             { label: "Open quotes", value: pipeline.length, format: "number" },

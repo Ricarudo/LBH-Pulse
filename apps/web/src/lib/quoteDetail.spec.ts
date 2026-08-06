@@ -64,7 +64,8 @@ const legacyQuote: QuoteRecord = {
     updatedBy: null,
     updatedByName: "Pulse System"
   },
-  relationshipWarnings: []
+  relationshipWarnings: [],
+  currentStep: null
 };
 
 test("quote detail normalization accepts a legacy list-shaped quote", () => {

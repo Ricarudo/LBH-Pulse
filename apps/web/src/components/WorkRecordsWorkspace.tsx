@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowUpDown,
@@ -57,6 +57,9 @@ type WorkView = {
   statuses?: readonly string[];
 };
 
+const workRecordCache = new Map<WorkKind, { records: WorkRecord[]; cachedAt: number }>();
+const workRecordCacheLifetimeMs = 120_000;
+
 const emptyForm: FormState = {
   title: "",
   clientId: "",
@@ -97,7 +100,7 @@ const workspaceCopy: Record<
 
 const workViews: Record<WorkKind, WorkView[]> = {
   quotes: [
-    { key: "open", label: "Open", statuses: ["Draft", "Review"] },
+    { key: "open", label: "Open", statuses: ["Draft", "Review", "On Hold"] },
     { key: "sent", label: "Sent", statuses: ["Sent"] },
     {
       key: "completed",
@@ -183,13 +186,16 @@ function recordAssignedName(record: WorkRecord) {
     : record.assignedTo?.name ?? "Unassigned";
 }
 
-function recordHref(kind: WorkKind, recordId: string, tab?: "files" | "updates") {
+function recordHref(kind: WorkKind, recordId: string, tab?: "files" | "updates", returnTo?: string) {
   const base = kind === "quotes"
     ? `/quotes/${recordId}`
     : kind === "projects"
       ? `/projects/${recordId}`
       : `/billing/${recordId}`;
-  return tab ? `${base}?tab=${tab}` : base;
+  const params = new URLSearchParams();
+  if (tab) params.set("tab", tab);
+  if (returnTo && kind === "quotes") params.set("returnTo", returnTo);
+  return params.size ? `${base}?${params.toString()}` : base;
 }
 
 function statusTone(status: string) {
@@ -197,7 +203,9 @@ function statusTone(status: string) {
   if (["Rejected", "Cancelled", "Expired", "Overdue", "Void"].includes(status)) {
     return "danger";
   }
-  if (["Draft", "Review", "On Hold"].includes(status)) return "warning";
+  if (status === "Review") return "review";
+  if (status === "On Hold") return "hold";
+  if (status === "Draft") return "warning";
   return "info";
 }
 
@@ -225,22 +233,30 @@ function displayDate(value: string) {
 
 export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useCurrentUser();
-  const [records, setRecords] = useState<WorkRecord[]>([]);
+  const cachedRecords = workRecordCache.get(kind);
+  const hasFreshRecordCache = Boolean(cachedRecords && Date.now() - cachedRecords.cachedAt < workRecordCacheLifetimeMs);
+  const [records, setRecords] = useState<WorkRecord[]>(hasFreshRecordCache ? cachedRecords!.records : []);
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
   const [invoiceAssignees, setInvoiceAssignees] = useState<RequestAssignee[]>([]);
   const [invoiceSource, setInvoiceSource] = useState<ProjectRecord | null>(null);
-  const [activeView, setActiveView] = useState(
-    kind === "quotes" ? "open" : "all"
-  );
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sort, setSort] = useState<QueueSort>("activity");
+  const defaultView = kind === "quotes" ? "open" : "all";
+  const requestedView = searchParams.get("view") ?? defaultView;
+  const [activeView, setActiveView] = useState(workViews[kind].some((view) => view.key === requestedView) ? requestedView : defaultView);
+  const [searchTerm, setSearchTerm] = useState(searchParams.get("q") ?? "");
+  const requestedSort = searchParams.get("sort");
+  const [sort, setSort] = useState<QueueSort>(requestedSort === "number" || requestedSort === "value" || requestedSort === "due" ? requestedSort : "activity");
+  const requestedStatus = searchParams.get("status");
+  const [statusFilter, setStatusFilter] = useState(requestedStatus && quoteStatuses.includes(requestedStatus as (typeof quoteStatuses)[number]) ? requestedStatus : "All");
+  const [pendingHold, setPendingHold] = useState<WorkRecord | null>(null);
+  const [holdReason, setHoldReason] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!hasFreshRecordCache);
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [saving, setSaving] = useState(false);
@@ -261,11 +277,20 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       : kind === "projects"
         ? projectStatuses
         : invoiceStatuses;
+  const queueReturnTo = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+
+  function updateQueueQuery(key: string, value: string, fallback: string) {
+    if (kind !== "quotes") return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (!value || value === fallback) params.delete(key);
+    else params.set(key, value);
+    router.replace(`${pathname}${params.size ? `?${params.toString()}` : ""}`, { scroll: false });
+  }
 
   useEffect(() => {
     async function load() {
       try {
-        setIsLoading(true);
+        if (!hasFreshRecordCache) setIsLoading(true);
         setLoadError("");
         const [workData, clientData, projectData, userData, invoiceUserData] = await Promise.all([
           requestJson<Record<WorkKind, WorkRecord[]>>(`/api/${kind}`, {
@@ -297,6 +322,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             : Promise.resolve({ assignees: [] })
         ]);
         setRecords(workData[kind]);
+        workRecordCache.set(kind, { records: workData[kind], cachedAt: Date.now() });
         setClients(clientData.clients);
         setProjects(projectData.projects);
         setAssignees(userData.assignees);
@@ -375,6 +401,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
         const matchesView =
           !selectedView?.statuses ||
           selectedView.statuses.includes(record.status);
+        const matchesStatus = statusFilter === "All" || record.status === statusFilter;
         const matchesSearch =
           !normalizedSearch ||
           [
@@ -389,7 +416,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             .join(" ")
             .toLowerCase()
             .includes(normalizedSearch);
-        return matchesView && matchesSearch;
+        return matchesView && matchesStatus && matchesSearch;
       })
       .sort((left, right) => {
         if (sort === "number") {
@@ -401,7 +428,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
         if (sort === "due") return dueTimestamp(left) - dueTimestamp(right);
         return activityTimestamp(right) - activityTimestamp(left);
       });
-  }, [activeView, records, searchTerm, sort, views]);
+  }, [activeView, records, searchTerm, sort, statusFilter, views]);
 
   function openCreate(project?: ProjectRecord) {
     const availableAssignees = project ? invoiceAssignees : assignees;
@@ -524,7 +551,12 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     }
   }
 
-  async function changeStatus(record: WorkRecord, status: string) {
+  async function changeStatus(record: WorkRecord, status: string, statusReason?: string) {
+    if (kind === "quotes" && status === "On Hold" && record.status !== "On Hold" && !statusReason) {
+      setPendingHold(record);
+      setHoldReason("");
+      return;
+    }
     try {
       const singular =
         kind === "quotes" ? "quote" : kind === "projects" ? "project" : "invoice";
@@ -532,11 +564,13 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
         `/api/${kind}/${record.id}`,
         {
           method: "PATCH",
-          body: JSON.stringify({ status })
+          body: JSON.stringify({ status, ...(statusReason ? { statusReason } : {}) })
         }
       );
       setRecords((current) =>
-        current.map((item) => (item.id === record.id ? data[singular] : item))
+        current.map((item) => item.id === record.id
+          ? { ...data[singular], ...(kind === "quotes" ? { currentStep: (item as QuoteRecord).currentStep } : {}) }
+          : item)
       );
       setToast(`${recordNumber(record)} moved to ${status}.`);
     } catch (error) {
@@ -582,12 +616,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             {copy.summary}
           </p>
         </div>
-        <div className="work-queue-heading-actions">
-          {kind === "quotes" && canUser(user, "requests:write") ? (
-            <Link className="secondary-button compact" href="/requests">
-              Create from request
-            </Link>
-          ) : null}
+        {kind !== "quotes" ? <div className="work-queue-heading-actions">
           <button
             className="primary-button compact"
             type="button"
@@ -597,7 +626,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             <Plus size={17} />
             New {copy.singular.toLowerCase()}
           </button>
-        </div>
+        </div> : null}
       </header>
 
       <nav className="work-queue-views" aria-label={`${title} views`}>
@@ -607,7 +636,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             type="button"
             className={activeView === view.key ? "active" : ""}
             aria-current={activeView === view.key ? "page" : undefined}
-            onClick={() => setActiveView(view.key)}
+            onClick={() => { setActiveView(view.key); updateQueueQuery("view", view.key, defaultView); }}
           >
             <span>{view.label}</span>
             <strong>{viewCounts[view.key] ?? 0}</strong>
@@ -624,7 +653,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
               type="search"
               placeholder={`Search ${copy.singular.toLowerCase()}, client, assigned person, or status`}
               value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
+              onChange={(event) => { setSearchTerm(event.target.value); updateQueueQuery("q", event.target.value, ""); }}
             />
           </label>
           <label className="work-queue-sort">
@@ -632,14 +661,23 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             <span className="sr-only">Sort {title.toLowerCase()}</span>
             <select
               value={sort}
-              onChange={(event) => setSort(event.target.value as QueueSort)}
+              onChange={(event) => { const value = event.target.value as QueueSort; setSort(value); updateQueueQuery("sort", value, "activity"); }}
             >
               <option value="activity">Newest activity</option>
               <option value="number">{copy.singular} number</option>
               <option value="value">{valueLabel}: high to low</option>
-              {kind !== "quotes" ? <option value="due">Due date</option> : null}
+              <option value="due">Due date</option>
             </select>
           </label>
+          {kind === "quotes" ? (
+            <label className="work-queue-sort">
+              <span className="sr-only">Filter quotes by status</span>
+              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); updateQueueQuery("status", event.target.value, "All"); }}>
+                <option value="All">All statuses</option>
+                {quoteStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+              </select>
+            </label>
+          ) : null}
 
           <div className="work-queue-meta">
             <span>
@@ -672,12 +710,13 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
         ) : null}
 
         <div className="work-queue-desktop">
-          <table className="work-queue-table">
+          <table className={`work-queue-table${kind === "quotes" ? " quotes" : ""}`}>
             <thead>
               <tr>
                 <th>{copy.singular}</th>
                 <th>Client</th>
                 <th>Status</th>
+                {kind === "quotes" ? <th>Next Action</th> : null}
                 <th>{kind === "quotes" ? "Owner" : "Assigned to"}</th>
                 <th>Timing</th>
                 <th>{valueLabel}</th>
@@ -687,7 +726,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
               {isLoading
                 ? Array.from({ length: 5 }, (_, rowIndex) => (
                     <tr className="work-queue-skeleton-row" key={rowIndex}>
-                      {Array.from({ length: 6 }, (__, cellIndex) => (
+                      {Array.from({ length: kind === "quotes" ? 7 : 6 }, (__, cellIndex) => (
                         <td key={cellIndex}>
                           <span />
                         </td>
@@ -703,11 +742,11 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                           tabIndex={0}
                           role="link"
                           aria-label={`Open ${recordNumber(record)}: ${record.title}`}
-                          onClick={() => router.push(recordHref(kind, record.id))}
+                          onClick={() => router.push(recordHref(kind, record.id, undefined, queueReturnTo))}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
-                              router.push(recordHref(kind, record.id));
+                              router.push(recordHref(kind, record.id, undefined, queueReturnTo));
                             }
                           }}
                           className={[
@@ -736,6 +775,13 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                             <strong>{record.clientName || "Unlinked"}</strong>
                           </td>
                           <td>{renderStatus(record)}</td>
+                          {kind === "quotes" ? <td className="queue-next-action quote-next-action">
+                            <Link className="quote-next-action-link" href={recordHref(kind, record.id, "updates", queueReturnTo)} onClick={(event) => event.stopPropagation()}>
+                              <span className="quote-next-action-kicker"><CalendarClock size={12} /> Current step</span>
+                              <strong>{(record as QuoteRecord).currentStep?.title || (record as QuoteRecord).currentStep?.body || "Set a current step"}</strong>
+                              <small>{(record as QuoteRecord).currentStep ? `${(record as QuoteRecord).currentStep?.assignee?.name || "Unassigned"}${(record as QuoteRecord).currentStep?.targetDate ? ` · ${displayDate((record as QuoteRecord).currentStep!.targetDate)}` : ""}` : "No action assigned"}</small>
+                            </Link>
+                          </td> : null}
                           <td>
                             <strong>{recordAssignedName(record)}</strong>
                           </td>
@@ -779,11 +825,11 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                     tabIndex={0}
                     role="link"
                     aria-label={`Open ${recordNumber(record)}: ${record.title}`}
-                    onClick={() => router.push(recordHref(kind, record.id))}
+                    onClick={() => router.push(recordHref(kind, record.id, undefined, queueReturnTo))}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        router.push(recordHref(kind, record.id));
+                        router.push(recordHref(kind, record.id, undefined, queueReturnTo));
                       }
                     }}
                     key={record.id}
@@ -825,6 +871,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                         <span>{kind === "quotes" ? "Owner" : "Assigned to"}</span>
                         <strong>{recordAssignedName(record)}</strong>
                       </div>
+                      {kind === "quotes" ? <div className="work-queue-card-owner"><span>Next action</span><strong>{(record as QuoteRecord).currentStep?.title || (record as QuoteRecord).currentStep?.body || "Set a current step"}</strong></div> : null}
                     </div>
                   </article>
                 );
@@ -1070,6 +1117,18 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 </button>
               </div>
             </form>
+          </div>
+        </ViewportPortal>
+      ) : null}
+
+      {pendingHold ? (
+        <ViewportPortal>
+          <div className="work-queue-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPendingHold(null); }}>
+            <div className="work-queue-modal quote-hold-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-hold-title">
+              <div className="quote-hold-dialog-heading"><span className="quote-hold-dialog-icon"><AlertTriangle size={22} /></span><div><span>Pause quote</span><h2 id="quote-hold-title">Place {recordNumber(pendingHold)} on hold?</h2><p>The quote will stay in Open and the reason will be recorded in its updates.</p></div><button type="button" onClick={() => setPendingHold(null)} aria-label="Close hold dialog"><X size={18} /></button></div>
+              <div className="quote-hold-dialog-body"><label htmlFor="dashboard-hold-reason"><span>Reason for hold</span><textarea id="dashboard-hold-reason" autoFocus maxLength={2000} rows={4} placeholder="For example: Waiting for client approval or revised scope…" value={holdReason} onChange={(event) => setHoldReason(event.target.value)} /></label><small>{holdReason.length.toLocaleString()} / 2,000</small></div>
+              <div className="work-queue-modal-actions quote-hold-dialog-actions"><button type="button" onClick={() => setPendingHold(null)}>Keep active</button><button className="primary-button quote-hold-confirm" type="button" disabled={!holdReason.trim()} onClick={() => { const record = pendingHold; const reason = holdReason.trim(); setPendingHold(null); void changeStatus(record, "On Hold", reason); }}>Place on hold</button></div>
+            </div>
           </div>
         </ViewportPortal>
       ) : null}
