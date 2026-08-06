@@ -1,8 +1,13 @@
-import { Controller, Delete, Get, Inject, Param, Req, Res } from "@nestjs/common";
+import { Controller, Delete, Get, Head, Inject, Param, Req, Res } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { getDocumentDownload, getDocumentPreview, softDeleteDocument } from "@/lib/services/documentService";
+import {
+  getDocumentDownload,
+  getDocumentPreview,
+  getDocumentPreviewMetadata,
+  softDeleteDocument
+} from "@/lib/services/documentService";
 import { AuthService } from "@/shared/auth.service";
 
 function safeDownloadName(fileName: string) {
@@ -17,6 +22,21 @@ function safeDownloadName(fileName: string) {
       (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`
     )
   };
+}
+
+function setPreviewSecurityHeaders(response: Response, mediaType: string) {
+  response.setHeader("Cache-Control", "private, no-store, max-age=0");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("X-Frame-Options", "SAMEORIGIN");
+  response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  response.setHeader("Referrer-Policy", "no-referrer");
+  response.setHeader(
+    "Content-Security-Policy",
+    mediaType === "application/pdf"
+      ? "default-src 'none'; frame-ancestors 'self'"
+      : "default-src 'none'; img-src 'self' data:; frame-ancestors 'self'; sandbox"
+  );
 }
 
 @Controller("documents")
@@ -39,6 +59,24 @@ export class DocumentsController {
     await pipeline(document.body as Readable, response);
   }
 
+  @Head(":id/preview")
+  async previewMetadata(
+    @Req() request: Request,
+    @Res() response: Response,
+    @Param("id") id: string
+  ) {
+    const user = await this.auth.requireUser(request);
+    const document = await getDocumentPreviewMetadata(id, user);
+    const previewName = safeDownloadName(document.fileName);
+    response.status(200);
+    response.setHeader("Content-Type", document.mediaType);
+    response.setHeader("Content-Disposition", `inline; filename="${previewName.ascii}"; filename*=UTF-8''${previewName.encoded}`);
+    response.setHeader("Content-Length", String(document.byteSize));
+    response.setHeader("Accept-Ranges", "bytes");
+    setPreviewSecurityHeaders(response, document.mediaType);
+    response.end();
+  }
+
   @Get(":id/preview")
   async preview(
     @Req() request: Request,
@@ -59,18 +97,7 @@ export class DocumentsController {
         `bytes ${document.range.start}-${document.range.end}/${document.byteSize}`
       );
     }
-    response.setHeader("Cache-Control", "private, no-store, max-age=0");
-    response.setHeader("Pragma", "no-cache");
-    response.setHeader("X-Content-Type-Options", "nosniff");
-    response.setHeader("X-Frame-Options", "SAMEORIGIN");
-    response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
-    response.setHeader("Referrer-Policy", "no-referrer");
-    response.setHeader(
-      "Content-Security-Policy",
-      document.mediaType === "application/pdf"
-        ? "default-src 'none'; frame-ancestors 'self'"
-        : "default-src 'none'; img-src 'self' data:; frame-ancestors 'self'; sandbox"
-    );
+    setPreviewSecurityHeaders(response, document.mediaType);
     await pipeline(document.body as Readable, response);
   }
 

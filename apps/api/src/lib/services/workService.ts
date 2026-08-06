@@ -1811,6 +1811,9 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
   const assignedTo = input.assignedToId
     ? await activeUserOrThrow(input.assignedToId)
     : null;
+  if (input.collaboratorIds !== undefined) {
+    await Promise.all(input.collaboratorIds.map((userId) => activeUserOrThrow(userId)));
+  }
   if (client && existing.project?.id) {
     const project = await prisma.project.findUnique({ where: { id: existing.project.id }, select: { clientId: true } });
     if (project && project.clientId !== client.id) throw new Error("WORK_CLIENT_MISMATCH");
@@ -1822,6 +1825,29 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
       input.lifecycleDetails,
       user
     );
+    if (input.collaboratorIds !== undefined) {
+      if (!lifecycleContextId) throw new Error("QUOTE_LIFECYCLE_CONTEXT_REQUIRED");
+      const existingCollaboratorIds = new Set(
+        existing.lifecycleContext?.collaborators.map((collaborator) => collaborator.userId) ?? []
+      );
+      await tx.lifecycleCollaborator.deleteMany({
+        where: {
+          lifecycleContextId,
+          ...(input.collaboratorIds.length ? { userId: { notIn: input.collaboratorIds } } : {})
+        }
+      });
+      const additions = input.collaboratorIds.filter((userId) => !existingCollaboratorIds.has(userId));
+      if (additions.length) {
+        await tx.lifecycleCollaborator.createMany({
+          data: additions.map((userId) => ({
+            lifecycleContextId,
+            userId,
+            addedById: user?.id ?? null
+          })),
+          skipDuplicates: true
+        });
+      }
+    }
     const updated = await tx.quote.update({
       where: { id: existing.id },
       data: {

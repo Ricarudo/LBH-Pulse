@@ -394,6 +394,7 @@ export const updateQuoteSchema = z.object({
   assignedToId: assignedToId.optional(),
   dueDate: nullableDate.optional(),
   lifecycleDetails,
+  collaboratorIds: z.array(id).max(100).transform((values) => Array.from(new Set(values))).optional(),
   status: z.enum(quoteStatuses).optional(),
   trades: quoteTrades.optional()
 }).strict();

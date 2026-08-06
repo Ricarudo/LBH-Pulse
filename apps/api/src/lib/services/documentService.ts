@@ -194,7 +194,7 @@ function documentOrigin(document: {
   throw new Error("DOCUMENT_ORIGIN_INVALID");
 }
 
-async function assertDocumentAccess(
+export async function assertDocumentAccess(
   document: {
     requestId: string | null;
     quoteId: string | null;
@@ -628,6 +628,18 @@ export async function getDocumentDownload(id: string, user: AuthenticatedUser) {
   });
   return {
     body: object.Body,
+    fileName: document.originalFileName,
+    mediaType: document.mediaType || "application/octet-stream",
+    byteSize: Number(document.byteSize)
+  };
+}
+
+export async function getDocumentPreviewMetadata(id: string, user: AuthenticatedUser) {
+  const document = await prisma.lifecycleDocument.findFirst({ where: { id, deletedAt: null } });
+  if (!document) throw new Error("DOCUMENT_NOT_FOUND");
+  await assertDocumentAccess(document, user, "read");
+  if (document.scanStatus !== "Clean" || !document.objectKey) throw new Error("DOCUMENT_NOT_AVAILABLE");
+  return {
     fileName: document.originalFileName,
     mediaType: document.mediaType || "application/octet-stream",
     byteSize: Number(document.byteSize)
