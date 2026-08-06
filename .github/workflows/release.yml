@@ -158,12 +158,20 @@ jobs:
           set -euo pipefail
           # Exact release tags are immutable. The minor channel intentionally
           # advances from 0.1.0 to 0.1.1 and later patch releases.
+          replacement_revision=$(jq -r '.replacesUnpublishedRevision // empty' "docs/releases/${{ needs.validate.outputs.version }}.json")
+          if [[ -n "$replacement_revision" && ! "$replacement_revision" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "Release metadata contains an invalid replacesUnpublishedRevision." >&2
+            exit 1
+          fi
           reference="ghcr.io/ricarudo/${{ matrix.image }}:${{ needs.validate.outputs.version }}${{ matrix.suffix }}"
           if docker pull --platform linux/amd64 "$reference" >/dev/null 2>&1; then
             revision=$(docker image inspect "$reference" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
             if [[ "$revision" != "${{ github.sha }}" ]]; then
-              echo "Refusing to replace existing release tag $reference from revision $revision." >&2
-              exit 1
+              if [[ -z "$replacement_revision" || "$revision" != "$replacement_revision" ]]; then
+                echo "Refusing to replace existing release tag $reference from revision $revision." >&2
+                exit 1
+              fi
+              echo "Replacing $reference from failed unpublished revision $revision."
             fi
           fi
       - id: build

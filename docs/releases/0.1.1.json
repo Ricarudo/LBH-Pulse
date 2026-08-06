@@ -9,5 +9,6 @@
   "targetMigrations": [
     "202608030001_quote_due_date",
     "202608030002_lifecycle_collaborators"
-  ]
+  ],
+  "replacesUnpublishedRevision": "2df719fb768263e999c586938676869475a51b24"
 }

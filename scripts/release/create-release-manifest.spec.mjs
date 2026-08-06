@@ -93,5 +93,9 @@ test("keeps exact release tags immutable while allowing the minor channel to adv
   const guard = workflow.slice(guardStart, buildStart);
   assert.match(guard, /needs\.validate\.outputs\.version/);
   assert.doesNotMatch(guard, /needs\.validate\.outputs\.minor/);
+  assert.match(guard, /replacesUnpublishedRevision/);
   assert.match(workflow.slice(buildStart), /needs\.validate\.outputs\.minor/);
+
+  const releaseMetadata = JSON.parse(readFileSync(resolve(repositoryRoot, "docs/releases/0.1.1.json"), "utf8"));
+  assert.match(releaseMetadata.replacesUnpublishedRevision, /^[a-f0-9]{40}$/);
 });
