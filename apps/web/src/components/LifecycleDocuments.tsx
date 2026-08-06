@@ -12,7 +12,7 @@ import {
   suggestedDocumentPurposeTags,
   type LifecycleDocumentRecord
 } from "@pulse/contracts/documents";
-import { filterLifecycleDocuments } from "@/lib/documents";
+import { filterLifecycleDocuments, probeDocumentPreview } from "@/lib/documents";
 import { formatWorkspaceDate } from "@/lib/formatting";
 import { apiFetch, getCsrfToken } from "@/lib/api/client";
 
@@ -64,6 +64,9 @@ function DocumentPreviewModal({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [pdfLoaded, setPdfLoaded] = useState(false);
   const [pdfTimedOut, setPdfTimedOut] = useState(false);
+  const [previewState, setPreviewState] = useState<"checking" | "ready" | "error">("checking");
+  const [previewError, setPreviewError] = useState("");
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const isImage = fileDocument.mediaType.startsWith("image/");
 
   useEffect(() => {
@@ -100,10 +103,32 @@ function DocumentPreviewModal({
   }, [onClose]);
 
   useEffect(() => {
-    if (isImage) return;
+    const previewUrl = fileDocument.previewUrl;
+    if (!previewUrl) {
+      setPreviewState("error");
+      setPreviewError("This document does not have an available preview.");
+      return;
+    }
+    const controller = new AbortController();
+    setPreviewState("checking");
+    setPreviewError("");
+    setPdfLoaded(false);
+    setPdfTimedOut(false);
+    probeDocumentPreview(previewUrl, controller.signal)
+      .then(() => setPreviewState("ready"))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setPreviewState("error");
+        setPreviewError(error instanceof Error ? error.message : "The document preview could not be loaded.");
+      });
+    return () => controller.abort();
+  }, [fileDocument.previewUrl, previewAttempt]);
+
+  useEffect(() => {
+    if (isImage || previewState !== "ready") return;
     const timeout = window.setTimeout(() => setPdfTimedOut(true), 8000);
     return () => window.clearTimeout(timeout);
-  }, [isImage]);
+  }, [isImage, previewState]);
 
   function fitImage() {
     setScale(1);
@@ -130,14 +155,14 @@ function DocumentPreviewModal({
           <div className="document-preview-actions">
             {isImage ? (
               <>
-                <button type="button" className="toolbar-button compact" onClick={() => setScale((value) => Math.max(0.25, value - 0.25))} aria-label="Zoom out">
+                <button type="button" className="toolbar-button compact" disabled={previewState !== "ready"} onClick={() => setScale((value) => Math.max(0.25, value - 0.25))} aria-label="Zoom out">
                   <ZoomOut size={16} />
                 </button>
                 <span className="document-zoom-label">{Math.round(scale * 100)}%</span>
-                <button type="button" className="toolbar-button compact" onClick={() => setScale((value) => Math.min(5, value + 0.25))} aria-label="Zoom in">
+                <button type="button" className="toolbar-button compact" disabled={previewState !== "ready"} onClick={() => setScale((value) => Math.min(5, value + 0.25))} aria-label="Zoom in">
                   <ZoomIn size={16} />
                 </button>
-                <button type="button" className="toolbar-button compact" onClick={fitImage}>
+                <button type="button" className="toolbar-button compact" disabled={previewState !== "ready"} onClick={fitImage}>
                   <Maximize2 size={16} /> Fit
                 </button>
               </>
@@ -158,7 +183,28 @@ function DocumentPreviewModal({
           </div>
         </header>
         <div className={isImage ? "document-preview-stage image" : "document-preview-stage pdf"}>
-          {fileDocument.previewUrl && isImage ? (
+          {previewState === "checking" ? (
+            <div className="document-preview-status" role="status">
+              <strong>Checking preview access...</strong>
+              <span>This should only take a moment.</span>
+            </div>
+          ) : previewState === "error" ? (
+            <div className="document-preview-status error" role="alert">
+              <CircleAlert size={28} aria-hidden="true" />
+              <strong>Preview unavailable</strong>
+              <span>{previewError}</span>
+              <div className="document-preview-status-actions">
+                <button type="button" className="toolbar-button compact" onClick={() => setPreviewAttempt((attempt) => attempt + 1)}>
+                  Try again
+                </button>
+                {fileDocument.downloadUrl ? (
+                  <a className="toolbar-button compact" href={fileDocument.downloadUrl}>
+                    <Download size={16} /> Download
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ) : fileDocument.previewUrl && isImage ? (
             <img
               src={fileDocument.previewUrl}
               alt={fileDocument.originalFileName}
@@ -187,6 +233,10 @@ function DocumentPreviewModal({
                 dragRef.current = null;
               }}
               onDoubleClick={fitImage}
+              onError={() => {
+                setPreviewState("error");
+                setPreviewError("The image preview could not be loaded. Retry or download the file instead.");
+              }}
             />
           ) : fileDocument.previewUrl ? (
             <>
@@ -201,6 +251,10 @@ function DocumentPreviewModal({
                 title={`Preview of ${fileDocument.originalFileName}`}
                 className={pdfLoaded ? "loaded" : ""}
                 onLoad={() => setPdfLoaded(true)}
+                onError={() => {
+                  setPreviewState("error");
+                  setPreviewError("The PDF preview could not be loaded. Retry or download the file instead.");
+                }}
               />
             </>
           ) : null}

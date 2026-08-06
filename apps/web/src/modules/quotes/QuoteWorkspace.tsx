@@ -28,7 +28,6 @@ import {
   addAdHocQuoteItem,
   addClientContact,
   addClientSite,
-  addQuoteCollaborator,
   addCatalogQuoteItem,
   addQuoteKit,
   createQuoteRevision,
@@ -37,7 +36,6 @@ import {
   fetchQuoteRevision,
   fetchQuoteUpdateTeamMembers,
   removeQuoteItem,
-  removeQuoteCollaborator,
   replaceLegacyQuoteFinancials,
   switchQuoteCalculationMode,
   updateQuote,
@@ -70,6 +68,21 @@ import {
   type RequestAssignee,
   type ServiceCategory
 } from "@pulse/contracts/requests";
+import {
+  buildQuoteContactPayload,
+  buildQuoteDetailsPayload,
+  buildQuoteSitePayload,
+  createBlankQuoteContactDraft,
+  createBlankQuoteSiteDraft,
+  validateQuoteContactDraft,
+  validateQuoteDetailsDraft,
+  validateQuoteSiteDraft,
+  type QuoteDetailsDraft,
+  type QuoteDetailsField,
+  type QuoteInlineContactField,
+  type QuoteInlineSiteField
+} from "@/lib/forms/quoteDetails";
+import type { FieldErrors } from "@/lib/forms/sanitization";
 import { QuoteUpdatesPanel } from "./QuoteUpdatesPanel";
 
 type QuoteWorkspaceProps = {
@@ -88,15 +101,6 @@ type AdHocDraft = {
   unitPrice: string;
   discountPercent: string;
   taxable: boolean;
-};
-
-type QuoteDetailsDraft = {
-  title: string;
-  contactId: string;
-  siteId: string;
-  assignedToId: string;
-  dueDate: string;
-  lifecycleDetails: string;
 };
 
 const blankAdHoc: AdHocDraft = {
@@ -165,12 +169,25 @@ function compactDate(value: string) {
   return formatWorkspaceDate(value) || "Not set";
 }
 
+function detailsDraftFromQuote(quote: QuoteDetailRecord): QuoteDetailsDraft {
+  return {
+    title: quote.title,
+    contactId: quote.contactId ?? "",
+    siteId: quote.siteId ?? "",
+    assignedToId: quote.assignedToId ?? "",
+    dueDate: quote.dueDate,
+    lifecycleDetails: quote.lifecycleContext.details,
+    collaboratorIds: quote.collaborators.map((collaborator) => collaborator.id)
+  };
+}
+
 export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceProps) {
   const { user } = useCurrentUser();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const canWrite = canUser(user, "quotes:write");
+  const canWriteClients = canUser(user, "clients:write");
   const canWriteUpdates = canUser(user, "activity:write");
   const [quote, setQuote] = useState<QuoteDetailRecord | null>(null);
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
@@ -188,12 +205,15 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   const [proposalNotes, setProposalNotes] = useState("");
   const [activeTab, setActiveTab] = useState<LifecycleTab>(initialTab);
   const [detailsEditing, setDetailsEditing] = useState(false);
-  const [detailsDraft, setDetailsDraft] = useState("");
   const [quoteDetailsDraft, setQuoteDetailsDraft] = useState<QuoteDetailsDraft | null>(null);
+  const [quoteDetailsErrors, setQuoteDetailsErrors] = useState<FieldErrors<QuoteDetailsField>>({});
   const [newContactOpen, setNewContactOpen] = useState(false);
   const [newSiteOpen, setNewSiteOpen] = useState(false);
-  const [newContactDraft, setNewContactDraft] = useState({ firstName: "", lastName: "", email: "", phone: "" });
-  const [newSiteDraft, setNewSiteDraft] = useState({ siteName: "", addressLine1: "", city: "", state: "PR" });
+  const [newContactDraft, setNewContactDraft] = useState(createBlankQuoteContactDraft);
+  const [newSiteDraft, setNewSiteDraft] = useState(createBlankQuoteSiteDraft);
+  const [newContactErrors, setNewContactErrors] = useState<FieldErrors<QuoteInlineContactField>>({});
+  const [newSiteErrors, setNewSiteErrors] = useState<FieldErrors<QuoteInlineSiteField>>({});
+  const [collaboratorToAdd, setCollaboratorToAdd] = useState("");
   const [tradeEditorOpen, setTradeEditorOpen] = useState(false);
   const [tradeDraft, setTradeDraft] = useState<ServiceCategory[]>([]);
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
@@ -223,15 +243,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
         setAssignees(teamData.teamMembers);
         setProposalNotes(nextQuote.proposalNotes);
         setLegacyFinancialDraft(legacyDraft(nextQuote.legacyFinancials));
-        setDetailsDraft(nextQuote.lifecycleContext.details);
-        setQuoteDetailsDraft({
-          title: nextQuote.title,
-          contactId: nextQuote.contactId ?? "",
-          siteId: nextQuote.siteId ?? "",
-          assignedToId: nextQuote.assignedToId ?? "",
-          dueDate: nextQuote.dueDate,
-          lifecycleDetails: nextQuote.lifecycleContext.details
-        });
+        setQuoteDetailsDraft(detailsDraftFromQuote(nextQuote));
         setTradeDraft(nextQuote.trades as ServiceCategory[]);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Unable to load quote.");
@@ -339,159 +351,129 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
-  async function saveLifecycleDetails() {
-    setBusy(true);
-    const saved = await patchQuote({ lifecycleDetails: detailsDraft });
-    setBusy(false);
-    if (saved) {
-      setQuote((current) => current ? {
-        ...current,
-        lifecycleContext: {
-          ...current.lifecycleContext,
-          details: detailsDraft,
-          updatedAt: new Date().toISOString(),
-          updatedByName: user?.name ?? "Pulse System"
-        }
-      } : current);
-      setDetailsEditing(false);
-      setToast("Details saved for the full lifecycle.");
-    }
-  }
-
   async function saveQuoteDetails() {
     if (!quote || !quoteDetailsDraft) return;
+    const validation = validateQuoteDetailsDraft(quoteDetailsDraft);
+    setQuoteDetailsDraft(validation.normalized);
+    setQuoteDetailsErrors(validation.errors);
+    if (Object.keys(validation.errors).length) return;
+    const payload = buildQuoteDetailsPayload(validation.normalized, detailsDraftFromQuote(quote));
+    if (!Object.keys(payload).length) {
+      setDetailsEditing(false);
+      setQuoteDetailsDraft(null);
+      resetInlineQuoteCreators();
+      setToast("No quote detail changes to save.");
+      return;
+    }
     setBusy(true);
-    const saved = await patchQuote({
-      title: quoteDetailsDraft.title,
-      contactId: quoteDetailsDraft.contactId,
-      siteId: quoteDetailsDraft.siteId,
-      assignedToId: quoteDetailsDraft.assignedToId,
-      dueDate: quoteDetailsDraft.dueDate || null,
-      lifecycleDetails: quoteDetailsDraft.lifecycleDetails
-    });
+    const saved = await patchQuote(payload);
     setBusy(false);
     if (saved) {
-      setDetailsDraft(quoteDetailsDraft.lifecycleDetails);
       setDetailsEditing(false);
+      setQuoteDetailsDraft(null);
+      setQuoteDetailsErrors({});
+      resetInlineQuoteCreators();
       setToast("Quote details updated.");
+    } else {
+      setQuoteDetailsErrors({ form: "The quote could not be updated. Review the message above and try again." });
     }
   }
 
   function beginQuoteDetailsEdit() {
     if (!quote) return;
-    setQuoteDetailsDraft({
-      title: quote.title,
-      contactId: quote.contactId ?? "",
-      siteId: quote.siteId ?? "",
-      assignedToId: quote.assignedToId ?? "",
-      dueDate: quote.dueDate,
-      lifecycleDetails: quote.lifecycleContext.details
-    });
+    setQuoteDetailsDraft(detailsDraftFromQuote(quote));
+    setQuoteDetailsErrors({});
+    resetInlineQuoteCreators();
     setDetailsEditing(true);
   }
 
-  async function changeCollaborator(userId: string, action: "add" | "remove") {
-    if (!quote || !canWrite || busy || !userId) return;
-    setBusy(true);
-    try {
-      const data = action === "add"
-        ? await addQuoteCollaborator(quote.id, userId)
-        : await removeQuoteCollaborator(quote.id, userId);
-      updateQuoteState(data.quote);
-      setToast(action === "add" ? "Collaborator added." : "Collaborator removed.");
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : "Unable to update collaborators.");
-    } finally {
-      setBusy(false);
-    }
+  function resetInlineQuoteCreators() {
+    setNewContactOpen(false);
+    setNewSiteOpen(false);
+    setNewContactDraft(createBlankQuoteContactDraft());
+    setNewSiteDraft(createBlankQuoteSiteDraft());
+    setNewContactErrors({});
+    setNewSiteErrors({});
+    setCollaboratorToAdd("");
+  }
+
+  function cancelQuoteDetailsEdit() {
+    if (!quote || !quoteDetailsDraft || busy) return;
+    const baseline = detailsDraftFromQuote(quote);
+    const changed = JSON.stringify(quoteDetailsDraft) !== JSON.stringify(baseline);
+    if (changed && !window.confirm("Discard the unsaved quote detail changes?")) return;
+    setDetailsEditing(false);
+    setQuoteDetailsDraft(null);
+    setQuoteDetailsErrors({});
+    resetInlineQuoteCreators();
+  }
+
+  function stageCollaborator(userId: string, action: "add" | "remove") {
+    if (!quoteDetailsDraft || !userId) return;
+    setQuoteDetailsDraft({
+      ...quoteDetailsDraft,
+      collaboratorIds: action === "add"
+        ? Array.from(new Set([...quoteDetailsDraft.collaboratorIds, userId]))
+        : quoteDetailsDraft.collaboratorIds.filter((id) => id !== userId)
+    });
+    setCollaboratorToAdd("");
   }
 
   async function createContactForQuote() {
-    if (!quote?.clientId || !newContactDraft.firstName.trim() || (!newContactDraft.email.trim() && !newContactDraft.phone.trim())) {
-      setToast("Enter a contact name and at least one contact method.");
-      return;
-    }
+    if (!quote?.clientId || !canWriteClients) return;
+    const validation = validateQuoteContactDraft(newContactDraft);
+    setNewContactDraft(validation.normalized);
+    setNewContactErrors(validation.errors);
+    if (Object.keys(validation.errors).length) return;
+    const existingIds = new Set(quote.contactOptions.map((contact) => contact.id));
     setBusy(true);
     try {
-      const data = await addClientContact(quote.clientId, {
-        name: `${newContactDraft.firstName} ${newContactDraft.lastName}`.trim(),
-        firstName: newContactDraft.firstName,
-        lastName: newContactDraft.lastName,
-        role: "Primary",
-        title: "",
-        department: "",
-        email: newContactDraft.email,
-        phone: newContactDraft.phone,
-        mobile: "",
-        preferredContactMethod: newContactDraft.email ? "Email" : "Phone",
-        isPrimary: quote.contactOptions.length === 0,
-        isBilling: false,
-        isPrimaryContact: quote.contactOptions.length === 0,
-        isBillingContact: false,
-        isTechnicalContact: false,
-        isDecisionMaker: false,
-        notes: ""
-      });
-      const contactId = data.client.contacts.at(-1)?.id;
-      if (!contactId) throw new Error("The new contact could not be linked.");
-      await patchQuote({ contactId });
+      const data = await addClientContact(
+        quote.clientId,
+        buildQuoteContactPayload(validation.normalized, quote.contactOptions.length === 0)
+      );
+      const contactId = data.client.contacts.find((contact) => !existingIds.has(contact.id))?.id;
+      if (!contactId) throw new Error("The new contact could not be selected.");
+      const refreshed = await fetchQuote(quote.id, { cache: "no-store" });
+      updateQuoteState(normalizeQuoteDetailRecord(refreshed.quote));
       setQuoteDetailsDraft((current) => current ? { ...current, contactId } : current);
-      setNewContactDraft({ firstName: "", lastName: "", email: "", phone: "" });
+      setNewContactDraft(createBlankQuoteContactDraft());
+      setNewContactErrors({});
       setNewContactOpen(false);
-      setToast("Contact created and linked to the quote.");
+      setToast("Contact created. Save changes to link it to this quote.");
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Unable to create contact.");
+      setNewContactErrors({ form: error instanceof Error ? error.message : "Unable to create contact." });
     } finally {
       setBusy(false);
     }
   }
 
   async function createSiteForQuote() {
-    if (!quote?.clientId || !newSiteDraft.siteName.trim()) {
-      setToast("Enter a site name.");
-      return;
-    }
+    if (!quote?.clientId || !canWriteClients) return;
+    const validation = validateQuoteSiteDraft(newSiteDraft);
+    setNewSiteDraft(validation.normalized);
+    setNewSiteErrors(validation.errors);
+    if (Object.keys(validation.errors).length) return;
+    const existingIds = new Set(quote.siteOptions.map((site) => site.id));
     setBusy(true);
     try {
-      const data = await addClientSite(quote.clientId, {
-        siteName: newSiteDraft.siteName,
-        siteType: "Main Office",
-        addressLine1: newSiteDraft.addressLine1,
-        addressLine2: "",
-        city: newSiteDraft.city,
-        state: newSiteDraft.state,
-        postalCode: "",
-        country: "Puerto Rico",
-        googleMapsUrl: "",
-        operationalHours: "",
-        accessInstructions: "",
-        parkingInstructions: "",
-        securityRequirements: "",
-        siteNotes: "",
-        isPrimarySite: quote.siteOptions.length === 0
-      });
-      const siteId = data.client.sites.at(-1)?.id;
-      if (!siteId) throw new Error("The new site could not be linked.");
-      await patchQuote({ siteId });
+      const data = await addClientSite(
+        quote.clientId,
+        buildQuoteSitePayload(validation.normalized, quote.siteOptions.length === 0)
+      );
+      const siteId = data.client.sites.find((site) => !existingIds.has(site.id))?.id;
+      if (!siteId) throw new Error("The new site could not be selected.");
+      const refreshed = await fetchQuote(quote.id, { cache: "no-store" });
+      updateQuoteState(normalizeQuoteDetailRecord(refreshed.quote));
       setQuoteDetailsDraft((current) => current ? { ...current, siteId } : current);
-      setNewSiteDraft({ siteName: "", addressLine1: "", city: "", state: "PR" });
+      setNewSiteDraft(createBlankQuoteSiteDraft());
+      setNewSiteErrors({});
       setNewSiteOpen(false);
-      setToast("Site created and linked to the quote.");
+      setToast("Site created. Save changes to link it to this quote.");
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Unable to create site.");
+      setNewSiteErrors({ form: error instanceof Error ? error.message : "Unable to create site." });
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function assignQuotePerson(assignedToId: string) {
-    if (!quote || !canWrite || busy) return;
-    setBusy(true);
-    const saved = await patchQuote({ assignedToId: assignedToId || null });
-    setBusy(false);
-    if (saved) {
-      const assignedName = assignees.find((assignee) => assignee.id === assignedToId)?.name ?? "Unassigned";
-      setToast(`${quote.quoteNumber} assigned to ${assignedName}.`);
     }
   }
 
@@ -752,6 +734,15 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
     quote.financialSummary.taxAmount === 0 &&
     (quote.financialSummary.estimatedDurationBusinessDays === null ||
       quote.financialSummary.estimatedDurationBusinessDays === 0);
+  const collaboratorDirectory = new Map(
+    [...quote.collaborators, ...assignees].map((collaborator) => [collaborator.id, collaborator])
+  );
+  const detailCollaborators = detailsEditing && quoteDetailsDraft
+    ? quoteDetailsDraft.collaboratorIds.flatMap((id) => {
+        const collaborator = collaboratorDirectory.get(id);
+        return collaborator ? [collaborator] : [];
+      })
+    : quote.collaborators;
 
   return (
     <section className="quote-workspace">
@@ -920,23 +911,158 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
       </div>
 
       {activeTab === "details" ? (
-        <section className="lifecycle-details-panel quote-lifecycle-details">
-          <div className="panel-header">
-            <div><h2>Details</h2><p className="panel-note">Keep the quote owner, contact, deadline, collaborators, and working context together.</p></div>
+        <section className={`lifecycle-details-panel quote-lifecycle-details${detailsEditing ? " is-editing" : ""}`}>
+          <div className="panel-header quote-details-header">
+            <div>
+              <h2>Details</h2>
+              <p className="panel-note">Keep the quote owner, contact, deadline, collaborators, and working context together.</p>
+            </div>
             {detailsEditing ? (
-              <div className="settings-inline-actions"><button className="toolbar-button compact" type="button" onClick={() => { setDetailsEditing(false); setQuoteDetailsDraft(null); }}>Cancel</button><button className="primary-button compact" type="button" disabled={busy} onClick={() => void saveQuoteDetails()}><Save size={15} />Save changes</button></div>
-            ) : <button className="toolbar-button compact" type="button" disabled={!canWrite} onClick={beginQuoteDetailsEdit}><Pencil size={15} />Edit details</button>}
+              <div className="settings-inline-actions">
+                <button className="toolbar-button compact" type="button" disabled={busy} onClick={cancelQuoteDetailsEdit}>Cancel</button>
+                <button className="primary-button compact" type="button" disabled={busy} onClick={() => void saveQuoteDetails()}>
+                  <Save size={15} />{busy ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            ) : (
+              <button className="toolbar-button compact" type="button" disabled={!canWrite} onClick={beginQuoteDetailsEdit}><Pencil size={15} />Edit details</button>
+            )}
           </div>
+
+          {quoteDetailsErrors.form ? <div className="form-alert error" role="alert">{quoteDetailsErrors.form}</div> : null}
+
           <div className="request-details-grid lifecycle-linked-grid">
-            <section><span>Client</span><h3>{quote.clientId ? <Link href={`/clients/${quote.clientId}`}>{quote.clientName}</Link> : quote.clientName || "Not linked"}</h3><p>Linked for this quote stage</p></section>
-            <section><span>Quote title</span>{detailsEditing && quoteDetailsDraft ? <input className="material-input" value={quoteDetailsDraft.title} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, title: event.target.value })} /> : <h3>{quote.title}</h3>}<p>{quote.quoteNumber}</p></section>
-            <section><span>Point of contact</span>{detailsEditing && quoteDetailsDraft ? <><div className="quote-detail-edit-row"><select value={quoteDetailsDraft.contactId} disabled={!quote.contactOptions.length} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, contactId: event.target.value })}>{quote.contactOptions.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select><button type="button" className="toolbar-button compact" onClick={() => setNewContactOpen((current) => !current)}>New contact</button></div>{newContactOpen ? <div className="quote-inline-create"><input placeholder="First name" value={newContactDraft.firstName} onChange={(event) => setNewContactDraft({ ...newContactDraft, firstName: event.target.value })} /><input placeholder="Last name" value={newContactDraft.lastName} onChange={(event) => setNewContactDraft({ ...newContactDraft, lastName: event.target.value })} /><input type="email" placeholder="Email" value={newContactDraft.email} onChange={(event) => setNewContactDraft({ ...newContactDraft, email: event.target.value })} /><input placeholder="Phone" value={newContactDraft.phone} onChange={(event) => setNewContactDraft({ ...newContactDraft, phone: event.target.value })} /><button type="button" className="primary-button compact" disabled={busy} onClick={() => void createContactForQuote()}>Create & link</button></div> : null}</> : <h3>{quote.contact?.name || quote.context.contactName || "Not linked"}</h3>}<p>{quote.contact?.email || quote.context.contactEmail || "No contact method"}</p></section>
-            <section><span>Site</span>{detailsEditing && quoteDetailsDraft ? <><div className="quote-detail-edit-row"><select value={quoteDetailsDraft.siteId} disabled={!quote.siteOptions.length} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, siteId: event.target.value })}>{quote.siteOptions.map((site) => <option key={site.id} value={site.id}>{site.siteName}</option>)}</select><button type="button" className="toolbar-button compact" onClick={() => setNewSiteOpen((current) => !current)}>New site</button></div>{newSiteOpen ? <div className="quote-inline-create"><input placeholder="Site name" value={newSiteDraft.siteName} onChange={(event) => setNewSiteDraft({ ...newSiteDraft, siteName: event.target.value })} /><input placeholder="Address" value={newSiteDraft.addressLine1} onChange={(event) => setNewSiteDraft({ ...newSiteDraft, addressLine1: event.target.value })} /><input placeholder="City" value={newSiteDraft.city} onChange={(event) => setNewSiteDraft({ ...newSiteDraft, city: event.target.value })} /><input placeholder="State" value={newSiteDraft.state} onChange={(event) => setNewSiteDraft({ ...newSiteDraft, state: event.target.value })} /><button type="button" className="primary-button compact" disabled={busy} onClick={() => void createSiteForQuote()}>Create & link</button></div> : null}</> : <h3>{quote.site?.siteName || quote.context.siteName || "Not linked"}</h3>}<p>{quote.site ? [quote.site.address, quote.site.city, quote.site.state].filter(Boolean).join(", ") : quote.context.siteAddress || "No site"}</p></section>
-            <section className="lifecycle-assignee-card"><span>Assigned person</span>{detailsEditing && quoteDetailsDraft ? <select aria-label="Assigned person" value={quoteDetailsDraft.assignedToId} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, assignedToId: event.target.value })}><option value="">Unassigned</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name} · {assignee.roleLabel}</option>)}</select> : <h3>{quote.assignedTo?.name || "Unassigned"}</h3>}<p>{quote.assignedTo?.roleLabel || "No owner assigned"}</p></section>
-            <section><span>Due date</span>{detailsEditing && quoteDetailsDraft ? <input type="date" value={quoteDetailsDraft.dueDate} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, dueDate: event.target.value })} /> : <h3>{quote.dueDate ? formatWorkspaceDate(quote.dueDate) : "Not set"}</h3>}<p>Target date for preparing this quote</p></section>
-            <section><span>Collaborators</span>{quote.collaborators.length ? <div className="quote-collaborator-list">{quote.collaborators.map((collaborator) => <span key={collaborator.id}>{collaborator.name}{detailsEditing ? <button type="button" aria-label={`Remove ${collaborator.name}`} disabled={busy} onClick={() => void changeCollaborator(collaborator.id, "remove")}><X size={12} /></button> : null}</span>)}</div> : <h3>None added</h3>}{detailsEditing ? <div className="quote-collaborator-add"><select aria-label="Add collaborator" defaultValue=""><option value="">Add collaborator…</option>{assignees.filter((assignee) => !quote.collaborators.some((collaborator) => collaborator.id === assignee.id)).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select><button type="button" disabled={busy} onClick={(event) => { const select = event.currentTarget.previousElementSibling as HTMLSelectElement | null; if (select?.value) { void changeCollaborator(select.value, "add"); select.value = ""; } }}>Add</button></div> : null}<p>Shared across the lifecycle</p></section>
+            <section>
+              <span>Client</span>
+              <h3>{quote.clientId ? <Link href={`/clients/${quote.clientId}`}>{quote.clientName}</Link> : quote.clientName || "Not linked"}</h3>
+              <p>Linked for this quote stage</p>
+            </section>
+
+            <section>
+              {detailsEditing && quoteDetailsDraft ? (
+                <label className="quote-detail-field">
+                  <span>Quote title</span>
+                  <input
+                    maxLength={200}
+                    value={quoteDetailsDraft.title}
+                    aria-invalid={Boolean(quoteDetailsErrors.title)}
+                    onChange={(event) => {
+                      setQuoteDetailsDraft({ ...quoteDetailsDraft, title: event.target.value });
+                      setQuoteDetailsErrors((current) => ({ ...current, title: undefined, form: undefined }));
+                    }}
+                  />
+                  {quoteDetailsErrors.title ? <small className="field-error">{quoteDetailsErrors.title}</small> : null}
+                </label>
+              ) : <><span>Quote title</span><h3>{quote.title}</h3></>}
+              <p>{quote.quoteNumber}</p>
+            </section>
+
+            <section className="quote-detail-card-wide">
+              <span id="quote-contact-label">Point of contact</span>
+              {detailsEditing && quoteDetailsDraft ? (
+                <>
+                  <div className="quote-detail-edit-row">
+                    <select
+                      aria-labelledby="quote-contact-label"
+                      value={quoteDetailsDraft.contactId}
+                      disabled={!quote.contactOptions.length}
+                      onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, contactId: event.target.value })}
+                    >
+                      {!quoteDetailsDraft.contactId ? <option value="">Select a contact…</option> : null}
+                      {quote.contactOptions.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}
+                    </select>
+                    {canWriteClients ? <button type="button" className="toolbar-button compact" onClick={() => { setNewContactOpen((current) => !current); setNewContactErrors({}); }}>New contact</button> : null}
+                  </div>
+                  {newContactOpen ? (
+                    <div className="quote-inline-create" aria-label="Create a client contact">
+                      <div className="quote-inline-create-heading"><strong>New client contact</strong><small>Creates the contact now; the quote link applies when you save.</small></div>
+                      <label>First name<input autoComplete="given-name" value={newContactDraft.firstName} aria-invalid={Boolean(newContactErrors.firstName)} onChange={(event) => { setNewContactDraft({ ...newContactDraft, firstName: event.target.value }); setNewContactErrors((current) => ({ ...current, firstName: undefined, form: undefined })); }} />{newContactErrors.firstName ? <small className="field-error">{newContactErrors.firstName}</small> : null}</label>
+                      <label>Last name<input autoComplete="family-name" value={newContactDraft.lastName} onChange={(event) => setNewContactDraft({ ...newContactDraft, lastName: event.target.value })} /></label>
+                      <label>Email<input type="email" autoComplete="email" value={newContactDraft.email} aria-invalid={Boolean(newContactErrors.email)} onChange={(event) => { setNewContactDraft({ ...newContactDraft, email: event.target.value }); setNewContactErrors((current) => ({ ...current, email: undefined, form: undefined })); }} />{newContactErrors.email ? <small className="field-error">{newContactErrors.email}</small> : null}</label>
+                      <label>Phone<input type="tel" autoComplete="tel" value={newContactDraft.phone} aria-invalid={Boolean(newContactErrors.phone)} onChange={(event) => { setNewContactDraft({ ...newContactDraft, phone: event.target.value }); setNewContactErrors((current) => ({ ...current, phone: undefined, form: undefined })); }} />{newContactErrors.phone ? <small className="field-error">{newContactErrors.phone}</small> : null}</label>
+                      {newContactErrors.form ? <div className="form-alert error quote-inline-create-alert" role="alert">{newContactErrors.form}</div> : null}
+                      <div className="quote-inline-create-actions"><button type="button" className="primary-button compact" disabled={busy} onClick={() => void createContactForQuote()}>{busy ? "Creating…" : "Create contact"}</button></div>
+                    </div>
+                  ) : null}
+                </>
+              ) : <h3>{quote.contact?.name || quote.context.contactName || "Not linked"}</h3>}
+              <p>{quote.contact?.email || quote.contact?.phone || quote.contact?.mobile || quote.context.contactEmail || quote.context.contactPhone || "No contact method"}</p>
+            </section>
+
+            <section className="quote-detail-card-wide">
+              <span id="quote-site-label">Site</span>
+              {detailsEditing && quoteDetailsDraft ? (
+                <>
+                  <div className="quote-detail-edit-row">
+                    <select
+                      aria-labelledby="quote-site-label"
+                      value={quoteDetailsDraft.siteId}
+                      disabled={!quote.siteOptions.length}
+                      onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, siteId: event.target.value })}
+                    >
+                      {!quoteDetailsDraft.siteId ? <option value="">Select a site…</option> : null}
+                      {quote.siteOptions.map((site) => <option key={site.id} value={site.id}>{site.siteName}</option>)}
+                    </select>
+                    {canWriteClients ? <button type="button" className="toolbar-button compact" onClick={() => { setNewSiteOpen((current) => !current); setNewSiteErrors({}); }}>New site</button> : null}
+                  </div>
+                  {newSiteOpen ? (
+                    <div className="quote-inline-create" aria-label="Create a client site">
+                      <div className="quote-inline-create-heading"><strong>New client site</strong><small>Creates the site now; the quote link applies when you save.</small></div>
+                      <label>Site name<input value={newSiteDraft.siteName} aria-invalid={Boolean(newSiteErrors.siteName)} onChange={(event) => { setNewSiteDraft({ ...newSiteDraft, siteName: event.target.value }); setNewSiteErrors((current) => ({ ...current, siteName: undefined, form: undefined })); }} />{newSiteErrors.siteName ? <small className="field-error">{newSiteErrors.siteName}</small> : null}</label>
+                      <label>Address<input autoComplete="street-address" value={newSiteDraft.addressLine1} aria-invalid={Boolean(newSiteErrors.addressLine1)} onChange={(event) => { setNewSiteDraft({ ...newSiteDraft, addressLine1: event.target.value }); setNewSiteErrors((current) => ({ ...current, addressLine1: undefined, form: undefined })); }} />{newSiteErrors.addressLine1 ? <small className="field-error">{newSiteErrors.addressLine1}</small> : null}</label>
+                      <label>City<input autoComplete="address-level2" value={newSiteDraft.city} aria-invalid={Boolean(newSiteErrors.city)} onChange={(event) => { setNewSiteDraft({ ...newSiteDraft, city: event.target.value }); setNewSiteErrors((current) => ({ ...current, city: undefined, form: undefined })); }} />{newSiteErrors.city ? <small className="field-error">{newSiteErrors.city}</small> : null}</label>
+                      <label>State<input autoComplete="address-level1" value={newSiteDraft.state} aria-invalid={Boolean(newSiteErrors.state)} onChange={(event) => { setNewSiteDraft({ ...newSiteDraft, state: event.target.value }); setNewSiteErrors((current) => ({ ...current, state: undefined, form: undefined })); }} />{newSiteErrors.state ? <small className="field-error">{newSiteErrors.state}</small> : null}</label>
+                      {newSiteErrors.form ? <div className="form-alert error quote-inline-create-alert" role="alert">{newSiteErrors.form}</div> : null}
+                      <div className="quote-inline-create-actions"><button type="button" className="primary-button compact" disabled={busy} onClick={() => void createSiteForQuote()}>{busy ? "Creating…" : "Create site"}</button></div>
+                    </div>
+                  ) : null}
+                </>
+              ) : <h3>{quote.site?.siteName || quote.context.siteName || "Not linked"}</h3>}
+              <p>{quote.site ? [quote.site.address, quote.site.city, quote.site.state].filter(Boolean).join(", ") : quote.context.siteAddress || "No site"}</p>
+            </section>
+
+            <section className="lifecycle-assignee-card">
+              {detailsEditing && quoteDetailsDraft ? (
+                <label className="quote-detail-field">
+                  <span>Assigned person</span>
+                  <select value={quoteDetailsDraft.assignedToId} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, assignedToId: event.target.value })}>
+                    {!quoteDetailsDraft.assignedToId ? <option value="">Select an assignee…</option> : null}
+                    {assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name} · {assignee.roleLabel}</option>)}
+                  </select>
+                </label>
+              ) : <><span>Assigned person</span><h3>{quote.assignedTo?.name || "Unassigned"}</h3></>}
+              <p>{quote.assignedTo?.roleLabel || "No owner assigned"}</p>
+            </section>
+
+            <section>
+              {detailsEditing && quoteDetailsDraft ? (
+                <label className="quote-detail-field"><span>Due date</span><input type="date" value={quoteDetailsDraft.dueDate} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, dueDate: event.target.value })} /></label>
+              ) : <><span>Due date</span><h3>{quote.dueDate ? formatWorkspaceDate(quote.dueDate) : "Not set"}</h3></>}
+              <p>Target date for preparing this quote</p>
+            </section>
+
+            <section className="quote-detail-card-wide">
+              <span>Collaborators</span>
+              {detailCollaborators.length ? (
+                <div className="quote-collaborator-list">
+                  {detailCollaborators.map((collaborator) => <span key={collaborator.id}>{collaborator.name}{detailsEditing ? <button type="button" aria-label={`Remove ${collaborator.name}`} disabled={busy} onClick={() => stageCollaborator(collaborator.id, "remove")}><X size={12} /></button> : null}</span>)}
+                </div>
+              ) : <h3>None added</h3>}
+              {detailsEditing && quoteDetailsDraft ? (
+                <div className="quote-collaborator-add">
+                  <label className="quote-detail-field"><span>Add collaborator</span><select value={collaboratorToAdd} onChange={(event) => setCollaboratorToAdd(event.target.value)}><option value="">Select a team member…</option>{assignees.filter((assignee) => !quoteDetailsDraft.collaboratorIds.includes(assignee.id)).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label>
+                  <button className="toolbar-button compact" type="button" disabled={!collaboratorToAdd || busy} onClick={() => stageCollaborator(collaboratorToAdd, "add")}>Add</button>
+                </div>
+              ) : null}
+              <p>{detailsEditing ? "Collaborator changes apply with Save changes." : "Shared across the lifecycle"}</p>
+            </section>
           </div>
-          <label className="material-field lifecycle-details-note"><span>Important quote information</span>{detailsEditing && quoteDetailsDraft ? <textarea maxLength={5000} value={quoteDetailsDraft.lifecycleDetails} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, lifecycleDetails: event.target.value })} /> : <p>{quote.lifecycleContext.details || "No shared details have been added."}</p>}<small>{detailsEditing && quoteDetailsDraft ? `${quoteDetailsDraft.lifecycleDetails.length}/5,000` : `Last updated by ${quote.lifecycleContext.updatedByName}`}</small></label>
+
+          <label className="material-field lifecycle-details-note">
+            <span>Important quote information</span>
+            {detailsEditing && quoteDetailsDraft ? <textarea maxLength={5000} value={quoteDetailsDraft.lifecycleDetails} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, lifecycleDetails: event.target.value })} /> : <p>{quote.lifecycleContext.details || "No shared details have been added."}</p>}
+            <small>{detailsEditing && quoteDetailsDraft ? `${quoteDetailsDraft.lifecycleDetails.length}/5,000` : `Last updated by ${quote.lifecycleContext.updatedByName}`}</small>
+          </label>
         </section>
       ) : null}
 

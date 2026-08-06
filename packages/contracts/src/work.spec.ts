@@ -45,6 +45,14 @@ test("quote updates can select a different client contact", () => {
   assert.deepEqual(update, { contactId: "contact-2" });
 });
 
+test("quote updates accept a deduplicated staged collaborator list", () => {
+  const update = updateQuoteSchema.parse({
+    collaboratorIds: ["user-1", "user-1", "user-2"]
+  });
+
+  assert.deepEqual(update.collaboratorIds, ["user-1", "user-2"]);
+});
+
 test("quote ownership is a linked user and legacy owner text is discarded", () => {
   const quote = createQuoteSchema.parse({
     title: "Network refresh",

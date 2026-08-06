@@ -14299,6 +14299,7 @@ a {
 }
 
 .document-preview-stage {
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -14343,6 +14344,22 @@ a {
 
 .document-preview-status strong {
   color: var(--text-primary);
+}
+
+.document-preview-status.error {
+  color: var(--pulse-danger);
+}
+
+.document-preview-status.error strong {
+  color: var(--pulse-danger);
+}
+
+.document-preview-status-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .document-preview-stage.image {
@@ -22229,6 +22246,172 @@ a {
   margin: 0;
 }
 
+.quote-lifecycle-details.is-editing {
+  padding: 18px;
+  border: 1px solid var(--lifecycle-border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+}
+
+.quote-details-header {
+  align-items: flex-start;
+}
+
+.quote-lifecycle-details.is-editing .lifecycle-linked-grid {
+  gap: 14px;
+}
+
+.quote-lifecycle-details.is-editing .lifecycle-linked-grid > section {
+  gap: 8px;
+  padding: 14px;
+  background: var(--pulse-surface);
+}
+
+.quote-detail-card-wide {
+  grid-column: 1 / -1;
+}
+
+.quote-detail-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.quote-detail-field > span,
+.quote-inline-create label {
+  color: var(--pulse-muted-strong);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.quote-lifecycle-details.is-editing :where(
+  .quote-detail-field input,
+  .quote-detail-field select,
+  .quote-detail-edit-row select,
+  .quote-inline-create input
+) {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--pulse-line-strong);
+  border-radius: 9px;
+  outline: 0;
+  background: var(--pulse-surface);
+  color: var(--pulse-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.quote-lifecycle-details.is-editing :where(
+  .quote-detail-field input,
+  .quote-detail-field select,
+  .quote-detail-edit-row select,
+  .quote-inline-create input
+):focus {
+  border-color: var(--pulse-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pulse-blue) 16%, transparent);
+}
+
+.quote-lifecycle-details.is-editing :where(input, select)[aria-invalid="true"] {
+  border-color: var(--pulse-danger);
+}
+
+.quote-detail-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.quote-inline-create {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--pulse-blue) 20%, var(--pulse-line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--pulse-blue-soft) 38%, var(--pulse-surface));
+}
+
+.quote-inline-create > label {
+  display: grid;
+  gap: 5px;
+}
+
+.quote-inline-create-heading,
+.quote-inline-create-actions,
+.quote-inline-create-alert {
+  grid-column: 1 / -1;
+}
+
+.quote-inline-create-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.quote-inline-create-heading strong {
+  font-size: 13px;
+}
+
+.quote-inline-create-heading small {
+  color: var(--pulse-muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.quote-inline-create-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.quote-collaborator-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.quote-collaborator-list > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 7px 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--pulse-blue) 20%, var(--pulse-line));
+  border-radius: 999px;
+  color: var(--pulse-muted-strong);
+  background: var(--pulse-blue-soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.quote-collaborator-list button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  background: transparent;
+}
+
+.quote-collaborator-list button:hover:not(:disabled) {
+  color: var(--pulse-danger);
+  background: color-mix(in srgb, var(--pulse-danger) 10%, transparent);
+}
+
+.quote-collaborator-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: end;
+  padding-top: 4px;
+}
+
 .lifecycle-details-note textarea {
   min-height: 170px;
 }
@@ -22263,6 +22446,46 @@ a {
 }
 
 @media (max-width: 767px) {
+  .quote-lifecycle-details.is-editing {
+    padding: 13px;
+  }
+
+  .quote-details-header {
+    align-items: stretch;
+  }
+
+  .quote-details-header .settings-inline-actions {
+    width: 100%;
+  }
+
+  .quote-details-header .settings-inline-actions > button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .quote-detail-edit-row,
+  .quote-collaborator-add,
+  .quote-inline-create {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-detail-edit-row > button,
+  .quote-collaborator-add > button {
+    min-height: 42px;
+    justify-content: center;
+  }
+
+  .quote-inline-create-heading,
+  .quote-inline-create-actions,
+  .quote-inline-create-alert {
+    grid-column: 1;
+  }
+
+  .quote-inline-create-actions > button {
+    width: 100%;
+    justify-content: center;
+  }
+
   .work-record-highlights {
     grid-template-columns: 1fr 1fr;
   }

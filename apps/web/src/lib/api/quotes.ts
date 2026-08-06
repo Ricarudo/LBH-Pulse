@@ -24,7 +24,7 @@ import type {
   RequestUpdate,
   RequestUpdateFilter
 } from "@pulse/contracts/requests";
-import type { ParsedClientContactInput, ParsedClientSiteInput } from "@pulse/contracts/clients";
+import type { ClientContactInput, ClientSiteInput } from "@pulse/contracts/clients";
 import { apiRequest, type ApiRequestOptions } from "@/lib/api/client";
 
 type ReadOptions = Pick<ApiRequestOptions, "cache" | "signal">;
@@ -95,14 +95,14 @@ export function removeQuoteCollaborator(quoteId: string, userId: string) {
   });
 }
 
-export function addClientContact(clientId: string, input: ParsedClientContactInput) {
+export function addClientContact(clientId: string, input: ClientContactInput) {
   return apiRequest<{ client: { contacts: Array<{ id: string }> } }>(`/api/clients/${encodeURIComponent(clientId)}/contacts`, {
     method: "POST",
     json: input
   });
 }
 
-export function addClientSite(clientId: string, input: ParsedClientSiteInput) {
+export function addClientSite(clientId: string, input: ClientSiteInput) {
   return apiRequest<{ client: { sites: Array<{ id: string }> } }>(`/api/clients/${encodeURIComponent(clientId)}/sites`, {
     method: "POST",
     json: input
