@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
 import { ViewportPortal } from "@/components/ViewportPortal";
-import { createItem, fetchItems } from "@/lib/api/items";
+import { createItem, fetchItemCategories, fetchItems } from "@/lib/api/items";
 import { formatMoney } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
@@ -51,6 +51,7 @@ export function ItemsModule() {
   const { user } = useCurrentUser();
   const canWrite = canUser(user, "items:write");
   const [items, setItems] = useState<ItemRecord[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"All" | ItemType>("All");
   const [statusFilter, setStatusFilter] = useState<"All" | ItemStatus>("All");
@@ -64,23 +65,50 @@ export function ItemsModule() {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
-    async function loadItems() {
-      try {
-        setLoading(true);
-        setError("");
-        const data = await fetchItems(
-          { includeInactive: true },
-          { cache: "no-store" }
-        );
-        setItems(data.items);
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Unable to load items.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    void loadItems();
+    const controller = new AbortController();
+    fetchItemCategories({ cache: "no-store", signal: controller.signal })
+      .then((data) => setCategories(data.categories))
+      .catch((loadError) => {
+        if (!(loadError instanceof DOMException && loadError.name === "AbortError")) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load item categories.");
+        }
+      });
+    return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      async function loadItems() {
+        try {
+          setLoading(true);
+          setError("");
+          const data = await fetchItems(
+            {
+              q: query,
+              type: typeFilter === "All" ? undefined : typeFilter,
+              status: statusFilter === "All" ? undefined : statusFilter,
+              category: categoryFilter === "All" ? undefined : categoryFilter,
+              includeInactive: true
+            },
+            { cache: "no-store", signal: controller.signal }
+          );
+          setItems(data.items);
+        } catch (loadError) {
+          if (!(loadError instanceof DOMException && loadError.name === "AbortError")) {
+            setError(loadError instanceof Error ? loadError.message : "Unable to load items.");
+          }
+        } finally {
+          if (!controller.signal.aborted) setLoading(false);
+        }
+      }
+      void loadItems();
+    }, 250);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [categoryFilter, query, statusFilter, typeFilter]);
 
   useEffect(() => {
     if (!toast) return;
@@ -88,35 +116,7 @@ export function ItemsModule() {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  const filteredItems = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return items.filter((item) => {
-      const haystack = [
-        item.name,
-        item.sku,
-        item.partNumber,
-        item.manufacturer,
-        item.brand,
-        item.category,
-        item.subcategory,
-        item.description
-      ].join(" ").toLowerCase();
-      return (
-        (!normalized || haystack.includes(normalized)) &&
-        (typeFilter === "All" || item.itemType === typeFilter) &&
-        (statusFilter === "All" || item.status === statusFilter) &&
-        (categoryFilter === "All" || item.category === categoryFilter)
-      );
-    });
-  }, [categoryFilter, items, query, statusFilter, typeFilter]);
-
-  const categories = useMemo(
-    () =>
-      Array.from(
-        new Set(items.map((item) => item.category).filter(Boolean))
-      ).sort((left, right) => left.localeCompare(right)),
-    [items]
-  );
+  const filteredItems = items;
 
   const activeFilterCount = [
     categoryFilter !== "All",
@@ -243,7 +243,7 @@ export function ItemsModule() {
             </div>
           </div>
           <span className="items-result-count">
-            {filteredItems.length} of {items.length} items
+            {filteredItems.length === 200 ? "Showing the first 200 matching items" : `${filteredItems.length} matching items`}
           </span>
         </div>
 

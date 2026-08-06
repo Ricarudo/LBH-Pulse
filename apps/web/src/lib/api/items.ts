@@ -1,5 +1,6 @@
 import type {
   CreateItemInput,
+  ItemCategoriesResponse,
   ItemDetailResponse,
   ItemResponse,
   ItemSearchInput,
@@ -18,6 +19,7 @@ function itemSearchPath(path: string, input: ItemSearchParams) {
   if (input.q) query.set("q", input.q);
   if (input.type) query.set("type", input.type);
   if (input.status) query.set("status", input.status);
+  if (input.category) query.set("category", input.category);
   if (input.includeInactive !== undefined) {
     query.set("includeInactive", String(input.includeInactive));
   }
@@ -41,6 +43,13 @@ export function searchItems(
   options: ReadOptions = {}
 ) {
   return apiRequest<ItemsResponse>(itemSearchPath("/api/items/search", input), {
+    ...options,
+    method: "GET"
+  });
+}
+
+export function fetchItemCategories(options: ReadOptions = {}) {
+  return apiRequest<ItemCategoriesResponse>("/api/items/categories", {
     ...options,
     method: "GET"
   });

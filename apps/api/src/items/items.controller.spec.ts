@@ -63,3 +63,25 @@ test("items controller rejects invalid external payloads before mutation", async
   );
   assert.equal(created, false);
 });
+
+test("items controller authorizes category reads", async () => {
+  let listed = false;
+  const auth = {
+    requireUser: async () => {
+      throw new AuthError("Authentication required.", 401);
+    }
+  } as unknown as AuthService;
+  const items = {
+    listCategories: async () => {
+      listed = true;
+      return [];
+    }
+  } as unknown as ItemsService;
+  const controller = new ItemsController(auth, items);
+
+  await assert.rejects(
+    controller.categories(request),
+    (error: unknown) => error instanceof AuthError && error.status === 401
+  );
+  assert.equal(listed, false);
+});

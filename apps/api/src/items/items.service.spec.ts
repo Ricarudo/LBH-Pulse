@@ -84,7 +84,7 @@ test("item mapping emits API-safe strings, numbers, and outgoing relations", () 
   });
 });
 
-test("item list preserves filters, ordering, and the 200-record limit", async () => {
+test("item list applies filters before the intentional 200-record limit", async () => {
   let query: unknown;
   const prisma = {
     item: {
@@ -98,6 +98,7 @@ test("item list preserves filters, ordering, and the 200-record limit", async ()
   const input: ItemSearchInput = {
     q: "switch",
     type: "PRODUCT",
+    category: "Networking",
     includeInactive: false
   };
 
@@ -117,6 +118,7 @@ test("item list preserves filters, ordering, and the 200-record limit", async ()
   ]);
   assert.equal(captured.where.status, "ACTIVE");
   assert.equal(captured.where.itemType, "PRODUCT");
+  assert.equal(captured.where.category, "Networking");
   assert.deepEqual(captured.where.OR?.[0], {
     name: { contains: "switch", mode: "insensitive" }
   });

@@ -16,6 +16,7 @@ import {
   updateItemSchema,
   type ItemDetailResponse,
   type ItemResponse,
+  type ItemCategoriesResponse,
   type ItemsResponse
 } from "@pulse/contracts/items";
 import type { Request } from "express";
@@ -49,6 +50,14 @@ export class ItemsController {
     await this.auth.requireUser(request, "items:read");
     const input = itemSearchSchema.parse(query);
     return { items: await this.items.searchActiveItems(input) };
+  }
+
+  @Get("categories")
+  async categories(
+    @Req() request: Request
+  ): Promise<ItemCategoriesResponse> {
+    await this.auth.requireUser(request, "items:read");
+    return { categories: await this.items.listCategories() };
   }
 
   @Post()
