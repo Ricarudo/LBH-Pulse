@@ -99,6 +99,30 @@ function Test-PulseMigrationLedger {
   return $true
 }
 
+function ConvertFrom-PulseMigrationLedgerOutput {
+  param([AllowEmptyString()][string]$Text)
+  $prefix = "PULSE_MIGRATION_LEDGER|"
+  foreach ($line in @($Text -split '\r?\n')) {
+    $value = ([string]$line).Trim()
+    $markerIndex = $value.IndexOf($prefix, [StringComparison]::Ordinal)
+    if ($markerIndex -lt 0) { continue }
+    $row = $value.Substring($markerIndex + $prefix.Length).Trim()
+    if ($row) { $row }
+  }
+}
+
+function Get-PulseExpectedSourceLedger {
+  param(
+    [Parameter(Mandatory = $true)]$Manifest,
+    [Parameter(Mandatory = $true)][string]$CurrentVersion
+  )
+  $expected = @($Manifest.upgrade.sourceMigrations | ForEach-Object { [string]$_ })
+  if ([version]$CurrentVersion -gt [version]$Manifest.upgrade.minimumVersion) {
+    $expected += @($Manifest.upgrade.targetMigrations | ForEach-Object { [string]$_ })
+  }
+  return $expected
+}
+
 function Add-PulseSecretValue {
   param([string]$Value)
   if ($Value -and -not $script:SecretValues.Contains($Value)) { [void]$script:SecretValues.Add($Value) }

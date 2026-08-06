@@ -21,7 +21,7 @@ const components = [
   "minioMc"
 ];
 
-test("generates a digest-pinned 0.1.1 manifest with an exact upgrade contract", () => {
+test("generates a digest-pinned 0.1.2 manifest with an exact upgrade contract", () => {
   const temporaryRoot = mkdtempSync(resolve(tmpdir(), "pulse-release-manifest-"));
   const input = resolve(temporaryRoot, "digests");
   const output = resolve(temporaryRoot, "output");
@@ -41,7 +41,7 @@ test("generates a digest-pinned 0.1.1 manifest with an exact upgrade contract", 
 
     const result = spawnSync(process.execPath, [
       "scripts/release/create-release-manifest.mjs",
-      "--version", "0.1.1",
+      "--version", "0.1.2",
       "--commit", "b".repeat(40),
       "--input", input,
       "--build-bases", bases,
@@ -54,8 +54,8 @@ test("generates a digest-pinned 0.1.1 manifest with an exact upgrade contract", 
 
     const manifest = JSON.parse(readFileSync(resolve(output, "release-manifest.json"), "utf8"));
     assert.equal(manifest.schemaVersion, 2);
-    assert.equal(manifest.version, "0.1.1");
-    assert.equal(manifest.tag, "v0.1.1");
+    assert.equal(manifest.version, "0.1.2");
+    assert.equal(manifest.tag, "v0.1.2");
     assert.equal(manifest.upgrade.minimumVersion, "0.1.0");
     assert.deepEqual(manifest.upgrade.sourceMigrations, [
       "202607210001_pulse_0_1_baseline",
@@ -75,12 +75,12 @@ test("generates a digest-pinned 0.1.1 manifest with an exact upgrade contract", 
 });
 
 test("accepts the release tag only when every workspace version agrees", () => {
-  const result = spawnSync(process.execPath, ["scripts/release/validate-version.mjs", "v0.1.1"], {
+  const result = spawnSync(process.execPath, ["scripts/release/validate-version.mjs", "v0.1.2"], {
     cwd: repositoryRoot,
     encoding: "utf8"
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.deepEqual(JSON.parse(result.stdout), { tag: "v0.1.1", version: "0.1.1", minor: "0.1" });
+  assert.deepEqual(JSON.parse(result.stdout), { tag: "v0.1.2", version: "0.1.2", minor: "0.1" });
 });
 
 test("keeps exact release tags immutable while allowing the minor channel to advance", () => {

@@ -152,6 +152,37 @@ Describe "Pulse installer security primitives" {
     (Test-PulseMigrationLedger -Rows @($valid[0], '202607210002_enterprise_security|true|false') -ExpectedMigrations $expected) | Should -Be $false
   }
 
+  It "extracts marked migration rows from noisy Docker and PowerShell output" {
+    $output = @'
+time="2026-08-06T18:14:51-04:00" level=warning msg="A harmless Compose warning"
+docker.exe : PULSE_MIGRATION_LEDGER|202607210001_pulse_0_1_baseline|true|true
+At C:\ProgramData\LBH\Pulse\installer\Pulse.Install.psm1:189 char:15
+PULSE_MIGRATION_LEDGER|202607210002_enterprise_security|true|true
+'@
+    $expected = @(
+      '202607210001_pulse_0_1_baseline',
+      '202607210002_enterprise_security'
+    )
+    $rows = @(ConvertFrom-PulseMigrationLedgerOutput -Text $output)
+    $rows.Count | Should -Be 2
+    $rows[0] | Should -Be '202607210001_pulse_0_1_baseline|true|true'
+    $rows[1] | Should -Be '202607210002_enterprise_security|true|true'
+    (Test-PulseMigrationLedger -Rows $rows -ExpectedMigrations $expected) | Should -Be $true
+    @(ConvertFrom-PulseMigrationLedgerOutput -Text 'warning only').Count | Should -Be 0
+  }
+
+  It "accepts the cumulative ledger when updating an installed patch release" {
+    $manifest = [pscustomobject]@{
+      upgrade = [pscustomobject]@{
+        minimumVersion = '0.1.0'
+        sourceMigrations = @('baseline')
+        targetMigrations = @('patch-schema')
+      }
+    }
+    @(Get-PulseExpectedSourceLedger -Manifest $manifest -CurrentVersion '0.1.0') | Should -Be @('baseline')
+    @(Get-PulseExpectedSourceLedger -Manifest $manifest -CurrentVersion '0.1.1') | Should -Be @('baseline', 'patch-schema')
+  }
+
   It "hardens generated secret and state files with explicit ACL protection" {
     $module = Get-Content -LiteralPath (Join-Path $windowsRoot "Pulse.Install.psm1") -Raw
     $generator = Get-Content -LiteralPath (Join-Path $windowsRoot "generate-config.ps1") -Raw
@@ -253,6 +284,8 @@ Describe "Pulse installer failure and preservation contracts" {
     $module | Should -Match 'Protect-PulseLogText \$Message'
     $module | Should -Match 'installer-error\.txt'
     $install | Should -Match 'Percent 100 -Status "Pulse installation completed"'
+    $update | Should -Match 'Operation "Pulse update preparation"'
+    $update | Should -Match 'Migration ledger verification parsed .* marked row'
     $iss | Should -Match 'RaisePulseFailure'
     $iss | Should -Match 'installer-error\.txt'
   }

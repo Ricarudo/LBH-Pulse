@@ -75,29 +75,38 @@ if ([version]$target.version -le [version]$current.version) {
   exit 0
 }
 
-if ([version]$current.version -lt [version]$target.upgrade.minimumVersion) {
-  throw "Pulse $($current.version) cannot update directly to $($target.version). Install every supported intermediate release beginning with $($target.upgrade.minimumVersion)."
-}
-
 function Get-AppliedMigrationLedger {
-  $command = 'psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --tuples-only --no-align --quiet --command=''SELECT concat_ws(chr(124), migration_name, (finished_at IS NOT NULL)::text, (rolled_back_at IS NULL)::text) FROM pulse."_prisma_migrations" ORDER BY started_at, migration_name;'''
+  $command = 'psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --tuples-only --no-align --quiet --command=''SELECT concat_ws(chr(124), $$PULSE_MIGRATION_LEDGER$$, migration_name, (finished_at IS NOT NULL)::text, (rolled_back_at IS NULL)::text) FROM pulse."_prisma_migrations" ORDER BY started_at, migration_name;'''
   $result = Invoke-PulseCompose -Root $Root -Arguments @("exec", "-T", "postgres", "sh", "-c", $command) -Stage "migration ledger verification" -Quiet
-  return @($result.Output -split '\r?\n')
+  $rows = @(ConvertFrom-PulseMigrationLedgerOutput -Text $result.Output)
+  Write-PulseLog -Root $Root -Message "Migration ledger verification parsed $($rows.Count) marked row(s)."
+  return $rows
 }
 
-$sourceMigrations = @($target.upgrade.sourceMigrations | ForEach-Object { [string]$_ })
-$sourceLedger = Get-AppliedMigrationLedger
-if (-not (Test-PulseMigrationLedger -Rows $sourceLedger -ExpectedMigrations $sourceMigrations)) {
-  throw "The installed database migration ledger does not match the supported $($current.version) source state. No update or backup was started."
-}
+try {
+  if ([version]$current.version -lt [version]$target.upgrade.minimumVersion) {
+    throw "Pulse $($current.version) cannot update directly to $($target.version). Install every supported intermediate release beginning with $($target.upgrade.minimumVersion)."
+  }
 
-$history = Join-Path $paths.Installer ("history\" + $current.version)
-[void](New-Item -ItemType Directory -Path $history -Force)
-foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {
-  Copy-Item -LiteralPath (Join-Path $paths.Deployment $name) -Destination (Join-Path $history $name) -Force
+  $sourceLedger = Get-AppliedMigrationLedger
+  $expectedSourceMigrations = @(Get-PulseExpectedSourceLedger -Manifest $target -CurrentVersion ([string]$current.version))
+  if (-not (Test-PulseMigrationLedger -Rows $sourceLedger -ExpectedMigrations $expectedSourceMigrations)) {
+    throw "The installed database migration ledger does not match the supported $($current.version) source state. No update or backup was started."
+  }
+
+  $history = Join-Path $paths.Installer ("history\" + $current.version)
+  [void](New-Item -ItemType Directory -Path $history -Force)
+  foreach ($name in @("compose.production.yaml", "compose.maintenance.yaml", "compose.release.yaml", "release-manifest.json")) {
+    Copy-Item -LiteralPath (Join-Path $paths.Deployment $name) -Destination (Join-Path $history $name) -Force
+  }
+  Write-PulseProgress -Root $Root -Percent 15 -Status "Creating and verifying a pre-update backup"
+  $backup = & (Join-Path $PSScriptRoot "backup-pulse.ps1") -Root $Root
+} catch {
+  Complete-PulseProgress
+  [void](Write-PulseFailureReport -Root $Root -Operation "Pulse update preparation" -Message $_.Exception.Message)
+  Write-PulseLog -Root $Root -Level ERROR -Message "Pulse update preparation failed: $($_.Exception.Message)"
+  throw
 }
-Write-PulseProgress -Root $Root -Percent 15 -Status "Creating and verifying a pre-update backup"
-$backup = & (Join-Path $PSScriptRoot "backup-pulse.ps1") -Root $Root
 $migrationStarted = $false
 
 try {
@@ -109,7 +118,7 @@ try {
   $migrationStarted = $true
   Write-PulseProgress -Root $Root -Percent 60 -Status "Applying update migrations and reference data"
   [void](Invoke-PulseCompose -Root $Root -Arguments @("--profile", "maintenance", "run", "--rm", "migrate") -Stage "update migrations")
-  $targetMigrations = @($sourceMigrations) + @($target.upgrade.targetMigrations | ForEach-Object { [string]$_ })
+  $targetMigrations = @($target.upgrade.sourceMigrations | ForEach-Object { [string]$_ }) + @($target.upgrade.targetMigrations | ForEach-Object { [string]$_ })
   $targetLedger = Get-AppliedMigrationLedger
   if (-not (Test-PulseMigrationLedger -Rows $targetLedger -ExpectedMigrations $targetMigrations)) {
     throw "The database migration ledger did not reach the release-declared $($target.version) state."

@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { Client } from "pg";
 
 const sourceVersion = "0.1.0";
-const targetVersion = "0.1.1";
+const targetVersion = "0.1.2";
 const targetDatabase = process.env.PULSE_CI_RELEASE_UPGRADE_DATABASE?.trim() || "pulse_release_upgrade_ci";
 const safeDatabaseName = /^[a-z][a-z0-9_]{5,62}$/;
 const prismaDirectory = resolve(process.cwd(), "prisma");
