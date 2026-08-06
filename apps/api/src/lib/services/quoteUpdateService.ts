@@ -273,6 +273,25 @@ export async function listQuoteUpdates(
   };
 }
 
+export async function listQuoteCurrentSteps(
+  quotes: Array<{ id: string; currentStepId: string | null; requests: Array<{ currentStepId: string | null }> }>
+) {
+  const stepIdByQuote = new Map(quotes.map((quote) => [
+    quote.id,
+    quote.currentStepId ?? quote.requests.find((request) => request.currentStepId)?.currentStepId ?? null
+  ]));
+  const stepIds = Array.from(new Set(Array.from(stepIdByQuote.values()).filter((id): id is string => Boolean(id))));
+  const steps = stepIds.length ? await prisma.requestUpdate.findMany({
+    where: { id: { in: stepIds }, stepStatus: "open" },
+    include: quoteUpdateInclude
+  }) : [];
+  const recordsById = new Map(steps.map((step) => [step.id, toQuoteUpdateRecord(step)]));
+  return new Map(Array.from(stepIdByQuote, ([quoteId, stepId]) => [
+    quoteId,
+    stepId ? recordsById.get(stepId) ?? null : null
+  ]));
+}
+
 export async function createQuoteUpdate(
   id: string,
   input: CreateRequestUpdateInput,

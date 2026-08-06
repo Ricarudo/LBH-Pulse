@@ -382,8 +382,8 @@ export function LifecycleUpdatesPanel({
                   </div>
                   <div className="request-update-item-content">
                     <div className="request-update-item-headline">
-                      <strong>{update.title}</strong>
-                      <span className="request-update-item-status">{update.kind === "step" ? update.stepStatus : update.kind === "system" ? "System" : "Comment"}</span>
+                      <strong>{update.kind === "comment" ? `${update.author.name} comments:` : update.title}</strong>
+                      {update.kind !== "comment" ? <span className="request-update-item-status">{update.kind === "step" ? update.stepStatus : "System"}</span> : null}
                     </div>
                     {update.body ? <p>{update.body}</p> : null}
                     <div className="request-update-item-meta">

@@ -53,6 +53,18 @@ test("quote updates accept a deduplicated staged collaborator list", () => {
   assert.deepEqual(update.collaboratorIds, ["user-1", "user-2"]);
 });
 
+test("quote updates accept On Hold with a trimmed status reason", () => {
+  const update = updateQuoteSchema.parse({
+    status: "On Hold",
+    statusReason: "  Waiting for client approval  "
+  });
+
+  assert.deepEqual(update, {
+    status: "On Hold",
+    statusReason: "Waiting for client approval"
+  });
+});
+
 test("quote ownership is a linked user and legacy owner text is discarded", () => {
   const quote = createQuoteSchema.parse({
     title: "Network refresh",

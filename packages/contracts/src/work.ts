@@ -10,6 +10,7 @@ import {
 export const quoteStatuses = [
   "Draft",
   "Review",
+  "On Hold",
   "Sent",
   "Approved",
   "Rejected",
@@ -154,6 +155,7 @@ export type QuoteRecord = {
   documents: LifecycleDocumentRecord[];
   lifecycleContext: LifecycleContextSummary;
   relationshipWarnings: LifecycleRelationshipWarning[];
+  currentStep: RequestUpdate | null;
 };
 
 export type QuoteContextSnapshot = {
@@ -396,6 +398,7 @@ export const updateQuoteSchema = z.object({
   lifecycleDetails,
   collaboratorIds: z.array(id).max(100).transform((values) => Array.from(new Set(values))).optional(),
   status: z.enum(quoteStatuses).optional(),
+  statusReason: z.string().trim().max(2000).optional(),
   trades: quoteTrades.optional()
 }).strict();
 

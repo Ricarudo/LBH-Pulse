@@ -63,6 +63,7 @@ import type {
   QuoteRevisionDetailRecord,
   QuoteVersionSummary
 } from "@pulse/contracts/work";
+import { quoteStatuses } from "@pulse/contracts/work";
 import {
   serviceCategories,
   type RequestAssignee,
@@ -218,6 +219,8 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   const [tradeDraft, setTradeDraft] = useState<ServiceCategory[]>([]);
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
   const [revisionReason, setRevisionReason] = useState("");
+  const [holdDialogOpen, setHoldDialogOpen] = useState(false);
+  const [holdReason, setHoldReason] = useState("");
   const [revisionBusy, setRevisionBusy] = useState(false);
   const [legacyFinancialDraft, setLegacyFinancialDraft] = useState<LegacyFinancialDraft | null>(null);
   const [modeDialogOpen, setModeDialogOpen] = useState(false);
@@ -349,6 +352,16 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  function requestStatusChange(status: QuoteRecord["status"]) {
+    if (!quote || status === quote.status) return;
+    if (status === "On Hold") {
+      setHoldReason("");
+      setHoldDialogOpen(true);
+      return;
+    }
+    void patchQuote({ status });
   }
 
   async function saveQuoteDetails() {
@@ -749,7 +762,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
       <header className="quote-workspace-header lifecycle-record-header">
         <Link
           className="lifecycle-record-back"
-          href="/quotes"
+          href={(() => { const value = searchParams.get("returnTo"); return value?.startsWith("/quotes") ? value : "/quotes"; })()}
           aria-label="Back to quotes queue"
           title="Back to quotes queue"
         >
@@ -762,16 +775,12 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
         </div>
         <div className="quote-header-actions lifecycle-record-actions">
           <select
-            className="lifecycle-record-status"
+            className={`lifecycle-record-status${quote.status === "On Hold" ? " tone-hold" : quote.status === "Review" ? " tone-review" : ""}`}
             value={quote.status}
             disabled={!canWrite}
-            onChange={(event) =>
-              void patchQuote({
-                status: event.target.value as QuoteRecord["status"]
-              })
-            }
+            onChange={(event) => requestStatusChange(event.target.value as QuoteRecord["status"])}
           >
-            <option>Draft</option><option>Review</option><option>Sent</option><option>Approved</option><option>Rejected</option><option>Expired</option><option>Cancelled</option>
+            {quoteStatuses.map((status) => <option key={status}>{status}</option>)}
           </select>
           {revisionEligibleStatuses.has(quote.status) ? (
             <button
@@ -1392,6 +1401,18 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             )}
             <div className="client-create-dialog-actions"><button className="primary-button compact" type="button" onClick={() => setSelectedVersion(null)}>Close history</button></div>
           </section>
+          </div>
+        </ViewportPortal>
+      ) : null}
+
+      {holdDialogOpen ? (
+        <ViewportPortal>
+          <div className="work-queue-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHoldDialogOpen(false); }}>
+            <div className="work-queue-modal quote-hold-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-workspace-hold-title">
+              <div className="quote-hold-dialog-heading"><span className="quote-hold-dialog-icon"><AlertTriangle size={22} /></span><div><span>Pause quote</span><h2 id="quote-workspace-hold-title">Place {quote.quoteNumber} on hold?</h2><p>The quote will stay in Open and the reason will be recorded in its updates.</p></div><button type="button" onClick={() => setHoldDialogOpen(false)} aria-label="Close hold dialog"><X size={18} /></button></div>
+              <div className="quote-hold-dialog-body"><label htmlFor="workspace-hold-reason"><span>Reason for hold</span><textarea id="workspace-hold-reason" autoFocus maxLength={2000} rows={4} placeholder="For example: Waiting for client approval or revised scope…" value={holdReason} onChange={(event) => setHoldReason(event.target.value)} /></label><small>{holdReason.length.toLocaleString()} / 2,000</small></div>
+              <div className="work-queue-modal-actions quote-hold-dialog-actions"><button type="button" onClick={() => setHoldDialogOpen(false)}>Keep active</button><button className="primary-button quote-hold-confirm" type="button" disabled={!holdReason.trim()} onClick={() => { const reason = holdReason.trim(); setHoldDialogOpen(false); void patchQuote({ status: "On Hold", statusReason: reason }); }}>Place on hold</button></div>
+            </div>
           </div>
         </ViewportPortal>
       ) : null}

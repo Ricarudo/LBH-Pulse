@@ -6,6 +6,7 @@ import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService
 import { allocateRecordNumber } from "@/lib/services/recordNumberService";
 import {
   createQuoteSystemUpdate,
+  listQuoteCurrentSteps,
   listQuoteUpdates
 } from "@/lib/services/quoteUpdateService";
 import {
@@ -33,6 +34,7 @@ import type {
 } from "@pulse/contracts/items";
 import type { LifecycleDocumentRecord } from "@pulse/contracts/documents";
 import type { ClientContact } from "@pulse/contracts/clients";
+import type { RequestUpdate } from "@pulse/contracts/requests";
 import type {
   ConvertQuoteInput,
   CreateQuoteRevisionInput,
@@ -157,6 +159,7 @@ export const quoteInclude = {
       description: true,
       internalNotes: true,
       dueDate: true,
+      currentStepId: true,
       trades: { select: { serviceCategory: true } },
       contact: { select: { name: true, email: true, phone: true } },
       site: {
@@ -570,7 +573,8 @@ function quoteFinancialSummary(quote: QuoteFinancialSource) {
 
 export function toQuoteRecord(
   quote: QuoteRecordSource,
-  documents: LifecycleDocumentRecord[] = []
+  documents: LifecycleDocumentRecord[] = [],
+  currentStep: RequestUpdate | null = null
 ): QuoteRecord {
   const request = quote.requests[0];
   const version = quoteVersionFields(quote);
@@ -625,7 +629,8 @@ export function toQuoteRecord(
         ? unresolvedWarning("site", quote.siteNameSnapshot ?? quote.siteAddressSnapshot)
         : null,
       !quote.assignedToId ? unresolvedWarning("assignedTo", quote.owner) : null
-    ].filter((warning): warning is LifecycleRelationshipWarning => Boolean(warning))
+    ].filter((warning): warning is LifecycleRelationshipWarning => Boolean(warning)),
+    currentStep
   };
 }
 
@@ -1104,8 +1109,9 @@ export async function listQuotes() {
       include: quoteInclude,
       orderBy: { updatedAt: "desc" }
     });
-  return Promise.all(
-    quotes.map(async (quote) => toQuoteRecord(quote, await listQuoteDocuments(quote.id)))
+  const currentSteps = await listQuoteCurrentSteps(quotes);
+  return quotes.map((quote) =>
+    toQuoteRecord(quote, [], currentSteps.get(quote.id) ?? null)
   );
 }
 
@@ -1248,6 +1254,10 @@ async function recordQuoteValueSnapshot(
   });
 }
 
+function financialUpdateBody(before: number, after: number) {
+  return `Customer total changed from $${before.toFixed(2)} to $${after.toFixed(2)}.`;
+}
+
 function quoteItemDataFromItem(
   item: ItemForQuote,
   quantity: number,
@@ -1285,7 +1295,7 @@ function quoteItemDataFromItem(
 async function quoteIdOrThrow(tx: Prisma.TransactionClient, id: string) {
   const quote = await tx.quote.findFirst({
     where: { archivedAt: null, OR: [{ id }, { quoteNumber: id }] },
-    select: { id: true, quoteNumber: true, calculationMode: true }
+    select: { id: true, quoteNumber: true, calculationMode: true, total: true }
   });
   if (!quote) throw new Error("QUOTE_NOT_FOUND");
   return quote;
@@ -1296,7 +1306,7 @@ async function lockQuoteOrThrow(tx: Prisma.TransactionClient, id: string) {
   await tx.$queryRaw`SELECT "id" FROM "Quote" WHERE "id" = ${quote.id} FOR UPDATE`;
   return tx.quote.findUniqueOrThrow({
     where: { id: quote.id },
-    select: { id: true, quoteNumber: true, calculationMode: true }
+    select: { id: true, quoteNumber: true, calculationMode: true, total: true }
   });
 }
 
@@ -1417,6 +1427,7 @@ export async function addQuoteItem(
       where: { id: quote.id },
       include: quoteDetailInclude
     });
+    await createQuoteSystemUpdate(tx, { quoteId: quote.id, title: "Quote lines added", body: financialUpdateBody(Number(quote.total), Number(updatedQuote.total)), user, metadata: { eventType: "quote_financials_changed" } });
     return { quote: updatedQuote, addedLineCount: sources.length };
   });
   const { quote } = result;
@@ -1450,6 +1461,7 @@ export async function addQuoteKit(
       where: { id: quote.id },
       include: quoteDetailInclude
     });
+    await createQuoteSystemUpdate(tx, { quoteId: quote.id, title: "Quote kit added", body: financialUpdateBody(Number(quote.total), Number(updatedQuote.total)), user, metadata: { eventType: "quote_financials_changed" } });
     return { quote: updatedQuote, addedLineCount: sources.length };
   });
   const { quote } = result;
@@ -1508,10 +1520,12 @@ export async function addAdHocQuoteItem(
     });
     await recalculateQuoteTotal(tx, quote.id);
     await recordQuoteValueSnapshot(tx, quote.id, "quote_bom_value_changed", user);
-    return tx.quote.findUniqueOrThrow({
+    const updatedQuote = await tx.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: quoteDetailInclude
     });
+    await createQuoteSystemUpdate(tx, { quoteId: quote.id, title: "Quote line added", body: financialUpdateBody(Number(quote.total), Number(updatedQuote.total)), user, metadata: { eventType: "quote_financials_changed" } });
+    return updatedQuote;
   });
 
   await recordActivity({
@@ -1574,10 +1588,12 @@ export async function updateQuoteItem(
     });
     await recalculateQuoteTotal(tx, quote.id);
     await recordQuoteValueSnapshot(tx, quote.id, "quote_bom_value_changed", user);
-    return tx.quote.findUniqueOrThrow({
+    const updatedQuote = await tx.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: quoteDetailInclude
     });
+    await createQuoteSystemUpdate(tx, { quoteId: quote.id, title: "Quote line updated", body: financialUpdateBody(Number(quote.total), Number(updatedQuote.total)), user, metadata: { eventType: "quote_financials_changed" } });
+    return updatedQuote;
   });
 
   await recordActivity({
@@ -1605,10 +1621,12 @@ export async function removeQuoteItem(
     await tx.quoteItem.delete({ where: { id: existing.id } });
     await recalculateQuoteTotal(tx, quote.id);
     await recordQuoteValueSnapshot(tx, quote.id, "quote_bom_value_changed", user);
-    return tx.quote.findUniqueOrThrow({
+    const updatedQuote = await tx.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: quoteDetailInclude
     });
+    await createQuoteSystemUpdate(tx, { quoteId: quote.id, title: "Quote line removed", body: financialUpdateBody(Number(quote.total), Number(updatedQuote.total)), user, metadata: { eventType: "quote_financials_changed" } });
+    return updatedQuote;
   });
 
   await recordActivity({
@@ -1787,6 +1805,10 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
 export async function updateQuote(id: string, input: UpdateQuoteInput, user?: AuthenticatedUser) {
   const existing = await quoteOrThrow(id);
   const statusChanged = input.status !== undefined && input.status !== existing.status;
+  const statusReason = input.statusReason?.trim() ?? "";
+  if (statusChanged && input.status === "On Hold" && !statusReason) {
+    throw new Error("QUOTE_ON_HOLD_REASON_REQUIRED");
+  }
   const statusChangedAt = new Date();
   const client = input.clientId ? await clientOrThrow(input.clientId) : null;
   const effectiveClientId = client?.id ?? existing.clientId;
@@ -1897,7 +1919,7 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
       await createQuoteSystemUpdate(tx, {
         quoteId: updated.id,
         title: `${updated.quoteNumber} moved to ${updated.status}`,
-        body: `Status changed from ${existing.status} to ${updated.status}.`,
+        body: `Status changed from ${existing.status} to ${updated.status}.${updated.status === "On Hold" ? ` Reason: ${statusReason}` : ""}`,
         user,
         createdAt: statusChangedAt,
         metadata: {
@@ -1977,10 +1999,12 @@ export async function replaceLegacyQuoteFinancials(
     });
     await recalculateQuoteTotal(tx, locked.id);
     await recordQuoteValueSnapshot(tx, locked.id, "quote_legacy_financials_changed", user);
-    return tx.quote.findUniqueOrThrow({
+    const updatedQuote = await tx.quote.findUniqueOrThrow({
       where: { id: locked.id },
       include: quoteDetailInclude
     });
+    await createQuoteSystemUpdate(tx, { quoteId: locked.id, title: "Financial summary updated", body: financialUpdateBody(Number(locked.total), Number(updatedQuote.total)), user, metadata: { eventType: "quote_financials_changed" } });
+    return updatedQuote;
   });
   await recordActivity({
     user,
@@ -2042,6 +2066,13 @@ export async function switchQuoteCalculationMode(
     const updated = await tx.quote.findUniqueOrThrow({
       where: { id: existing.id },
       include: quoteDetailInclude
+    });
+    await createQuoteSystemUpdate(tx, {
+      quoteId: existing.id,
+      title: "Calculation mode changed",
+      body: `Changed from ${existing.calculationMode} to ${updated.calculationMode}.${!empty ? ` Existing financial data was discarded. ${financialUpdateBody(Number(existing.total), Number(updated.total))}` : ""}`,
+      user,
+      metadata: { eventType: "quote_calculation_mode_changed" }
     });
     return { quote: updated, previousMode: existing.calculationMode, discarded: !empty };
   });
