@@ -11,6 +11,8 @@ const originalFindUnique = prisma.localUser.findUnique.bind(prisma.localUser);
 const originalUpdate = prisma.localUser.update.bind(prisma.localUser);
 const originalActivityCreate = prisma.activity.create.bind(prisma.activity);
 const originalThrottleFind = prisma.authThrottleBucket.findMany.bind(prisma.authThrottleBucket);
+const originalThrottleDelete = prisma.authThrottleBucket.deleteMany.bind(prisma.authThrottleBucket);
+const originalTransaction = prisma.$transaction.bind(prisma);
 
 function configureTestEnvironment(rateLimit = true) {
   Object.assign(process.env, {
@@ -43,6 +45,8 @@ afterEach(() => {
   (prisma.localUser as unknown as { update: typeof prisma.localUser.update }).update = originalUpdate;
   (prisma.activity as unknown as { create: typeof prisma.activity.create }).create = originalActivityCreate;
   (prisma.authThrottleBucket as unknown as { findMany: typeof prisma.authThrottleBucket.findMany }).findMany = originalThrottleFind;
+  (prisma.authThrottleBucket as unknown as { deleteMany: typeof prisma.authThrottleBucket.deleteMany }).deleteMany = originalThrottleDelete;
+  (prisma as unknown as { $transaction: typeof prisma.$transaction }).$transaction = originalTransaction;
 });
 
 function request(headers: Record<string, string> = {}) {
@@ -56,13 +60,16 @@ function request(headers: Record<string, string> = {}) {
 }
 
 function response() {
+  const headers = new Map<string, string>();
   const target = {
     statusCode: 200,
     status(code: number) { target.statusCode = code; return target; },
+    set(name: string, value: string) { headers.set(name.toLowerCase(), value); return target; },
+    getHeader(name: string) { return headers.get(name.toLowerCase()); },
     cookie() { return target; },
     json() { return target; }
   };
-  return target as unknown as Response & { statusCode: number };
+  return target as unknown as Response & { statusCode: number; getHeader(name: string): string | undefined };
 }
 
 describe("authentication endpoint protection", () => {
@@ -80,9 +87,11 @@ describe("authentication endpoint protection", () => {
     (prisma.activity as any).create = async ({ data }: any) => data;
     const auth = { issueSession: async () => "csrf-token" };
     const protection = {
-      keys: () => ({ account: "account", ip: "ip" }), isBlocked: async () => false,
+      keys: () => ({ account: "account", ip: "ip" }),
+      getBlockStatus: async () => ({ blocked: false, blockedUntil: null }),
       passwordMatches: () => true, recordSuccess: async () => undefined,
-      recordFailure: async () => false, recordSecurityEvent: async () => undefined
+      recordFailureStatus: async () => ({ blocked: false, blockedUntil: null }),
+      recordSecurityEvent: async () => undefined
     };
     const controller = new AuthController(auth as any, protection as any, {} as any);
     const result = await controller.login(request(), { email: user.email, password: "correct password" }, response());
@@ -93,9 +102,11 @@ describe("authentication endpoint protection", () => {
   it("does not reveal whether an account exists", async () => {
     const auth = { issueSession: async () => "unused" };
     const protection = {
-      keys: () => ({ account: "account", ip: "ip" }), isBlocked: async () => false,
+      keys: () => ({ account: "account", ip: "ip" }),
+      getBlockStatus: async () => ({ blocked: false, blockedUntil: null }),
       passwordMatches: () => false, recordSuccess: async () => undefined,
-      recordFailure: async () => false, recordSecurityEvent: async () => undefined
+      recordFailureStatus: async () => ({ blocked: false, blockedUntil: null }),
+      recordSecurityEvent: async () => undefined
     };
     const controller = new AuthController(auth as any, protection as any, {} as any);
     const attempts = [];
@@ -110,6 +121,34 @@ describe("authentication endpoint protection", () => {
     }
     assert.deepEqual(attempts[0], attempts[1]);
     assert.deepEqual(attempts[0], { status: 401, result: { error: "Unable to sign in." } });
+  });
+
+  it("returns lockout notification metadata without looking up the account", async () => {
+    let accountLookedUp = false;
+    (prisma.localUser as any).findUnique = async () => {
+      accountLookedUp = true;
+      return null;
+    };
+    const blockedUntil = new Date(Date.now() + 120_000);
+    const protection = {
+      keys: () => ({ account: "account", ip: "ip" }),
+      getBlockStatus: async () => ({ blocked: true, blockedUntil }),
+      recordSecurityEvent: async () => undefined
+    };
+    const controller = new AuthController({} as any, protection as any, {} as any);
+    const target = response();
+    const result = await controller.login(
+      request(),
+      { email: "operator@example.test", password: "wrong" },
+      target
+    );
+
+    assert.equal(target.statusCode, 429);
+    assert.equal("error" in result && result.error, "Sign-in is temporarily locked.");
+    const retryAfter = "retryAfterSeconds" in result ? result.retryAfterSeconds : 0;
+    assert.ok(retryAfter >= 119 && retryAfter <= 120);
+    assert.equal(target.getHeader("Retry-After"), String(retryAfter));
+    assert.equal(accountLookedUp, false);
   });
 
   it("locks repeated username failures and recovers after the cooldown", async () => {
@@ -128,9 +167,49 @@ describe("authentication endpoint protection", () => {
 
     const blockedUntil = new Date("2026-01-01T00:15:00Z");
     (prisma.authThrottleBucket as any).findMany = async ({ where }: any) =>
-      blockedUntil > where.blockedUntil.gt ? [{ kind: "ACCOUNT" }] : [];
+      blockedUntil > where.blockedUntil.gt ? [{ blockedUntil }] : [];
     assert.equal(await protection.isBlocked(keys, new Date("2026-01-01T00:10:00Z")), true);
     assert.equal(await protection.isBlocked(keys, new Date("2026-01-01T00:16:00Z")), false);
+  });
+
+  it("reports the longest active account or IP lock", async () => {
+    const protection = new AuthProtectionService({
+      hashSecurityIdentifier: (label: string, value: string) => `${label}:${value}`
+    } as any);
+    const accountBlockedUntil = new Date("2026-01-01T00:12:00Z");
+    const ipBlockedUntil = new Date("2026-01-01T00:15:00Z");
+    (prisma.authThrottleBucket as any).findMany = async () => [
+      { blockedUntil: accountBlockedUntil },
+      { blockedUntil: ipBlockedUntil }
+    ];
+
+    const status = await protection.getBlockStatus(
+      protection.keys("operator@example.test", "192.0.2.1"),
+      new Date("2026-01-01T00:10:00Z")
+    );
+    assert.deepEqual(status, { blocked: true, blockedUntil: ipBlockedUntil });
+  });
+
+  it("clears only the account throttle bucket for a password reset", async () => {
+    const protection = new AuthProtectionService({
+      hashSecurityIdentifier: (label: string, value: string) => `${label}:${value}`
+    } as any);
+    let deletedWhere: unknown;
+    (prisma as any).$transaction = async (callback: (transaction: any) => Promise<unknown>) => callback({
+      $executeRaw: async () => 0,
+      authThrottleBucket: {
+        deleteMany: async ({ where }: any) => {
+          deletedWhere = where;
+          return { count: 1 };
+        }
+      }
+    });
+
+    await protection.clearAccountFailures("Operator@Example.Test");
+    assert.deepEqual(deletedWhere, {
+      kind: "ACCOUNT",
+      keyDigest: "login-account:operator@example.test"
+    });
   });
 
   it("uses independent pseudonymous username and IP keys", () => {
