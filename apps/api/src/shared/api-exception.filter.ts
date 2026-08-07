@@ -305,6 +305,35 @@ const errorMap: Record<string, ErrorPayload> = {
   QUOTE_UPDATE_NOT_UNDOABLE: { status: 409, body: { error: "This update is no longer undoable." } },
   QUOTE_UPDATE_UNDO_CONFLICT: { status: 409, body: { error: "The quote changed before this update could be undone." } },
   QUOTE_ON_HOLD_REASON_REQUIRED: { status: 400, body: { error: "Enter a reason before placing this quote on hold." } },
+  QUOTE_SENT_ACTION_REQUIRED: {
+    status: 409,
+    body: { error: "Use Mark as sent so Pulse can lock the quote and record the delivery event." }
+  },
+  QUOTE_OUTCOME_REQUIRES_SENT: {
+    status: 409,
+    body: { error: "Mark the quote as sent before recording a client outcome or expiration." }
+  },
+  QUOTE_ALREADY_SENT: { status: 409, body: { error: "This quote is already marked as sent." } },
+  QUOTE_MARK_SENT_STATUS_INVALID: {
+    status: 409,
+    body: { error: "Only a draft, review, or on-hold quote can be marked as sent." }
+  },
+  QUOTE_SENT_TRANSITION_INVALID: {
+    status: 409,
+    body: { error: "A sent quote can only record a client outcome, expire, or be cancelled. Administrators can undo an incorrect sent event." }
+  },
+  QUOTE_SENT_FINANCIALS_LOCKED: {
+    status: 409,
+    body: { error: "Monetary values are locked because this quote was sent. Open a revision, or ask an Administrator to undo an incorrect sent event." }
+  },
+  QUOTE_SENT_UNDO_ADMIN_REQUIRED: {
+    status: 403,
+    body: { error: "Only an Administrator can undo a sent quote." }
+  },
+  QUOTE_SENT_UNDO_STATUS_INVALID: {
+    status: 409,
+    body: { error: "Only the current Sent state can be undone. Client outcomes and historical sent versions remain immutable." }
+  },
   QUOTE_ITEM_NOT_FOUND: { status: 404, body: { error: "Quote item not found." } },
   QUOTE_ITEMS_REQUIRE_PULSE_MODE: {
     status: 409,

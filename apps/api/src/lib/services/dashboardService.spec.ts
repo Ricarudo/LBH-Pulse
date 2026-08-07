@@ -6,6 +6,7 @@ import {
   earliestDashboardDate,
   effectiveDashboardDueDate,
   normalizeDashboardOwner,
+  quoteAppearsOnDashboard,
   selectDownstreamDashboardSteps,
   workspaceBusinessDate
 } from "@/lib/services/dashboardService";
@@ -63,6 +64,13 @@ describe("dashboard date classification", () => {
       effectiveDashboardDueDate(null, null, snapshotRequestDate),
       "2026-07-11"
     );
+  });
+
+  it("removes sent quotes and their preparation due dates from dashboard analysis", () => {
+    assert.equal(quoteAppearsOnDashboard("Draft"), true);
+    assert.equal(quoteAppearsOnDashboard("Review"), true);
+    assert.equal(quoteAppearsOnDashboard("Sent"), false);
+    assert.equal(quoteAppearsOnDashboard("Rejected"), false);
   });
 });
 

@@ -11,12 +11,14 @@ import {
   Eye,
   FileText,
   History,
+  Lock,
   Pencil,
   PackagePlus,
   Plus,
   RotateCcw,
   Save,
   Search,
+  Send,
   Trash2,
   X
 } from "lucide-react";
@@ -35,9 +37,11 @@ import {
   fetchQuote,
   fetchQuoteRevision,
   fetchQuoteUpdateTeamMembers,
+  markQuoteSent,
   removeQuoteItem,
   replaceLegacyQuoteFinancials,
   switchQuoteCalculationMode,
+  undoQuoteSent,
   updateQuote,
   updateQuoteItem,
   updateQuoteProposal
@@ -123,6 +127,28 @@ const revisionEligibleStatuses = new Set<QuoteRecord["status"]>([
   "Rejected",
   "Cancelled"
 ]);
+const markSentEligibleStatuses = new Set<QuoteRecord["status"]>(["Draft", "Review", "On Hold"]);
+const sentOutcomeStatuses = new Set<QuoteRecord["status"]>([
+  "Sent",
+  "Approved",
+  "Rejected",
+  "Expired",
+  "Cancelled"
+]);
+const preparationTransitionStatuses = new Set<QuoteRecord["status"]>([
+  "Draft",
+  "Review",
+  "On Hold",
+  "Cancelled"
+]);
+
+function selectableQuoteStatuses(current: QuoteRecord["status"]) {
+  if (current === "Sent") return quoteStatuses.filter((status) => sentOutcomeStatuses.has(status));
+  if (!["Draft", "Review", "On Hold"].includes(current)) {
+    return quoteStatuses.filter((status) => status === current);
+  }
+  return quoteStatuses.filter((status) => preparationTransitionStatuses.has(status));
+}
 
 type LegacyFinancialDraft = Record<
   "materialSale" | "materialCost" | "laborSale" | "laborCost" | "taxAmount" | "estimatedDurationBusinessDays",
@@ -221,6 +247,9 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   const [revisionReason, setRevisionReason] = useState("");
   const [holdDialogOpen, setHoldDialogOpen] = useState(false);
   const [holdReason, setHoldReason] = useState("");
+  const [markSentDialogOpen, setMarkSentDialogOpen] = useState(false);
+  const [undoSentDialogOpen, setUndoSentDialogOpen] = useState(false);
+  const [undoSentReason, setUndoSentReason] = useState("");
   const [revisionBusy, setRevisionBusy] = useState(false);
   const [legacyFinancialDraft, setLegacyFinancialDraft] = useState<LegacyFinancialDraft | null>(null);
   const [modeDialogOpen, setModeDialogOpen] = useState(false);
@@ -299,6 +328,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
       ) as Record<QuoteBomSection, QuoteItemRecord[]>,
     [quote?.items]
   );
+  const canEditFinancials = canWrite && !quote?.sentAt && quote?.status !== "Sent";
 
   function updateQuoteState(nextQuote: QuoteDetailRecord | QuoteRecord) {
     setQuote((current) => {
@@ -344,6 +374,38 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Unable to update quote.");
       return false;
+    }
+  }
+
+  async function confirmMarkSent() {
+    if (!quote || busy) return;
+    try {
+      setBusy(true);
+      const data = await markQuoteSent(quote.id);
+      updateQuoteState(data.quote);
+      setMarkSentDialogOpen(false);
+      setToast(`${data.quote.quoteNumber} marked as sent. Monetary values are locked.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to mark the quote as sent.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmUndoSent(event: FormEvent) {
+    event.preventDefault();
+    if (!quote || !user?.isSystemAdmin || !undoSentReason.trim() || busy) return;
+    try {
+      setBusy(true);
+      const data = await undoQuoteSent(quote.id, { reason: undoSentReason.trim() });
+      updateQuoteState(data.quote);
+      setUndoSentDialogOpen(false);
+      setUndoSentReason("");
+      setToast(`${data.quote.quoteNumber} returned to ${data.quote.status}. Monetary editing is unlocked.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to undo the sent event.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -504,7 +566,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
     item: QuoteItemRecord,
     payload: Parameters<typeof updateQuoteItem>[2]
   ) {
-    if (!quote || !canWrite) return;
+    if (!quote || !canEditFinancials) return;
     const currentQuoteId = quote.id;
     changePendingLineSaves(item.id, 1);
     try {
@@ -520,7 +582,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   }
 
   async function removeLine(item: QuoteItemRecord) {
-    if (!quote || !canWrite) return;
+    if (!quote || !canEditFinancials) return;
     const currentQuoteId = quote.id;
     changePendingLineSaves(item.id, 1);
     try {
@@ -537,7 +599,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   }
 
   async function addSelectedItem(fullKit = false) {
-    if (!quote || !selectedItem) return;
+    if (!quote || !selectedItem || !canEditFinancials) return;
     const currentQuoteId = quote.id;
     try {
       setBusy(true);
@@ -566,7 +628,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
 
   async function addAdHocLine(event: FormEvent) {
     event.preventDefault();
-    if (!quote || !adHocDraft.name.trim()) return;
+    if (!quote || !adHocDraft.name.trim() || !canEditFinancials) return;
     const currentQuoteId = quote.id;
     try {
       setBusy(true);
@@ -626,7 +688,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
 
   async function saveLegacyFinancials(event: FormEvent) {
     event.preventDefault();
-    if (!quote || !legacyFinancialDraft || busy) return;
+    if (!quote || !legacyFinancialDraft || !canEditFinancials || busy) return;
     if ([
       legacyFinancialDraft.materialSale,
       legacyFinancialDraft.materialCost,
@@ -670,7 +732,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   }
 
   function requestModeChange(mode: QuoteCalculationMode) {
-    if (!quote || mode === quote.calculationMode) return;
+    if (!quote || !canEditFinancials || mode === quote.calculationMode) return;
     setTargetMode(mode);
     const summary = quote.financialSummary;
     const financiallyEmpty = quote.items.length === 0 &&
@@ -686,7 +748,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   }
 
   async function changeCalculationModeFor(mode: QuoteCalculationMode, discardFinancialData: boolean) {
-    if (!quote || mode === quote.calculationMode || busy) return;
+    if (!quote || !canEditFinancials || mode === quote.calculationMode || busy) return;
     try {
       setBusy(true);
       const data = await switchQuoteCalculationMode(quote.id, {
@@ -780,8 +842,28 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             disabled={!canWrite}
             onChange={(event) => requestStatusChange(event.target.value as QuoteRecord["status"])}
           >
-            {quoteStatuses.map((status) => <option key={status}>{status}</option>)}
+            {selectableQuoteStatuses(quote.status).map((status) => <option key={status}>{status}</option>)}
           </select>
+          {markSentEligibleStatuses.has(quote.status) ? (
+            <button
+              className="primary-button compact"
+              type="button"
+              disabled={!canWrite || busy}
+              onClick={() => setMarkSentDialogOpen(true)}
+            >
+              <Send size={16} />Mark as sent
+            </button>
+          ) : null}
+          {quote.status === "Sent" && user?.isSystemAdmin ? (
+            <button
+              className="toolbar-button compact"
+              type="button"
+              disabled={busy}
+              onClick={() => { setUndoSentReason(""); setUndoSentDialogOpen(true); }}
+            >
+              <RotateCcw size={16} />Undo sent
+            </button>
+          ) : null}
           {revisionEligibleStatuses.has(quote.status) ? (
             <button
               className="toolbar-button compact quote-revision-action"
@@ -807,8 +889,8 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             <button className="primary-button compact" type="button" disabled={!canWrite || busy} onClick={() => setProjectConversionOpen(true)}>Convert to project</button>
           ) : null}
           {quote.calculationMode === "PULSE" ? <>
-            <button className="toolbar-button compact" type="button" onClick={() => setAdHocOpen(true)} disabled={!canWrite}><Plus size={16} />Ad hoc line</button>
-            <button className="primary-button compact" type="button" onClick={() => setAddOpen(true)} disabled={!canWrite}><PackagePlus size={16} />Add Item</button>
+            <button className="toolbar-button compact" type="button" onClick={() => setAdHocOpen(true)} disabled={!canEditFinancials}><Plus size={16} />Ad hoc line</button>
+            <button className="primary-button compact" type="button" onClick={() => setAddOpen(true)} disabled={!canEditFinancials}><PackagePlus size={16} />Add Item</button>
           </> : null}
         </div>
       </header>
@@ -1045,8 +1127,8 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
 
             <section>
               {detailsEditing && quoteDetailsDraft ? (
-                <label className="quote-detail-field"><span>Due date</span><input type="date" value={quoteDetailsDraft.dueDate} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, dueDate: event.target.value })} /></label>
-              ) : <><span>Due date</span><h3>{quote.dueDate ? formatWorkspaceDate(quote.dueDate) : "Not set"}</h3></>}
+                <label className="quote-detail-field"><span>Send by</span><input aria-label="Send by" type="date" value={quoteDetailsDraft.dueDate} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, dueDate: event.target.value })} /></label>
+              ) : <><span>Send by</span><h3>{quote.dueDate ? formatWorkspaceDate(quote.dueDate) : "Not set"}</h3></>}
               <p>Target date for preparing this quote</p>
             </section>
 
@@ -1147,7 +1229,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
                 className={`quote-mode-option${quote.calculationMode === mode ? " selected" : ""}`}
                 type="button"
                 key={mode}
-                disabled={!canWrite || busy || quote.calculationMode === mode}
+                disabled={!canEditFinancials || busy || quote.calculationMode === mode}
                 onClick={() => requestModeChange(mode)}
               >
                 <span><strong>{label}</strong><small>{description}</small></span>
@@ -1155,6 +1237,13 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
               </button>
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {activeTab === "work" && !canEditFinancials && (quote.sentAt || quote.status === "Sent") ? (
+        <section className="settings-callout" aria-label="Sent quote monetary lock">
+          <Lock size={17} />
+          <span>Monetary values are locked because this quote was sent. Create a revision to change client pricing.</span>
         </section>
       ) : null}
 
@@ -1183,7 +1272,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
                         step={field === "estimatedDurationBusinessDays" ? "1" : "0.01"}
                         inputMode={field === "estimatedDurationBusinessDays" ? "numeric" : "decimal"}
                         value={legacyFinancialDraft[field]}
-                        disabled={!canWrite || busy}
+                        disabled={!canEditFinancials || busy}
                         required={field !== "estimatedDurationBusinessDays"}
                         onChange={(event) => setLegacyFinancialDraft({ ...legacyFinancialDraft, [field]: event.target.value })}
                       />
@@ -1195,7 +1284,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             </div>
             <div className="legacy-financial-actions">
               <p>Markup and margin are calculated from sale and cost values. Tax remains separate.</p>
-              <button className="primary-button compact" type="submit" disabled={!canWrite || busy}><Save size={15} />{busy ? "Saving…" : "Save financials"}</button>
+              <button className="primary-button compact" type="submit" disabled={!canEditFinancials || busy}><Save size={15} />{busy ? "Saving…" : "Save financials"}</button>
             </div>
           </form>
         ) : (
@@ -1222,17 +1311,17 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
                     return (
                     <tr key={`${item.id}:${item.updatedAt}`} aria-busy={lineSaving}>
                       <td>
-                        <input className="quote-line-name-input" defaultValue={item.name} disabled={!canWrite || lineSaving} onBlur={(event) => { if (event.target.value !== item.name) void patchLine(item, { name: event.target.value }); }} />
-                        <textarea defaultValue={item.description} disabled={!canWrite || lineSaving} onBlur={(event) => { if (event.target.value !== item.description) void patchLine(item, { description: event.target.value }); }} />
+                        <input className="quote-line-name-input" defaultValue={item.name} disabled={!canEditFinancials || lineSaving} onBlur={(event) => { if (event.target.value !== item.name) void patchLine(item, { name: event.target.value }); }} />
+                        <textarea defaultValue={item.description} disabled={!canEditFinancials || lineSaving} onBlur={(event) => { if (event.target.value !== item.description) void patchLine(item, { description: event.target.value }); }} />
                       </td>
                       <td><strong>{item.sku || "No SKU"}</strong><br /><span className="table-muted">{item.partNumber || item.itemType}</span></td>
-                      <td><input type="number" min="0.001" step="0.001" defaultValue={item.quantity} disabled={!canWrite || lineSaving} onBlur={(event) => { const value = Number(event.target.value || 1); if (value !== item.quantity) void patchLine(item, { quantity: value }); }} /></td>
-                      <td><input type="number" min="0" step="0.01" defaultValue={item.unitCost} disabled={!canWrite || lineSaving} onBlur={(event) => { const value = Number(event.target.value || 0); if (value !== item.unitCost) void patchLine(item, { unitCost: value }); }} /></td>
-                      <td><input type="number" min="0" step="0.01" defaultValue={item.unitPrice} disabled={!canWrite || lineSaving} onBlur={(event) => { const value = Number(event.target.value || 0); if (value !== item.unitPrice) void patchLine(item, { unitPrice: value }); }} /></td>
-                      <td><input type="number" min="0" max="100" step="0.01" defaultValue={item.discountPercent} disabled={!canWrite || lineSaving} onBlur={(event) => { const value = Number(event.target.value || 0); if (value !== item.discountPercent) void patchLine(item, { discountPercent: value }); }} /></td>
+                      <td><input type="number" min="0.001" step="0.001" defaultValue={item.quantity} disabled={!canEditFinancials || lineSaving} onBlur={(event) => { const value = Number(event.target.value || 1); if (value !== item.quantity) void patchLine(item, { quantity: value }); }} /></td>
+                      <td><input type="number" min="0" step="0.01" defaultValue={item.unitCost} disabled={!canEditFinancials || lineSaving} onBlur={(event) => { const value = Number(event.target.value || 0); if (value !== item.unitCost) void patchLine(item, { unitCost: value }); }} /></td>
+                      <td><input type="number" min="0" step="0.01" defaultValue={item.unitPrice} disabled={!canEditFinancials || lineSaving} onBlur={(event) => { const value = Number(event.target.value || 0); if (value !== item.unitPrice) void patchLine(item, { unitPrice: value }); }} /></td>
+                      <td><input type="number" min="0" max="100" step="0.01" defaultValue={item.discountPercent} disabled={!canEditFinancials || lineSaving} onBlur={(event) => { const value = Number(event.target.value || 0); if (value !== item.discountPercent) void patchLine(item, { discountPercent: value }); }} /></td>
                       <td><strong>{item.markupPercent.toFixed(1)}%</strong><br /><span className="table-muted">{lineMargin(item).toFixed(1)}% margin</span></td>
                       <td><strong>{formatMoney(item.lineTotal)}</strong>{lineSaving ? <><br /><span className="table-muted">Saving...</span></> : null}</td>
-                      <td><button className="icon-button" type="button" aria-label={`Remove ${item.name}`} disabled={!canWrite || lineSaving} onClick={() => void removeLine(item)}><Trash2 size={16} /></button></td>
+                      <td><button className="icon-button" type="button" aria-label={`Remove ${item.name}`} disabled={!canEditFinancials || lineSaving} onClick={() => void removeLine(item)}><Trash2 size={16} /></button></td>
                     </tr>
                     );
                   })}
@@ -1401,6 +1490,56 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             )}
             <div className="client-create-dialog-actions"><button className="primary-button compact" type="button" onClick={() => setSelectedVersion(null)}>Close history</button></div>
           </section>
+          </div>
+        </ViewportPortal>
+      ) : null}
+
+      {markSentDialogOpen ? (
+        <ViewportPortal>
+          <div className="record-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setMarkSentDialogOpen(false); }}>
+            <section className="record-dialog" role="alertdialog" aria-modal="true" aria-labelledby="quote-mark-sent-title">
+              <div className="record-dialog-heading">
+                <span className="success"><Send size={19} /></span>
+                <div>
+                  <h2 id="quote-mark-sent-title">Mark {quote.quoteNumber} as sent?</h2>
+                  <p>The Send by date is the preparation deadline and will stop appearing on the dashboard. Monetary values and pricing details will be locked and cannot be edited afterward. Only an Administrator can undo this action.</p>
+                </div>
+                <button type="button" disabled={busy} aria-label="Close dialog" onClick={() => setMarkSentDialogOpen(false)}><X size={19} /></button>
+              </div>
+              <div className="record-conversion-summary">
+                <strong>{formatMoney(quote.financialSummary.finalCustomerTotal)} customer total</strong>
+                <span>Pulse will record the exact sent time and preserve this financial snapshot for lifecycle analysis.</span>
+              </div>
+              <div className="record-dialog-actions">
+                <button type="button" disabled={busy} onClick={() => setMarkSentDialogOpen(false)}>Keep editable</button>
+                <button className="primary" type="button" disabled={busy} onClick={() => void confirmMarkSent()}>{busy ? "Marking sent…" : "Mark as sent"}</button>
+              </div>
+            </section>
+          </div>
+        </ViewportPortal>
+      ) : null}
+
+      {undoSentDialogOpen ? (
+        <ViewportPortal>
+          <div className="record-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setUndoSentDialogOpen(false); }}>
+            <form className="record-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-undo-sent-title" onSubmit={confirmUndoSent}>
+              <div className="record-dialog-heading">
+                <span><RotateCcw size={19} /></span>
+                <div>
+                  <h2 id="quote-undo-sent-title">Undo sent for {quote.quoteNumber}?</h2>
+                  <p>Administrator recovery is intended only when the quote was incorrectly marked as delivered. The original event remains in audit history.</p>
+                </div>
+                <button type="button" disabled={busy} aria-label="Close dialog" onClick={() => setUndoSentDialogOpen(false)}><X size={19} /></button>
+              </div>
+              <label className="settings-form">
+                <span>Required reason</span>
+                <textarea autoFocus required maxLength={2000} rows={4} value={undoSentReason} onChange={(event) => setUndoSentReason(event.target.value)} placeholder="Explain why the sent event is incorrect…" />
+              </label>
+              <div className="record-dialog-actions">
+                <button type="button" disabled={busy} onClick={() => setUndoSentDialogOpen(false)}>Keep sent</button>
+                <button className="danger" type="submit" disabled={busy || !undoSentReason.trim()}>{busy ? "Undoing…" : "Undo sent"}</button>
+              </div>
+            </form>
           </div>
         </ViewportPortal>
       ) : null}

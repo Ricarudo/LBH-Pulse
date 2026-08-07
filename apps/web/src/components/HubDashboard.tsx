@@ -420,7 +420,7 @@ function WorkQueueWidget({
                       ) : null}
                       {item.recordDueDate ? (
                         <span className="dashboard-work-date date-due-date">
-                          <CalendarDays size={12} /> Due date {formatWorkspaceDate(item.recordDueDate)}
+                          <CalendarDays size={12} /> {item.kind === "quote" ? "Send by" : "Due date"} {formatWorkspaceDate(item.recordDueDate)}
                         </span>
                       ) : null}
                       {item.attentionReasons.map((reason) => (
@@ -503,6 +503,9 @@ function UpcomingDatesWidget({
               {groupItems.map((item) => {
                 const stage = dashboardStageMeta[item.kind];
                 const dateMeta = dashboardDateMeta[item.dateKind];
+                const dateLabel = item.kind === "quote" && item.dateKind === "due-date"
+                  ? "Send by"
+                  : dateMeta.label;
                 const StageIcon = stage.icon;
                 const DateIcon = dateMeta.icon;
                 return (
@@ -517,7 +520,7 @@ function UpcomingDatesWidget({
                     <span>
                       <span className="dashboard-schedule-kicker">
                         <span><StageIcon size={11} /> {stage.label}</span>
-                        <span><DateIcon size={11} /> {dateMeta.label}</span>
+                        <span><DateIcon size={11} /> {dateLabel}</span>
                       </span>
                       <strong>{item.title}</strong>
                       <small>{item.reference} · {item.context}</small>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { addAdHocQuoteItemSchema } from "@pulse/contracts/items";
 import { prisma } from "@/lib/db";
 import {
@@ -8,8 +9,11 @@ import {
   convertQuoteToProject,
   createQuoteRevision,
   getQuoteRevision,
+  markQuoteSent,
   replaceLegacyQuoteFinancials,
-  switchQuoteCalculationMode
+  switchQuoteCalculationMode,
+  undoQuoteSent,
+  updateQuote
 } from "@/lib/services/workService";
 
 const runDatabaseTests = process.env.PULSE_RUN_DB_TESTS === "1";
@@ -98,7 +102,7 @@ test("Legacy revision snapshots remain reproducible after the current quote chan
       baseQuoteNumber: key("BASE"),
       title: "Legacy revision integration",
       calculationMode: "LEGACY",
-      status: "Sent"
+      status: "Draft"
     }
   });
   try {
@@ -110,6 +114,7 @@ test("Legacy revision snapshots remain reproducible after the current quote chan
       taxAmount: 20,
       estimatedDurationBusinessDays: 5
     });
+    await markQuoteSent(quote.id);
     await createQuoteRevision(quote.id, { reason: "Client changed scope" });
     await replaceLegacyQuoteFinancials(quote.id, {
       materialSale: 500,
@@ -126,6 +131,109 @@ test("Legacy revision snapshots remain reproducible after the current quote chan
     assert.equal(historical.financialSummary.finalCustomerTotal, 270);
   } finally {
     await cleanupQuote(quote.id);
+  }
+});
+
+test("marking a quote sent freezes finances and Administrator undo restores editing", { skip: !runDatabaseTests }, async () => {
+  const roleId = key("ADMIN-ROLE");
+  const userId = key("ADMIN-USER");
+  const role = await prisma.accessRole.create({
+    data: {
+      id: roleId,
+      name: key("Administrator"),
+      normalizedName: key("administrator").toLowerCase(),
+      protected: true
+    }
+  });
+  const actorRecord = await prisma.localUser.create({
+    data: {
+      id: userId,
+      name: "Release Administrator",
+      email: `${randomUUID()}@example.test`,
+      role: role.id,
+      passwordHash: "not-used-by-this-test"
+    }
+  });
+  const actor: AuthenticatedUser = {
+    id: actorRecord.id,
+    name: actorRecord.name,
+    email: actorRecord.email,
+    role: role.id,
+    roleLabel: role.name,
+    accessRole: { id: role.id, name: role.name, color: role.color },
+    permissions: ["quotes:read", "quotes:write", "roles:manage"],
+    isSystemAdmin: true,
+    mustChangePassword: false,
+    authProvider: "LOCAL"
+  };
+  const quote = await prisma.quote.create({
+    data: {
+      quoteNumber: key("SENT-LOCK"),
+      title: "Sent lock integration",
+      calculationMode: "LEGACY",
+      status: "Review"
+    }
+  });
+  try {
+    await replaceLegacyQuoteFinancials(quote.id, {
+      materialSale: 200,
+      materialCost: 100,
+      laborSale: 50,
+      laborCost: 25,
+      taxAmount: 20,
+      estimatedDurationBusinessDays: 5
+    });
+    await assert.rejects(updateQuote(quote.id, { status: "Sent" }), /QUOTE_SENT_ACTION_REQUIRED/);
+    const sent = await markQuoteSent(quote.id, actor);
+    assert.equal(sent.status, "Sent");
+    assert.notEqual(sent.sentAt, "");
+    await assert.rejects(
+      replaceLegacyQuoteFinancials(quote.id, {
+        materialSale: 300,
+        materialCost: 100,
+        laborSale: 50,
+        laborCost: 25,
+        taxAmount: 20,
+        estimatedDurationBusinessDays: 5
+      }),
+      /QUOTE_SENT_FINANCIALS_LOCKED/
+    );
+    await assert.rejects(updateQuote(quote.id, { status: "Draft" }), /QUOTE_SENT_TRANSITION_INVALID/);
+
+    const sentEvent = await prisma.lifecycleStatusEvent.findFirstOrThrow({
+      where: { entityType: "QUOTE", entityId: quote.id, toStatus: "Sent" },
+      orderBy: { changedAt: "desc" }
+    });
+    const sentMetadata = sentEvent.metadata as {
+      eventType?: string;
+      versionSnapshot?: { financialSummary?: { finalCustomerTotal?: string } };
+    };
+    assert.equal(sentMetadata.eventType, "quote_sent");
+    assert.equal(sentMetadata.versionSnapshot?.financialSummary?.finalCustomerTotal, "270.00");
+
+    const restored = await undoQuoteSent(quote.id, { reason: "Delivery was recorded against the wrong quote." }, actor);
+    assert.equal(restored.status, "Review");
+    assert.equal(restored.sentAt, "");
+    const undoEvent = await prisma.lifecycleStatusEvent.findFirstOrThrow({
+      where: { entityType: "QUOTE", entityId: quote.id, fromStatus: "Sent", toStatus: "Review" },
+      orderBy: { changedAt: "desc" }
+    });
+    assert.equal((undoEvent.metadata as { eventType?: string }).eventType, "quote_sent_undone");
+    assert.equal((undoEvent.metadata as { sentEventId?: string }).sentEventId, sentEvent.id);
+
+    const editable = await replaceLegacyQuoteFinancials(quote.id, {
+      materialSale: 300,
+      materialCost: 100,
+      laborSale: 50,
+      laborCost: 25,
+      taxAmount: 20,
+      estimatedDurationBusinessDays: 5
+    });
+    assert.equal(editable.legacyFinancials.materialSale, 300);
+  } finally {
+    await cleanupQuote(quote.id);
+    await prisma.localUser.deleteMany({ where: { id: actorRecord.id } });
+    await prisma.accessRole.deleteMany({ where: { id: role.id } });
   }
 });
 

@@ -10,6 +10,7 @@ import {
   createQuoteSchema,
   replaceLegacyQuoteFinancialsSchema,
   switchQuoteCalculationModeSchema,
+  undoQuoteSentSchema,
   updateQuoteSchema,
   lifecycleCollaboratorSchema
 } from "@pulse/contracts/work";
@@ -65,6 +66,18 @@ export class QuotesController {
   @Patch(":id") async update(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, "quotes:write");
     return { quote: await this.quotes.update(id, updateQuoteSchema.parse(body), user) };
+  }
+  @Post(":id/mark-sent")
+  @HttpCode(200)
+  async markSent(@Req() request: Request, @Param("id") id: string) {
+    const user = await this.auth.requireUser(request, "quotes:write");
+    return { quote: await this.quotes.markSent(id, user) };
+  }
+  @Post(":id/undo-sent")
+  @HttpCode(200)
+  async undoSent(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireSystemAdmin(request);
+    return { quote: await this.quotes.undoSent(id, undoQuoteSentSchema.parse(body), user) };
   }
   @Post(":id/collaborators")
   async addCollaborator(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {

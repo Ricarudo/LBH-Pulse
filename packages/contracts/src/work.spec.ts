@@ -8,6 +8,7 @@ import {
   createQuoteSchema,
   replaceLegacyQuoteFinancialsSchema,
   switchQuoteCalculationModeSchema,
+  undoQuoteSentSchema,
   updateInvoiceSchema,
   updateProjectSchema,
   reorderProjectTasksSchema,
@@ -63,6 +64,13 @@ test("quote updates accept On Hold with a trimmed status reason", () => {
     status: "On Hold",
     statusReason: "Waiting for client approval"
   });
+});
+
+test("undoing a sent quote requires an auditable reason", () => {
+  assert.deepEqual(undoQuoteSentSchema.parse({ reason: "  Marked sent in error  " }), {
+    reason: "Marked sent in error"
+  });
+  assert.equal(undoQuoteSentSchema.safeParse({ reason: "   " }).success, false);
 });
 
 test("quote ownership is a linked user and legacy owner text is discarded", () => {

@@ -579,6 +579,17 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   }
 
   function renderStatus(record: WorkRecord, compact = false) {
+    const selectableStatuses = kind === "quotes"
+      ? quoteStatuses.filter((status) => {
+          if (record.status === "Sent") {
+            return ["Sent", "Approved", "Rejected", "Expired", "Cancelled"].includes(status);
+          }
+          if (["Approved", "Rejected", "Expired", "Cancelled"].includes(record.status)) {
+            return status === record.status;
+          }
+          return ["Draft", "Review", "On Hold", "Cancelled"].includes(status);
+        })
+      : statuses;
     return canWrite ? (
       <select
         className={`work-queue-status-select tone-${statusTone(record.status)}${compact ? " compact" : ""}`}
@@ -587,7 +598,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
         onClick={(event) => event.stopPropagation()}
         onChange={(event) => void changeStatus(record, event.target.value)}
       >
-        {statuses.map((status) => (
+        {selectableStatuses.map((status) => (
           <option key={status} value={status}>
             {status}
           </option>
@@ -666,7 +677,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
               <option value="activity">Newest activity</option>
               <option value="number">{copy.singular} number</option>
               <option value="value">{valueLabel}: high to low</option>
-              <option value="due">Due date</option>
+              <option value="due">{kind === "quotes" ? "Send by" : "Due date"}</option>
             </select>
           </label>
           {kind === "quotes" ? (
@@ -694,7 +705,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                   ? `${copy.singular.toLowerCase()} number`
                   : sort === "value"
                     ? valueLabel.toLowerCase()
-                    : "due date"}
+                    : kind === "quotes" ? "send-by date" : "due date"}
             </span>
           </div>
         </div>
@@ -718,7 +729,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 <th>Status</th>
                 {kind === "quotes" ? <th>Next Action</th> : null}
                 <th>{kind === "quotes" ? "Owner" : "Assigned to"}</th>
-                <th>Timing</th>
+                <th>{kind === "quotes" ? "Send by" : "Timing"}</th>
                 <th>{valueLabel}</th>
               </tr>
             </thead>
@@ -796,7 +807,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                               <CalendarClock size={14} />
                               <span>
                                 {dueDate
-                                  ? `Due ${displayDate(dueDate)}`
+                                  ? `${kind === "quotes" ? "Send by" : "Due"} ${displayDate(dueDate)}`
                                   : `Updated ${displayDate(record.updatedAt)}`}
                               </span>
                             </strong>
@@ -859,10 +870,10 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                           <strong>{formatMoney(recordValue(record))}</strong>
                         </div>
                         <div className={needsAttention(record) ? "attention" : ""}>
-                          <span>{dueDate ? "Timing" : "Activity"}</span>
+                          <span>{dueDate ? kind === "quotes" ? "Send by" : "Timing" : "Activity"}</span>
                           <strong>
                             {dueDate
-                              ? `Due ${displayDate(dueDate)}`
+                              ? `${kind === "quotes" ? "Send by" : "Due"} ${displayDate(dueDate)}`
                               : `Updated ${displayDate(record.updatedAt)}`}
                           </strong>
                         </div>

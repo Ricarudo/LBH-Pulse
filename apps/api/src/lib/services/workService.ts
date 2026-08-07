@@ -44,6 +44,7 @@ import type {
   CreateQuoteInput,
   ReplaceLegacyQuoteFinancialsInput,
   SwitchQuoteCalculationModeInput,
+  UndoQuoteSentInput,
   UpdateInvoiceInput,
   UpdateProjectInput,
   UpdateQuoteInput,
@@ -1306,12 +1307,26 @@ async function lockQuoteOrThrow(tx: Prisma.TransactionClient, id: string) {
   await tx.$queryRaw`SELECT "id" FROM "Quote" WHERE "id" = ${quote.id} FOR UPDATE`;
   return tx.quote.findUniqueOrThrow({
     where: { id: quote.id },
-    select: { id: true, quoteNumber: true, calculationMode: true, total: true }
+    select: {
+      id: true,
+      quoteNumber: true,
+      calculationMode: true,
+      total: true,
+      status: true,
+      sentAt: true
+    }
   });
+}
+
+function assertQuoteFinancialsEditable(quote: { status: string; sentAt: Date | null }) {
+  if (quote.status === "Sent" || quote.sentAt) {
+    throw new Error("QUOTE_SENT_FINANCIALS_LOCKED");
+  }
 }
 
 async function lockPulseQuoteOrThrow(tx: Prisma.TransactionClient, id: string) {
   const quote = await lockQuoteOrThrow(tx, id);
+  assertQuoteFinancialsEditable(quote);
   if (quote.calculationMode !== "PULSE") throw new Error("QUOTE_ITEMS_REQUIRE_PULSE_MODE");
   return quote;
 }
@@ -1736,6 +1751,10 @@ function mergedEventMetadata(
 
 
 export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedUser) {
+  if (input.status === "Sent") throw new Error("QUOTE_SENT_ACTION_REQUIRED");
+  if (["Approved", "Rejected", "Expired"].includes(input.status)) {
+    throw new Error("QUOTE_OUTCOME_REQUIRES_SENT");
+  }
   const client = await clientOrThrow(input.clientId);
   const contact = await contactForClientOrThrow(input.contactId, client.id);
   const site = input.siteId ? await siteForClientOrThrow(input.siteId, client.id) : null;
@@ -1806,6 +1825,25 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
   const existing = await quoteOrThrow(id);
   const statusChanged = input.status !== undefined && input.status !== existing.status;
   const statusReason = input.statusReason?.trim() ?? "";
+  if (statusChanged && input.status === "Sent") {
+    throw new Error("QUOTE_SENT_ACTION_REQUIRED");
+  }
+  if (
+    statusChanged &&
+    input.status !== undefined &&
+    ["Approved", "Rejected", "Expired"].includes(input.status) &&
+    !existing.sentAt
+  ) {
+    throw new Error("QUOTE_OUTCOME_REQUIRES_SENT");
+  }
+  if (
+    statusChanged &&
+    (existing.status === "Sent" || existing.sentAt) &&
+    input.status !== undefined &&
+    (existing.status !== "Sent" || !["Approved", "Rejected", "Expired", "Cancelled"].includes(input.status))
+  ) {
+    throw new Error("QUOTE_SENT_TRANSITION_INVALID");
+  }
   if (statusChanged && input.status === "On Hold" && !statusReason) {
     throw new Error("QUOTE_ON_HOLD_REASON_REQUIRED");
   }
@@ -1954,6 +1992,145 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
   return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
 }
 
+const markSentEligibleStatuses = new Set(["Draft", "Review", "On Hold"]);
+
+export async function markQuoteSent(id: string, user?: AuthenticatedUser) {
+  const sentAt = new Date();
+  const quote = await prisma.$transaction(async (tx) => {
+    const locked = await lockQuoteOrThrow(tx, id);
+    if (!markSentEligibleStatuses.has(locked.status)) {
+      throw new Error(locked.status === "Sent" ? "QUOTE_ALREADY_SENT" : "QUOTE_MARK_SENT_STATUS_INVALID");
+    }
+    const metadata = await quoteAnalyticsSnapshot(tx, locked.id, "quote_sent");
+    const updated = await tx.quote.update({
+      where: { id: locked.id },
+      data: { status: "Sent", sentAt, sentAtPrecision: "EXACT" },
+      include: quoteDetailInclude
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.QUOTE,
+      entityId: updated.id,
+      fromStatus: locked.status,
+      toStatus: "Sent",
+      changedAt: sentAt,
+      valueSnapshot: quoteFinancialSummaryDecimal(updated).preTaxContractValue.toNumber(),
+      metadata: {
+        ...metadata,
+        quoteNumber: updated.quoteNumber,
+        revisionNumber: quoteVersionFields(updated).revisionNumber,
+        versionSnapshot: quoteRevisionSnapshot(updated),
+        precision: "EXACT"
+      },
+      user
+    });
+    await createQuoteSystemUpdate(tx, {
+      quoteId: updated.id,
+      title: `${updated.quoteNumber} marked as sent`,
+      body: "The sent quote version and its monetary values are now locked.",
+      user,
+      createdAt: sentAt,
+      metadata: {
+        eventType: "quote_sent",
+        precision: "EXACT",
+        quoteNumber: updated.quoteNumber,
+        revisionNumber: quoteVersionFields(updated).revisionNumber,
+        fromStatus: locked.status,
+        toStatus: "Sent"
+      }
+    });
+    return updated;
+  });
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Sent",
+    title: `${quote.quoteNumber} marked as sent`,
+    detail: "Monetary values locked.",
+    metadata: { sentAt: sentAt.toISOString(), revisionNumber: quote.revisionNumber }
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
+export async function undoQuoteSent(
+  id: string,
+  input: UndoQuoteSentInput,
+  user: AuthenticatedUser
+) {
+  if (!user.isSystemAdmin) throw new Error("QUOTE_SENT_UNDO_ADMIN_REQUIRED");
+  const undoneAt = new Date();
+  const quote = await prisma.$transaction(async (tx) => {
+    const locked = await lockQuoteOrThrow(tx, id);
+    if (locked.status !== "Sent" || !locked.sentAt) {
+      throw new Error("QUOTE_SENT_UNDO_STATUS_INVALID");
+    }
+    const sentEvent = await tx.lifecycleStatusEvent.findFirst({
+      where: {
+        entityType: LifecycleEntityType.QUOTE,
+        entityId: locked.id,
+        toStatus: "Sent"
+      },
+      orderBy: [{ changedAt: "desc" }, { id: "desc" }]
+    });
+    const restoredStatus = sentEvent?.fromStatus && markSentEligibleStatuses.has(sentEvent.fromStatus)
+      ? sentEvent.fromStatus
+      : "Draft";
+    const metadata = await quoteAnalyticsSnapshot(tx, locked.id, "quote_sent_undone");
+    const updated = await tx.quote.update({
+      where: { id: locked.id },
+      data: { status: restoredStatus, sentAt: null, sentAtPrecision: null },
+      include: quoteDetailInclude
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.QUOTE,
+      entityId: updated.id,
+      fromStatus: "Sent",
+      toStatus: restoredStatus,
+      changedAt: undoneAt,
+      valueSnapshot: quoteFinancialSummaryDecimal(updated).preTaxContractValue.toNumber(),
+      metadata: {
+        ...metadata,
+        quoteNumber: updated.quoteNumber,
+        revisionNumber: quoteVersionFields(updated).revisionNumber,
+        originalSentAt: locked.sentAt.toISOString(),
+        sentEventId: sentEvent?.id ?? null,
+        reason: input.reason,
+        precision: "EXACT"
+      },
+      user
+    });
+    await createQuoteSystemUpdate(tx, {
+      quoteId: updated.id,
+      title: `${updated.quoteNumber} sent event undone`,
+      body: input.reason,
+      user,
+      createdAt: undoneAt,
+      metadata: {
+        eventType: "quote_sent_undone",
+        precision: "EXACT",
+        quoteNumber: updated.quoteNumber,
+        revisionNumber: quoteVersionFields(updated).revisionNumber,
+        fromStatus: "Sent",
+        toStatus: restoredStatus,
+        originalSentAt: locked.sentAt.toISOString(),
+        sentEventId: sentEvent?.id ?? null,
+        reason: input.reason
+      }
+    });
+    return updated;
+  });
+  await recordActivity({
+    user,
+    relatedEntityType: "Quote",
+    relatedEntityId: quote.id,
+    type: "Sent Undo",
+    title: `${quote.quoteNumber} sent event undone by Administrator`,
+    detail: input.reason,
+    metadata: { undoneAt: undoneAt.toISOString(), restoredStatus: quote.status }
+  });
+  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+}
+
 export async function addQuoteCollaborator(id: string, userId: string, actor?: AuthenticatedUser) {
   const quote = await quoteOrThrow(id);
   if (!quote.lifecycleContextId) throw new Error("QUOTE_LIFECYCLE_CONTEXT_REQUIRED");
@@ -1983,6 +2160,7 @@ export async function replaceLegacyQuoteFinancials(
 ) {
   const quote = await prisma.$transaction(async (tx) => {
     const locked = await lockQuoteOrThrow(tx, id);
+    assertQuoteFinancialsEditable(locked);
     if (locked.calculationMode !== "LEGACY") {
       throw new Error("QUOTE_LEGACY_FINANCIALS_REQUIRE_LEGACY_MODE");
     }
@@ -2024,6 +2202,7 @@ export async function switchQuoteCalculationMode(
 ) {
   const result = await prisma.$transaction(async (tx) => {
     const locked = await lockQuoteOrThrow(tx, id);
+    assertQuoteFinancialsEditable(locked);
     const existing = await tx.quote.findUniqueOrThrow({
       where: { id: locked.id },
       include: quoteDetailInclude

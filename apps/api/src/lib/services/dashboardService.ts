@@ -31,7 +31,7 @@ const terminalRequestStatuses = new Set([
   "Cancelled",
   "Duplicate"
 ]);
-const terminalQuoteStatuses = new Set(["Rejected", "Expired", "Cancelled"]);
+const excludedDashboardQuoteStatuses = new Set(["Sent", "Rejected", "Expired", "Cancelled"]);
 const terminalProjectStatuses = new Set(["Completed", "Cancelled"]);
 const terminalInvoiceStatuses = new Set(["Paid", "Void"]);
 const operationalActivityEntities = new Set([
@@ -186,6 +186,10 @@ function requestAttentionReasons(request: {
 
 export function earliestDashboardDate(...dates: Array<string | undefined>) {
   return dates.filter((date): date is string => Boolean(date)).sort()[0] ?? "";
+}
+
+export function quoteAppearsOnDashboard(status: string) {
+  return !excludedDashboardQuoteStatuses.has(status);
 }
 
 export function effectiveDashboardDueDate(...dates: Array<Date | null | undefined>) {
@@ -472,7 +476,7 @@ export async function getDashboardData(
       .filter((record) => !terminalRequestStatuses.has(record.status))
       .map((record) => ({ kind: "request" as const, entityId: record.id, stepId: requestStepIds.get(record.id) })),
     ...scopedQuotes
-      .filter((record) => !terminalQuoteStatuses.has(record.status))
+      .filter((record) => quoteAppearsOnDashboard(record.status))
       .map((record) => ({ kind: "quote" as const, entityId: record.id, stepId: quoteStepIds.get(record.id) })),
     ...scopedProjects
       .filter((record) => !terminalProjectStatuses.has(record.status))
@@ -537,7 +541,7 @@ export async function getDashboardData(
   }
 
   for (const quote of scopedQuotes) {
-    if (terminalQuoteStatuses.has(quote.status)) continue;
+    if (!quoteAppearsOnDashboard(quote.status)) continue;
     const sourceRequest = quote.sourceRequestIdSnapshot
       ? requestsById.get(quote.sourceRequestIdSnapshot)
       : undefined;
@@ -683,7 +687,7 @@ export async function getDashboardData(
     });
   }
   for (const quote of scopedQuotes) {
-    if (terminalQuoteStatuses.has(quote.status)) continue;
+    if (!quoteAppearsOnDashboard(quote.status)) continue;
     const context = quote.client?.displayName ?? quote.clientName ?? "Quote";
     const sourceRequest = quote.sourceRequestIdSnapshot
       ? requestsById.get(quote.sourceRequestIdSnapshot)
@@ -831,7 +835,7 @@ export async function getDashboardData(
     (request) => !terminalRequestStatuses.has(request.status)
   );
   const activeQuotes = scopedQuotes.filter(
-    (quote) => !terminalQuoteStatuses.has(quote.status)
+    (quote) => quoteAppearsOnDashboard(quote.status)
   );
   const activeProjects = scopedProjects.filter(
     (project) => !terminalProjectStatuses.has(project.status)

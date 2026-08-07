@@ -420,6 +420,14 @@ export const switchQuoteCalculationModeSchema = z.object({
   discardFinancialData: z.boolean().default(false)
 }).strict();
 
+export const undoQuoteSentSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(1, "Explain why the sent event must be undone.")
+    .max(2000, "Undo notes may contain up to 2,000 characters.")
+}).strict();
+
 export const createQuoteRevisionSchema = z.object({
   reason: z
     .string()
@@ -520,6 +528,7 @@ export type UpdateQuoteInput = z.infer<typeof updateQuoteSchema>;
 export type LifecycleCollaboratorInput = z.infer<typeof lifecycleCollaboratorSchema>;
 export type ReplaceLegacyQuoteFinancialsInput = z.infer<typeof replaceLegacyQuoteFinancialsSchema>;
 export type SwitchQuoteCalculationModeInput = z.infer<typeof switchQuoteCalculationModeSchema>;
+export type UndoQuoteSentInput = z.infer<typeof undoQuoteSentSchema>;
 export type CreateQuoteRevisionInput = z.infer<typeof createQuoteRevisionSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
