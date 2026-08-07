@@ -106,40 +106,43 @@ function isUnassigned(value?: string | null) {
   return !owner || owner === "unassigned";
 }
 
-function recordMatchesScope(
-  scope: DashboardScope,
-  user: AuthenticatedUser,
-  owner: string | null | undefined,
-  teamNames: Set<string>
-) {
-  if (scope === "all") return true;
-  const normalizedOwner = normalizeDashboardOwner(owner);
-  if (scope === "mine") return normalizedOwner === normalizeDashboardOwner(user.name);
-  return teamNames.has(normalizedOwner);
-}
+type DashboardScopeRecord = {
+  assignedToId: string | null;
+  assignedTo: { name: string; role: string } | null;
+  lifecycleContext: {
+    collaborators: Array<{ user: { id: string; name: string; role: string } }>;
+  } | null;
+};
 
-function requestMatchesScope(
+type DashboardCurrentStep = {
+  id: string;
+  title: string | null;
+  body: string | null;
+  targetDate: Date | null;
+  assigneeId: string | null;
+  assignee: { name: string; role: string } | null;
+};
+
+export function dashboardRecordMatchesScope(
   scope: DashboardScope,
   user: AuthenticatedUser,
-  request: {
-    assignedToId: string | null;
-    assignedTo: { name: string; role: string } | null;
-    lifecycleContext: { collaborators: Array<{ user: { id: string; name: string; role: string } }> } | null;
-    updates: Array<{ assigneeId: string | null; assignee: { name: string; role: string } | null }>;
-  },
+  record: DashboardScopeRecord,
+  currentStep: DashboardCurrentStep | null,
+  legacyOwner: string | null | undefined,
   teamNames: Set<string>
 ) {
   if (scope === "all") return true;
+  const collaborators = record.lifecycleContext?.collaborators ?? [];
   if (scope === "mine") {
-    return request.assignedToId === user.id ||
-      request.updates.some((update) => update.assigneeId === user.id) ||
-      (request.lifecycleContext?.collaborators ?? []).some((collaborator) => collaborator.user.id === user.id) ||
-      normalizeDashboardOwner(request.assignedTo?.name) === normalizeDashboardOwner(user.name);
+    return record.assignedToId === user.id ||
+      currentStep?.assigneeId === user.id ||
+      collaborators.some((collaborator) => collaborator.user.id === user.id) ||
+      normalizeDashboardOwner(record.assignedTo?.name ?? legacyOwner) === normalizeDashboardOwner(user.name);
   }
-  return request.assignedTo?.role === user.role ||
-    request.updates.some((update) => update.assignee?.role === user.role) ||
-    (request.lifecycleContext?.collaborators ?? []).some((collaborator) => collaborator.user.role === user.role) ||
-    teamNames.has(normalizeDashboardOwner(request.assignedTo?.name));
+  return record.assignedTo?.role === user.role ||
+    currentStep?.assignee?.role === user.role ||
+    collaborators.some((collaborator) => collaborator.user.role === user.role) ||
+    teamNames.has(normalizeDashboardOwner(record.assignedTo?.name ?? legacyOwner));
 }
 
 function workHref(kind: DashboardWorkItem["kind"], entityId: string, updateId?: string) {
@@ -148,15 +151,18 @@ function workHref(kind: DashboardWorkItem["kind"], entityId: string, updateId?: 
       ? `/requests/${entityId}?tab=updates&update=${encodeURIComponent(updateId)}`
       : `/requests/${entityId}`;
   }
-  if (kind === "quote") return `/quotes?record=${encodeURIComponent(entityId)}`;
-  if (kind === "project") return `/projects/${encodeURIComponent(entityId)}`;
-  return `/billing/${encodeURIComponent(entityId)}`;
+  const base = kind === "quote"
+    ? `/quotes/${encodeURIComponent(entityId)}`
+    : kind === "project"
+      ? `/projects/${encodeURIComponent(entityId)}`
+      : `/billing/${encodeURIComponent(entityId)}`;
+  return updateId ? `${base}?tab=updates` : base;
 }
 
 function activityHref(entityType: string, entityId: string) {
   if (entityType === "Request") return `/requests/${entityId}`;
   if (entityType === "Client") return `/clients/${entityId}`;
-  if (entityType === "Quote") return `/quotes?record=${encodeURIComponent(entityId)}`;
+  if (entityType === "Quote") return `/quotes/${encodeURIComponent(entityId)}`;
   if (entityType === "Project") return `/projects/${encodeURIComponent(entityId)}`;
   if (entityType === "Invoice") return `/billing/${encodeURIComponent(entityId)}`;
   return undefined;
@@ -178,6 +184,38 @@ function requestAttentionReasons(request: {
   return reasons;
 }
 
+export function earliestDashboardDate(...dates: Array<string | undefined>) {
+  return dates.filter((date): date is string => Boolean(date)).sort()[0] ?? "";
+}
+
+export function effectiveDashboardDueDate(...dates: Array<Date | null | undefined>) {
+  return dateOutput(dates.find((date): date is Date => Boolean(date)));
+}
+
+export function selectDownstreamDashboardSteps(
+  candidates: Array<{
+    kind: DashboardWorkItem["kind"];
+    entityId: string;
+    stepId?: string | null;
+  }>
+) {
+  const stageRank: Record<DashboardWorkItem["kind"], number> = {
+    request: 0,
+    quote: 1,
+    project: 2,
+    invoice: 3
+  };
+  const selected = new Map<string, { kind: DashboardWorkItem["kind"]; entityId: string }>();
+  for (const candidate of candidates) {
+    if (!candidate.stepId) continue;
+    const current = selected.get(candidate.stepId);
+    if (!current || stageRank[candidate.kind] > stageRank[current.kind]) {
+      selected.set(candidate.stepId, { kind: candidate.kind, entityId: candidate.entityId });
+    }
+  }
+  return selected;
+}
+
 function sortWorkItems(left: DashboardWorkItem, right: DashboardWorkItem) {
   const timing = timingRank[left.timing] - timingRank[right.timing];
   if (timing !== 0) return timing;
@@ -185,8 +223,8 @@ function sortWorkItems(left: DashboardWorkItem, right: DashboardWorkItem) {
     const attention = Number(right.attentionReasons.length > 0) - Number(left.attentionReasons.length > 0);
     if (attention !== 0) return attention;
   }
-  if (left.dueDate && right.dueDate && left.dueDate !== right.dueDate) {
-    return left.dueDate.localeCompare(right.dueDate);
+  if (left.timingDate && right.timingDate && left.timingDate !== right.timingDate) {
+    return left.timingDate.localeCompare(right.timingDate);
   }
   const priority = (priorityRank[right.priority ?? ""] ?? 0) -
     (priorityRank[left.priority ?? ""] ?? 0);
@@ -245,7 +283,8 @@ export async function getDashboardData(
     workspace?.timeZone ?? "America/Puerto_Rico"
   );
   const canComplete = canUser(user, "activity:write");
-  const needsOperationalData = requestedWidgets.some((id) => id !== "recent-activity");
+  const needsOperationalData = requestedWidgets.some((id) => id !== "recent-activity") ||
+    (widgetSet.has("recent-activity") && scope !== "all");
   const activeUsers = await prisma.localUser.findMany({
     where: {
       active: true,
@@ -262,32 +301,19 @@ export async function getDashboardData(
   const [requests, quotes, projects, invoices] = needsOperationalData
     ? await Promise.all([
         prisma.request.findMany({
-          where: { archivedAt: null },
           select: {
             id: true,
+            archivedAt: true,
             requestNumber: true,
             title: true,
             status: true,
             priority: true,
             companyName: true,
             dueDate: true,
+            currentStepId: true,
             assignedToId: true,
             assignedTo: { select: { name: true, role: true } },
             client: { select: { displayName: true } },
-            updates: {
-              where: { kind: "step", stepStatus: "open" },
-              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-              take: 1,
-              select: {
-                id: true,
-                title: true,
-                body: true,
-                targetDate: true,
-                stepStatus: true,
-                assigneeId: true,
-                assignee: { select: { name: true, role: true } }
-              }
-            },
             lifecycleContext: {
               select: {
                 collaborators: {
@@ -304,10 +330,28 @@ export async function getDashboardData(
             quoteNumber: true,
             title: true,
             status: true,
+            assignedToId: true,
+            assignedTo: { select: { name: true, role: true } },
             owner: true,
             total: true,
+            dueDate: true,
+            currentStepId: true,
+            sourceRequestIdSnapshot: true,
             clientName: true,
             client: { select: { displayName: true } },
+            requests: {
+              where: { archivedAt: null },
+              orderBy: { updatedAt: "desc" },
+              take: 1,
+              select: { id: true, currentStepId: true, dueDate: true }
+            },
+            lifecycleContext: {
+              select: {
+                collaborators: {
+                  select: { user: { select: { id: true, name: true, role: true } } }
+                }
+              }
+            },
             project: { select: { id: true } }
           }
         }),
@@ -318,9 +362,19 @@ export async function getDashboardData(
             projectNumber: true,
             title: true,
             status: true,
-            assignedTo: { select: { name: true } },
+            assignedToId: true,
+            assignedTo: { select: { name: true, role: true } },
             budget: true,
             dueDate: true,
+            currentStepId: true,
+            quoteId: true,
+            lifecycleContext: {
+              select: {
+                collaborators: {
+                  select: { user: { select: { id: true, name: true, role: true } } }
+                }
+              }
+            },
             client: { select: { displayName: true } }
           }
         }),
@@ -331,33 +385,121 @@ export async function getDashboardData(
             invoiceNumber: true,
             title: true,
             status: true,
-            assignedTo: { select: { name: true } },
+            assignedToId: true,
+            assignedTo: { select: { name: true, role: true } },
             amount: true,
             dueDate: true,
+            currentStepId: true,
+            projectId: true,
+            lifecycleContext: {
+              select: {
+                collaborators: {
+                  select: { user: { select: { id: true, name: true, role: true } } }
+                }
+              }
+            },
             client: { select: { displayName: true } }
           }
         })
       ])
     : [[], [], [], []] as const;
 
+  const requestsById = new Map(requests.map((request) => [request.id, request]));
+  const dashboardRequests = requests.filter((request) => !request.archivedAt);
+  const requestStepIds = new Map(requests.map((request) => [request.id, request.currentStepId]));
+  const quoteStepIds = new Map(quotes.map((quote) => {
+    const sourceRequest = quote.sourceRequestIdSnapshot
+      ? requestsById.get(quote.sourceRequestIdSnapshot)
+      : undefined;
+    return [
+      quote.id,
+      quote.currentStepId ?? quote.requests[0]?.currentStepId ?? sourceRequest?.currentStepId ?? null
+    ];
+  }));
+  const projectStepIds = new Map(projects.map((project) => [
+    project.id,
+    project.currentStepId ?? (project.quoteId ? quoteStepIds.get(project.quoteId) : null) ?? null
+  ]));
+  const invoiceStepIds = new Map(invoices.map((invoice) => [
+    invoice.id,
+    invoice.currentStepId ?? (invoice.projectId ? projectStepIds.get(invoice.projectId) : null) ?? null
+  ]));
+  const stepIds = Array.from(new Set([
+    ...requestStepIds.values(),
+    ...quoteStepIds.values(),
+    ...projectStepIds.values(),
+    ...invoiceStepIds.values()
+  ].filter((id): id is string => Boolean(id))));
+  const currentSteps = stepIds.length
+    ? await prisma.requestUpdate.findMany({
+        where: { id: { in: stepIds }, kind: "step", stepStatus: "open" },
+        select: {
+          id: true,
+          title: true,
+          body: true,
+          targetDate: true,
+          assigneeId: true,
+          assignee: { select: { name: true, role: true } }
+        }
+      })
+    : [];
+  const currentStepsById = new Map(currentSteps.map((step) => [step.id, step]));
+  const stepFor = (stepId?: string | null) => stepId ? currentStepsById.get(stepId) ?? null : null;
+
   const scopedRequests = canUser(user, "requests:read")
-    ? requests.filter((request) => requestMatchesScope(scope, user, request, teamNames))
+    ? dashboardRequests.filter((request) => dashboardRecordMatchesScope(
+        scope, user, request, stepFor(requestStepIds.get(request.id)), null, teamNames
+      ))
     : [];
   const scopedQuotes = canUser(user, "quotes:read")
-    ? quotes.filter((quote) => recordMatchesScope(scope, user, quote.owner, teamNames))
+    ? quotes.filter((quote) => dashboardRecordMatchesScope(
+        scope, user, quote, stepFor(quoteStepIds.get(quote.id)), quote.owner, teamNames
+      ))
     : [];
   const scopedProjects = canUser(user, "projects:read")
-    ? projects.filter((project) => recordMatchesScope(scope, user, project.assignedTo?.name, teamNames))
+    ? projects.filter((project) => dashboardRecordMatchesScope(
+        scope, user, project, stepFor(projectStepIds.get(project.id)), null, teamNames
+      ))
     : [];
   const scopedInvoices = canUser(user, "billing:read")
-    ? invoices.filter((invoice) => recordMatchesScope(scope, user, invoice.assignedTo?.name, teamNames))
+    ? invoices.filter((invoice) => dashboardRecordMatchesScope(
+        scope, user, invoice, stepFor(invoiceStepIds.get(invoice.id)), null, teamNames
+      ))
     : [];
+
+  const visibleStepAssignments = selectDownstreamDashboardSteps([
+    ...scopedRequests
+      .filter((record) => !terminalRequestStatuses.has(record.status))
+      .map((record) => ({ kind: "request" as const, entityId: record.id, stepId: requestStepIds.get(record.id) })),
+    ...scopedQuotes
+      .filter((record) => !terminalQuoteStatuses.has(record.status))
+      .map((record) => ({ kind: "quote" as const, entityId: record.id, stepId: quoteStepIds.get(record.id) })),
+    ...scopedProjects
+      .filter((record) => !terminalProjectStatuses.has(record.status))
+      .map((record) => ({ kind: "project" as const, entityId: record.id, stepId: projectStepIds.get(record.id) })),
+    ...scopedInvoices
+      .filter((record) => !terminalInvoiceStatuses.has(record.status))
+      .map((record) => ({ kind: "invoice" as const, entityId: record.id, stepId: invoiceStepIds.get(record.id) }))
+  ]);
+  const selectedStepFor = (
+    kind: DashboardWorkItem["kind"],
+    entityId: string,
+    stepId?: string | null
+  ) => {
+    if (!stepId) return null;
+    const assignment = visibleStepAssignments.get(stepId);
+    return assignment?.kind === kind && assignment.entityId === entityId
+      ? stepFor(stepId)
+      : null;
+  };
 
   const workItems: DashboardWorkItem[] = [];
   for (const request of scopedRequests) {
     if (terminalRequestStatuses.has(request.status)) continue;
-    const dueDate = dateOutput(request.dueDate);
-    const currentStep = request.updates[0] ?? null;
+    const recordDueDate = dateOutput(request.dueDate);
+    const currentStep = selectedStepFor(
+      "request", request.id, requestStepIds.get(request.id)
+    );
     const suggestedTitle = !request.assignedToId
       ? "Assign an owner"
       : request.status === "Missing Info"
@@ -368,9 +510,9 @@ export async function getDashboardData(
     const stepTitle = currentStep
       ? currentStep.title || currentStep.body || "Current step"
       : suggestedTitle;
-    const stepDate = dateOutput(currentStep?.targetDate);
-    const workDate = stepDate || dueDate;
-    const explicitStep = Boolean(currentStep && currentStep.stepStatus === "open");
+    const stepTargetDate = dateOutput(currentStep?.targetDate);
+    const timingDate = earliestDashboardDate(recordDueDate, stepTargetDate);
+    const explicitStep = Boolean(currentStep);
     const stepOwner = currentStep?.assignee?.name || request.assignedTo?.name || "Unassigned";
     workItems.push({
       id: `request:${request.id}`,
@@ -383,8 +525,10 @@ export async function getDashboardData(
       owner: stepOwner,
       status: explicitStep ? "Current step" : "Suggested",
       priority: request.priority,
-      dueDate: workDate || undefined,
-      timing: classifyDashboardDate(workDate, businessDate),
+      recordDueDate: recordDueDate || undefined,
+      stepTargetDate: stepTargetDate || undefined,
+      timingDate: timingDate || undefined,
+      timing: classifyDashboardDate(timingDate, businessDate),
       attentionReasons: requestAttentionReasons({ ...request, currentStep }),
       href: workHref("request", request.id, currentStep?.id),
       canComplete: canComplete && explicitStep,
@@ -394,74 +538,103 @@ export async function getDashboardData(
 
   for (const quote of scopedQuotes) {
     if (terminalQuoteStatuses.has(quote.status)) continue;
+    const sourceRequest = quote.sourceRequestIdSnapshot
+      ? requestsById.get(quote.sourceRequestIdSnapshot)
+      : undefined;
+    const recordDueDate = effectiveDashboardDueDate(
+      quote.dueDate, quote.requests[0]?.dueDate, sourceRequest?.dueDate
+    );
+    const currentStep = selectedStepFor("quote", quote.id, quoteStepIds.get(quote.id));
+    const stepTargetDate = dateOutput(currentStep?.targetDate);
+    const timingDate = earliestDashboardDate(recordDueDate, stepTargetDate);
+    const timing = classifyDashboardDate(timingDate, businessDate);
     const reasons: string[] = [];
-    if (isUnassigned(quote.owner)) reasons.push("Needs an owner");
+    if (isUnassigned(quote.assignedTo?.name ?? quote.owner)) reasons.push("Needs an owner");
     if (quote.status === "Review") reasons.push("Awaiting review");
     if (quote.status === "Approved" && !quote.project) reasons.push("Ready for project handoff");
-    if (!reasons.length) continue;
+    if (timing === "later" && !currentStep && !reasons.length) continue;
+    if (timing === "none" && !currentStep && !reasons.length) continue;
     workItems.push({
       id: `quote:${quote.id}`,
       kind: "quote",
       entityId: quote.id,
       reference: quote.quoteNumber,
-      title: quote.title,
+      stepId: currentStep?.id,
+      title: currentStep?.title || currentStep?.body || quote.title,
       context: quote.client?.displayName ?? quote.clientName ?? "Quote",
-      owner: quote.owner,
-      status: quote.status,
-      timing: "none",
+      owner: currentStep?.assignee?.name ?? quote.assignedTo?.name ?? quote.owner,
+      status: currentStep ? "Current step" : quote.status,
+      recordDueDate: recordDueDate || undefined,
+      stepTargetDate: stepTargetDate || undefined,
+      timingDate: timingDate || undefined,
+      timing,
       attentionReasons: reasons,
-      href: workHref("quote", quote.id),
-      canComplete: false
+      href: workHref("quote", quote.id, currentStep?.id),
+      canComplete: canComplete && Boolean(currentStep)
     });
   }
 
   for (const project of scopedProjects) {
     if (terminalProjectStatuses.has(project.status)) continue;
-    const dueDate = dateOutput(project.dueDate);
-    const timing = classifyDashboardDate(dueDate, businessDate);
+    const recordDueDate = dateOutput(project.dueDate);
+    const currentStep = selectedStepFor("project", project.id, projectStepIds.get(project.id));
+    const stepTargetDate = dateOutput(currentStep?.targetDate);
+    const timingDate = earliestDashboardDate(recordDueDate, stepTargetDate);
+    const timing = classifyDashboardDate(timingDate, businessDate);
     const reasons: string[] = [];
     if (!project.assignedTo) reasons.push("Needs an assigned person");
     if (project.status === "On Hold") reasons.push("Project on hold");
-    if (timing === "later" && !reasons.length) continue;
+    if (timing === "later" && !currentStep && !reasons.length) continue;
+    if (timing === "none" && !currentStep && !reasons.length) continue;
     workItems.push({
       id: `project:${project.id}`,
       kind: "project",
       entityId: project.id,
       reference: project.projectNumber,
-      title: project.title,
+      stepId: currentStep?.id,
+      title: currentStep?.title || currentStep?.body || project.title,
       context: project.client.displayName,
-      owner: project.assignedTo?.name ?? "Unassigned",
-      status: project.status,
-      dueDate: dueDate || undefined,
+      owner: currentStep?.assignee?.name ?? project.assignedTo?.name ?? "Unassigned",
+      status: currentStep ? "Current step" : project.status,
+      recordDueDate: recordDueDate || undefined,
+      stepTargetDate: stepTargetDate || undefined,
+      timingDate: timingDate || undefined,
       timing,
       attentionReasons: reasons,
-      href: workHref("project", project.id),
-      canComplete: false
+      href: workHref("project", project.id, currentStep?.id),
+      canComplete: canComplete && Boolean(currentStep)
     });
   }
 
   for (const invoice of scopedInvoices) {
     if (terminalInvoiceStatuses.has(invoice.status)) continue;
-    const dueDate = dateOutput(invoice.dueDate);
-    const timing = classifyDashboardDate(dueDate, businessDate);
+    const recordDueDate = dateOutput(invoice.dueDate);
+    const currentStep = selectedStepFor("invoice", invoice.id, invoiceStepIds.get(invoice.id));
+    const stepTargetDate = dateOutput(currentStep?.targetDate);
+    const timingDate = earliestDashboardDate(recordDueDate, stepTargetDate);
+    const timing = classifyDashboardDate(timingDate, businessDate);
     const reasons: string[] = [];
     if (!invoice.assignedTo) reasons.push("Needs an assigned person");
     if (invoice.status === "Overdue" || timing === "overdue") reasons.push("Payment overdue");
-    if (timing === "later" && !reasons.length) continue;
+    if (timing === "later" && !currentStep && !reasons.length) continue;
+    if (timing === "none" && !currentStep && !reasons.length) continue;
     workItems.push({
       id: `invoice:${invoice.id}`,
       kind: "invoice",
       entityId: invoice.id,
       reference: invoice.invoiceNumber,
-      title: invoice.title,
+      stepId: currentStep?.id,
+      title: currentStep?.title || currentStep?.body || invoice.title,
       context: invoice.client.displayName,
-      owner: invoice.assignedTo?.name ?? "Unassigned",
-      status: invoice.status,
-      dueDate: dueDate || undefined,
+      owner: currentStep?.assignee?.name ?? invoice.assignedTo?.name ?? "Unassigned",
+      status: currentStep ? "Current step" : invoice.status,
+      recordDueDate: recordDueDate || undefined,
+      stepTargetDate: stepTargetDate || undefined,
+      timingDate: timingDate || undefined,
       timing,
       attentionReasons: Array.from(new Set(reasons)),
-      href: workHref("invoice", invoice.id),
-      canComplete: false
+      href: workHref("invoice", invoice.id, currentStep?.id),
+      canComplete: canComplete && Boolean(currentStep)
     });
   }
   workItems.sort(sortWorkItems);
@@ -486,6 +659,7 @@ export async function getDashboardData(
     if (dueDate) addSchedule({
       id: `request-due:${request.id}`,
       kind: "request",
+      dateKind: "due-date",
       reference: request.requestNumber,
       title: `${request.title} due`,
       context,
@@ -493,11 +667,13 @@ export async function getDashboardData(
       timing: classifyDashboardDate(dueDate, businessDate),
       href: workHref("request", request.id)
     });
-    const currentStep = request.updates[0] ?? null;
+    const currentStep = selectedStepFor("request", request.id, requestStepIds.get(request.id));
     const stepDate = dateOutput(currentStep?.targetDate);
     if (stepDate) addSchedule({
-      id: `request-step:${request.id}`,
-      kind: "follow-up",
+      id: `request-step:${currentStep!.id}`,
+      kind: "request",
+      dateKind: "current-step",
+      stepId: currentStep!.id,
       reference: request.requestNumber,
       title: currentStep?.title || currentStep?.body || `Current step for ${request.title}`,
       context,
@@ -506,18 +682,68 @@ export async function getDashboardData(
       href: workHref("request", request.id, currentStep?.id)
     });
   }
+  for (const quote of scopedQuotes) {
+    if (terminalQuoteStatuses.has(quote.status)) continue;
+    const context = quote.client?.displayName ?? quote.clientName ?? "Quote";
+    const sourceRequest = quote.sourceRequestIdSnapshot
+      ? requestsById.get(quote.sourceRequestIdSnapshot)
+      : undefined;
+    const date = effectiveDashboardDueDate(
+      quote.dueDate, quote.requests[0]?.dueDate, sourceRequest?.dueDate
+    );
+    if (date) addSchedule({
+      id: `quote-due:${quote.id}`,
+      kind: "quote",
+      dateKind: "due-date",
+      reference: quote.quoteNumber,
+      title: `${quote.title} due`,
+      context,
+      date,
+      timing: classifyDashboardDate(date, businessDate),
+      href: workHref("quote", quote.id)
+    });
+    const currentStep = selectedStepFor("quote", quote.id, quoteStepIds.get(quote.id));
+    const stepDate = dateOutput(currentStep?.targetDate);
+    if (stepDate) addSchedule({
+      id: `quote-step:${currentStep!.id}`,
+      kind: "quote",
+      dateKind: "current-step",
+      stepId: currentStep!.id,
+      reference: quote.quoteNumber,
+      title: currentStep?.title || currentStep?.body || `Current step for ${quote.title}`,
+      context,
+      date: stepDate,
+      timing: classifyDashboardDate(stepDate, businessDate),
+      href: workHref("quote", quote.id, currentStep?.id)
+    });
+  }
   for (const project of scopedProjects) {
     if (terminalProjectStatuses.has(project.status)) continue;
     const date = dateOutput(project.dueDate);
     if (date) addSchedule({
       id: `project-due:${project.id}`,
       kind: "project",
+      dateKind: "due-date",
       reference: project.projectNumber,
       title: `${project.title} due`,
       context: project.client.displayName,
       date,
       timing: classifyDashboardDate(date, businessDate),
       href: workHref("project", project.id)
+    });
+    const currentStep = selectedStepFor("project", project.id, projectStepIds.get(project.id));
+    const stepDate = dateOutput(currentStep?.targetDate);
+    if (stepDate) addSchedule({
+      id: `project-step:${currentStep!.id}`,
+      kind: "project",
+      dateKind: "current-step",
+      stepId: currentStep!.id,
+      reference: project.projectNumber,
+      title: currentStep?.title || currentStep?.body || `Current step for ${project.title}`,
+      context: project.client.displayName,
+      date: stepDate,
+      timing: classifyDashboardDate(stepDate, businessDate),
+      href: workHref("project", project.id, currentStep?.id)
     });
   }
   for (const invoice of scopedInvoices) {
@@ -526,12 +752,27 @@ export async function getDashboardData(
     if (date) addSchedule({
       id: `invoice-due:${invoice.id}`,
       kind: "invoice",
+      dateKind: "due-date",
       reference: invoice.invoiceNumber,
       title: `${invoice.title} due`,
       context: invoice.client.displayName,
       date,
       timing: classifyDashboardDate(date, businessDate),
       href: workHref("invoice", invoice.id)
+    });
+    const currentStep = selectedStepFor("invoice", invoice.id, invoiceStepIds.get(invoice.id));
+    const stepDate = dateOutput(currentStep?.targetDate);
+    if (stepDate) addSchedule({
+      id: `invoice-step:${currentStep!.id}`,
+      kind: "invoice",
+      dateKind: "current-step",
+      stepId: currentStep!.id,
+      reference: invoice.invoiceNumber,
+      title: currentStep?.title || currentStep?.body || `Current step for ${invoice.title}`,
+      context: invoice.client.displayName,
+      date: stepDate,
+      timing: classifyDashboardDate(stepDate, businessDate),
+      href: workHref("invoice", invoice.id, currentStep?.id)
     });
   }
   scheduleItems.sort((left, right) =>

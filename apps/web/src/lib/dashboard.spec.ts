@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  dashboardCompletionPath,
   dashboardGreeting,
   dashboardRecordHref,
   defaultDashboardPreferences,
@@ -57,5 +58,28 @@ describe("dashboard record links", () => {
     assert.equal(dashboardRecordHref("Request", "rq1"), "/requests/rq1");
     assert.equal(dashboardRecordHref("Quote", "q 1"), "/quotes?record=q%201");
     assert.equal(dashboardRecordHref("Opportunity", "o1"), undefined);
+  });
+
+  it("builds lifecycle-specific current-step completion routes", () => {
+    assert.equal(
+      dashboardCompletionPath({ kind: "request", entityId: "rq 1", stepId: "s/1" }),
+      "/api/requests/rq%201/updates/s%2F1/complete"
+    );
+    assert.equal(
+      dashboardCompletionPath({ kind: "quote", entityId: "q1", stepId: "s1" }),
+      "/api/quotes/q1/updates/s1/complete"
+    );
+    assert.equal(
+      dashboardCompletionPath({ kind: "project", entityId: "p1", stepId: "s1" }),
+      "/api/projects/p1/updates/s1/complete"
+    );
+    assert.equal(
+      dashboardCompletionPath({ kind: "invoice", entityId: "i1", stepId: "s1" }),
+      "/api/invoices/i1/updates/s1/complete"
+    );
+    assert.equal(
+      dashboardCompletionPath({ kind: "quote", entityId: "q1" }),
+      ""
+    );
   });
 });

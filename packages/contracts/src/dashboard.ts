@@ -26,6 +26,7 @@ export type DashboardPreferencesRecord = {
 
 export type DashboardTiming = "overdue" | "today" | "upcoming" | "later" | "none";
 export type DashboardWorkKind = "request" | "quote" | "project" | "invoice";
+export type DashboardDateKind = "due-date" | "current-step";
 
 export type DashboardWorkItem = {
   id: string;
@@ -39,7 +40,9 @@ export type DashboardWorkItem = {
   owner: string;
   status: string;
   priority?: string;
-  dueDate?: string;
+  recordDueDate?: string;
+  stepTargetDate?: string;
+  timingDate?: string;
   timing: DashboardTiming;
   attentionReasons: string[];
   href: string;
@@ -49,7 +52,9 @@ export type DashboardWorkItem = {
 
 export type DashboardScheduleItem = {
   id: string;
-  kind: DashboardWorkKind | "follow-up";
+  kind: DashboardWorkKind;
+  dateKind: DashboardDateKind;
+  stepId?: string;
   reference: string;
   title: string;
   context: string;
