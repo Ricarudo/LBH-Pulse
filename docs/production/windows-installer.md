@@ -1,6 +1,6 @@
 # Pulse 0.1 Windows installer
 
-`Pulse-Setup-0.1.1.exe` is the normal installation and `0.1.0` update path for a Windows operator. It installs the existing production Docker Compose deployment; it is not a desktop wrapper. The operator does not need the Pulse source, Git, Node.js, or npm.
+`Pulse-Setup-0.1.2.exe` is the normal installation and `0.1.1` update path for a Windows operator. It installs the existing production Docker Compose deployment; it is not a desktop wrapper. The operator does not need the Pulse source, Git, Node.js, or npm.
 
 ## Prerequisites
 
@@ -18,13 +18,13 @@ The release process uses Inno Setup 6.7.1. Review [Inno Setup licensing](https:/
 
 ## Install
 
-1. Download `Pulse-Setup-0.1.1.exe` and its `.sha256` file from the GitHub release, not the developer source archives.
+1. Download `Pulse-Setup-0.1.2.exe` and its `.sha256` file from the GitHub release, not the developer source archives.
 2. Verify it in PowerShell:
 
    ```powershell
-   (Get-FileHash .\Pulse-Setup-0.1.1.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-   Get-Content .\Pulse-Setup-0.1.1.exe.sha256
-   Get-AuthenticodeSignature .\Pulse-Setup-0.1.1.exe
+   (Get-FileHash .\Pulse-Setup-0.1.2.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+   Get-Content .\Pulse-Setup-0.1.2.exe.sha256
+   Get-AuthenticodeSignature .\Pulse-Setup-0.1.2.exe
    ```
 
 3. Start the installer as Administrator and choose an HTTPS mode:
@@ -117,14 +117,14 @@ Build locally after supplying a generated release manifest:
 choco install innosetup --version=6.7.1 --require-checksums
 Copy-Item .\release-manifest.json .\installer\windows\generated\release-manifest.json
 & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
-  /DAppVersion=0.1.1 /DSourceRoot="$PWD" .\installer\windows\pulse-setup.iss
+  /DAppVersion=0.1.2 /DSourceRoot="$PWD" .\installer\windows\pulse-setup.iss
 ```
 
 Create a release only from a clean, reviewed commit whose `package.json` version matches the tag:
 
 ```sh
-git tag -a v0.1.1 -m "Pulse 0.1.1"
-git push origin refs/tags/v0.1.1
+git tag -a v0.1.2 -m "Pulse 0.1.2"
+git push origin refs/tags/v0.1.2
 ```
 
 The workflow reruns Linux release gates, resolves build bases, builds Linux/amd64 images, publishes semantic/minor/full-SHA tags, records immutable digests, proves anonymous pulls, runs PowerShell/Pester/PSScriptAnalyzer checks, compiles and optionally Authenticode-signs Setup and Uninstall, writes SHA-256, then publishes the draft GitHub release only after every job succeeds.
@@ -137,7 +137,7 @@ Before publishing, test a Windows VM with no previous Pulse state:
 2. Install in local mode, exercise both CA-consent choices, create the browser Administrator, and finalize setup.
 3. On a separate run, configure private LAN mode with local DNS, trust the exported CA on a client, and verify the LAN hostname while public DNS remains absent.
 4. Reboot Windows and verify Docker starts Pulse and HTTPS readiness passes.
-5. Upgrade a representative `0.1.0` installation with `0.1.1`, rerun `0.1.1` for repair, then test a staged newer manifest and verified pre-update backup.
+5. Upgrade a representative `0.1.1` installation with `0.1.2`, rerun `0.1.2` for repair, then test a staged newer manifest and verified pre-update backup.
 6. Uninstall once with preservation and reinstall against the retained volumes/configuration.
 7. On a disposable second install, confirm data deletion requires the exact phrase and removes only enumerated Pulse volumes.
 8. Inspect `logs` and `state.json` for secrets and verify the recovery identity is ACL-protected.

@@ -35,7 +35,7 @@ type Stage = "request" | "quote" | "project" | "invoice";
 
 type Lineage = {
   requestIds: string[];
-  quoteId: string | null;
+  quoteIds: string[];
   projectId: string | null;
   invoiceIds: string[];
   sourceId: string;
@@ -88,7 +88,7 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
     if (!request) throw new Error("REQUEST_NOT_FOUND");
     return {
       requestIds: [request.id],
-      quoteId: request.relatedQuoteId,
+      quoteIds: request.relatedQuoteId ? [request.relatedQuoteId] : [],
       projectId: request.relatedQuote?.project?.id ?? null,
       invoiceIds: request.relatedQuote?.project?.invoices.map((invoice) => invoice.id) ?? [],
       sourceId: request.id,
@@ -102,6 +102,7 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
       select: {
         id: true,
         quoteNumber: true,
+        sourceRequestIdSnapshot: true,
         requests: { where: { archivedAt: null }, select: { id: true } },
         project: {
           select: {
@@ -111,15 +112,28 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
               select: { id: true }
             }
           }
+        },
+        projectLink: {
+          select: {
+            project: {
+              select: {
+                id: true,
+                invoices: { where: { archivedAt: null }, select: { id: true } }
+              }
+            }
+          }
         }
       }
     });
     if (!quote) throw new Error("QUOTE_NOT_FOUND");
     return {
-      requestIds: quote.requests.map((request) => request.id),
-      quoteId: quote.id,
-      projectId: quote.project?.id ?? null,
-      invoiceIds: quote.project?.invoices.map((invoice) => invoice.id) ?? [],
+      requestIds: Array.from(new Set([
+        ...quote.requests.map((request) => request.id),
+        ...(quote.sourceRequestIdSnapshot ? [quote.sourceRequestIdSnapshot] : [])
+      ])),
+      quoteIds: [quote.id],
+      projectId: quote.projectLink?.project.id ?? quote.project?.id ?? null,
+      invoiceIds: (quote.projectLink?.project.invoices ?? quote.project?.invoices ?? []).map((invoice) => invoice.id),
       sourceId: quote.id,
       sourceNumber: quote.quoteNumber,
       sourceType: "Quote"
@@ -132,8 +146,16 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
         id: true,
         projectNumber: true,
         quoteId: true,
-        quote: {
-          select: { requests: { where: { archivedAt: null }, select: { id: true } } }
+        quoteLinks: {
+          select: {
+            quote: {
+              select: {
+                id: true,
+                sourceRequestIdSnapshot: true,
+                requests: { where: { archivedAt: null }, select: { id: true } }
+              }
+            }
+          }
         },
         invoices: {
           where: { archivedAt: null },
@@ -143,8 +165,14 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
     });
     if (!project) throw new Error("PROJECT_NOT_FOUND");
     return {
-      requestIds: project.quote?.requests.map((request) => request.id) ?? [],
-      quoteId: project.quoteId,
+      requestIds: Array.from(new Set(project.quoteLinks.flatMap((link) => [
+        ...link.quote.requests.map((request) => request.id),
+        ...(link.quote.sourceRequestIdSnapshot ? [link.quote.sourceRequestIdSnapshot] : [])
+      ]))),
+      quoteIds: Array.from(new Set([
+        ...project.quoteLinks.map((link) => link.quote.id),
+        ...(project.quoteId ? [project.quoteId] : [])
+      ])),
       projectId: project.id,
       invoiceIds: project.invoices.map((invoice) => invoice.id),
       sourceId: project.id,
@@ -162,8 +190,16 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
       project: {
         select: {
           quoteId: true,
-          quote: {
-            select: { requests: { where: { archivedAt: null }, select: { id: true } } }
+          quoteLinks: {
+            select: {
+              quote: {
+                select: {
+                  id: true,
+                  sourceRequestIdSnapshot: true,
+                  requests: { where: { archivedAt: null }, select: { id: true } }
+                }
+              }
+            }
           }
         }
       }
@@ -171,8 +207,14 @@ async function lineageFor(stage: Stage, id: string): Promise<Lineage> {
   });
   if (!invoice) throw new Error("INVOICE_NOT_FOUND");
   return {
-    requestIds: invoice.project?.quote?.requests.map((request) => request.id) ?? [],
-    quoteId: invoice.project?.quoteId ?? null,
+    requestIds: Array.from(new Set(invoice.project?.quoteLinks.flatMap((link) => [
+      ...link.quote.requests.map((request) => request.id),
+      ...(link.quote.sourceRequestIdSnapshot ? [link.quote.sourceRequestIdSnapshot] : [])
+    ]) ?? [])),
+    quoteIds: Array.from(new Set([
+      ...(invoice.project?.quoteLinks.map((link) => link.quote.id) ?? []),
+      ...(invoice.project?.quoteId ? [invoice.project.quoteId] : [])
+    ])),
     projectId: invoice.projectId,
     invoiceIds: [invoice.id],
     sourceId: invoice.id,
@@ -274,11 +316,11 @@ export async function assertDocumentAccess(
 function visibleWhere(stage: Stage, lineage: Lineage) {
   if (stage === "request") return { requestId: lineage.sourceId };
   if (stage === "quote") {
-    return { OR: [{ requestId: { in: lineage.requestIds } }, { quoteId: lineage.quoteId! }] };
+    return { OR: [{ requestId: { in: lineage.requestIds } }, { quoteId: { in: lineage.quoteIds } }] };
   }
   const upstream = [
     { requestId: { in: lineage.requestIds } },
-    ...(lineage.quoteId ? [{ quoteId: lineage.quoteId }] : []),
+    ...(lineage.quoteIds.length ? [{ quoteId: { in: lineage.quoteIds } }] : []),
     ...(lineage.projectId ? [{ projectId: lineage.projectId }] : [])
   ];
   if (stage === "project") return { OR: upstream };
@@ -291,16 +333,16 @@ function visibleWhere(stage: Stage, lineage: Lineage) {
 }
 
 async function sourceNumbers(lineage: Lineage) {
-  const [requests, quote, project, invoices] = await Promise.all([
+  const [requests, quotes, project, invoices] = await Promise.all([
     lineage.requestIds.length
       ? prisma.request.findMany({
           where: { id: { in: lineage.requestIds } },
           select: { id: true, requestNumber: true }
         })
       : [],
-    lineage.quoteId
-      ? prisma.quote.findUnique({ where: { id: lineage.quoteId }, select: { id: true, quoteNumber: true } })
-      : null,
+    lineage.quoteIds.length
+      ? prisma.quote.findMany({ where: { id: { in: lineage.quoteIds } }, select: { id: true, quoteNumber: true } })
+      : [],
     lineage.projectId
       ? prisma.project.findUnique({
           where: { id: lineage.projectId },
@@ -316,7 +358,7 @@ async function sourceNumbers(lineage: Lineage) {
   ]);
   return new Map<string, string>([
     ...requests.map((request) => [request.id, request.requestNumber] as const),
-    ...(quote ? [[quote.id, quote.quoteNumber] as const] : []),
+    ...quotes.map((quote) => [quote.id, quote.quoteNumber] as const),
     ...(project ? [[project.id, project.projectNumber] as const] : []),
     ...invoices.map((invoice) => [invoice.id, invoice.invoiceNumber] as const)
   ]);
@@ -520,7 +562,7 @@ export async function uploadDocument(
         deletedAt: null,
         OR: [
           { requestId: { in: lineage.requestIds } },
-          ...(lineage.quoteId ? [{ quoteId: lineage.quoteId }] : []),
+          ...(lineage.quoteIds.length ? [{ quoteId: { in: lineage.quoteIds } }] : []),
           ...(lineage.projectId ? [{ projectId: lineage.projectId }] : []),
           ...(lineage.invoiceIds.length ? [{ invoiceId: { in: lineage.invoiceIds } }] : [])
         ]
@@ -547,14 +589,14 @@ export async function uploadDocument(
     let document;
     try {
       document = await prisma.$transaction(async (tx) => {
-        const lockKey = lineage.quoteId ?? lineage.projectId ?? lineage.invoiceIds[0] ?? lineage.requestIds[0] ?? id;
+        const lockKey = lineage.quoteIds[0] ?? lineage.projectId ?? lineage.invoiceIds[0] ?? lineage.requestIds[0] ?? id;
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`documents:${lockKey}`}))`;
         const finalQuota = await tx.lifecycleDocument.aggregate({
           where: {
             deletedAt: null,
             OR: [
               { requestId: { in: lineage.requestIds } },
-              ...(lineage.quoteId ? [{ quoteId: lineage.quoteId }] : []),
+              ...(lineage.quoteIds.length ? [{ quoteId: { in: lineage.quoteIds } }] : []),
               ...(lineage.projectId ? [{ projectId: lineage.projectId }] : []),
               ...(lineage.invoiceIds.length ? [{ invoiceId: { in: lineage.invoiceIds } }] : [])
             ]

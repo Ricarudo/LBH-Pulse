@@ -54,6 +54,7 @@ const legacyQuote: QuoteRecord = {
   requestNumber: "RQ-1001",
   trades: [],
   projectId: null,
+  projectReference: null,
   createdAt: "2026-07-09",
   updatedAt: "2026-07-09T12:00:00.000Z",
   documents: [],

@@ -6,6 +6,7 @@ import { unlink } from "node:fs/promises";
 import { diskStorage } from "multer";
 import {
   convertQuoteSchema,
+  approveQuoteSchema,
   createQuoteRevisionSchema,
   createQuoteSchema,
   replaceLegacyQuoteFinancialsSchema,
@@ -147,6 +148,12 @@ export class QuotesController {
   async convert(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, { allOf: ["quotes:write", "projects:write"] });
     return { project: await this.quotes.convert(id, convertQuoteSchema.parse(body), user) };
+  }
+  @Post(":id/approve")
+  @HttpCode(200)
+  async approve(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, { allOf: ["quotes:write", "projects:write"] });
+    return this.quotes.approve(id, approveQuoteSchema.parse(body ?? {}), user);
   }
   @Post(":id/revisions")
   async createRevision(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {

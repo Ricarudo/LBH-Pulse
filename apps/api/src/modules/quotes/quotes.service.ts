@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import type {
   ConvertQuoteInput,
+  ApproveQuoteInput,
   CreateQuoteRevisionInput,
   CreateQuoteInput,
   ReplaceLegacyQuoteFinancialsInput,
@@ -11,6 +12,7 @@ import type {
 } from "@pulse/contracts/work";
 import {
   archiveQuote,
+  approveQuoteToProject,
   convertQuoteToProject,
   createQuote,
   createQuoteRevision,
@@ -68,6 +70,10 @@ export class QuotesService {
 
   convert(id: string, input: ConvertQuoteInput, user: AuthenticatedUser) {
     return convertQuoteToProject(id, input, user);
+  }
+
+  approve(id: string, input: ApproveQuoteInput, user: AuthenticatedUser) {
+    return approveQuoteToProject(id, input, user);
   }
 
 

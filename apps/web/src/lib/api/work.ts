@@ -8,12 +8,17 @@ import type {
   InvoiceDetailResponse,
   InvoiceResponse,
   CreateProjectTaskInput,
+  CreateProjectExpenseInput,
   ProjectDetailResponse,
+  ProjectRecord,
   ProjectResponse,
   ProjectTaskResponse,
   ProjectTasksResponse,
+  ProjectExpenseResponse,
+  ProjectExpensesResponse,
   ReorderProjectTasksInput,
   UpdateProjectTaskInput,
+  UpdateProjectExpenseInput,
   UpdateInvoiceInput,
   UpdateProjectInput
 } from "@pulse/contracts/work";
@@ -54,6 +59,13 @@ export function fetchWorkRecord(stage: WorkApiStage, recordId: string, options: 
 
 export function fetchWorkUsers(stage: WorkApiStage, options: ReadOptions = {}) {
   return apiRequest<WorkUsersResponse>(`/api/${collection(stage)}/team-members`, {
+    ...options,
+    method: "GET"
+  });
+}
+
+export function fetchProjects(options: ReadOptions = {}) {
+  return apiRequest<{ projects: ProjectRecord[] }>("/api/projects", {
     ...options,
     method: "GET"
   });
@@ -164,4 +176,32 @@ export function reorderProjectTasks(recordId: string, input: ReorderProjectTasks
     method: "PATCH",
     json: input
   });
+}
+
+export function createProjectChangeOrder(recordId: string) {
+  return apiRequest<{ quote: { id: string } }>(workPath("project", recordId, "/change-orders"), {
+    method: "POST",
+    json: {}
+  });
+}
+
+export function createProjectExpense(recordId: string, input: CreateProjectExpenseInput) {
+  return apiRequest<ProjectExpenseResponse>(workPath("project", recordId, "/expenses"), {
+    method: "POST",
+    json: input
+  });
+}
+
+export function updateProjectExpense(recordId: string, expenseId: string, input: UpdateProjectExpenseInput) {
+  return apiRequest<ProjectExpenseResponse>(
+    workPath("project", recordId, `/expenses/${encodeURIComponent(expenseId)}`),
+    { method: "PATCH", json: input }
+  );
+}
+
+export function archiveProjectExpense(recordId: string, expenseId: string) {
+  return apiRequest<ProjectExpensesResponse>(
+    workPath("project", recordId, `/expenses/${encodeURIComponent(expenseId)}`),
+    { method: "DELETE" }
+  );
 }

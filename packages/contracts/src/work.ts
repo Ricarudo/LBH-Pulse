@@ -58,6 +58,73 @@ export type ProjectQuoteFinancialSnapshot = {
   financialSummary: QuoteFinancialSummary;
 };
 
+export const projectQuoteRoles = ["ORIGINAL", "CHANGE_ORDER"] as const;
+export type ProjectQuoteRole = (typeof projectQuoteRoles)[number];
+
+export type QuoteProjectReference = {
+  projectId: string;
+  projectNumber: string;
+  projectTitle: string;
+  role: ProjectQuoteRole;
+  sequence: number;
+  calculationModeLocked: boolean;
+};
+
+export type ProjectQuoteSummary = {
+  linkId: string;
+  quoteId: string;
+  quoteNumber: string;
+  title: string;
+  role: ProjectQuoteRole;
+  sequence: number;
+  status: QuoteStatus;
+  calculationMode: QuoteCalculationMode;
+  approvedAt: string;
+  salesPrice: number;
+  estimatedCost: number;
+  taxAmount: number;
+  finalCustomerTotal: number;
+};
+
+export const projectExpenseCategories = [
+  "Materials",
+  "Labor",
+  "Subcontractor",
+  "Equipment",
+  "Travel",
+  "Permits/Fees",
+  "Other"
+] as const;
+export type ProjectExpenseCategory = (typeof projectExpenseCategories)[number];
+
+export type ProjectExpenseRecord = {
+  id: string;
+  projectId: string;
+  occurredOn: string;
+  category: ProjectExpenseCategory;
+  vendor: string;
+  description: string;
+  amount: number;
+  receiptDocumentId: string | null;
+  createdByName: string;
+  updatedByName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectFinancialSummary = {
+  approvedSalesPrice: number;
+  approvedEstimatedCost: number;
+  approvedTaxAmount: number;
+  approvedCustomerTotal: number;
+  currentExpense: number;
+  plannedGrossProfit: number;
+  remainingCostAllowance: number;
+  costVariance: number;
+  estimatedCostPercent: number | null;
+  expenseBurnPercent: number | null;
+};
+
 export type LifecycleContextSummary = {
   id: string;
   details: string;
@@ -150,6 +217,7 @@ export type QuoteRecord = {
   requestNumber: string;
   trades: string[];
   projectId: string | null;
+  projectReference: QuoteProjectReference | null;
   createdAt: string;
   updatedAt: string;
   documents: LifecycleDocumentRecord[];
@@ -218,6 +286,7 @@ export type ProjectRecord = {
   site: LifecycleSiteSummary | null;
   assignedToId: string | null;
   assignedTo: RequestAssignee | null;
+  collaborators: RequestAssignee[];
   status: ProjectStatus;
   budget: number;
   sourceQuoteRevisionNumber: number | null;
@@ -321,8 +390,13 @@ export type WorkUpdateState = {
 };
 
 export type ProjectDetailRecord = ProjectRecord & WorkUpdateState & {
+  contactOptions: ClientContact[];
+  siteOptions: LifecycleSiteSummary[];
   tasks: ProjectTaskRecord[];
   progress: ProjectProgress;
+  quoteLifecycle: ProjectQuoteSummary[];
+  expenses: ProjectExpenseRecord[];
+  financialSummary: ProjectFinancialSummary;
 };
 export type InvoiceDetailRecord = InvoiceRecord & WorkUpdateState & {
   billingSummary: BillingProjectSummary;
@@ -353,6 +427,8 @@ export type ProjectTasksResponse = {
   tasks: ProjectTaskRecord[];
   progress: ProjectProgress;
 };
+export type ProjectExpenseResponse = { expense: ProjectExpenseRecord; financialSummary: ProjectFinancialSummary };
+export type ProjectExpensesResponse = { expenses: ProjectExpenseRecord[]; financialSummary: ProjectFinancialSummary };
 export type QuoteRevisionResponse = { revision: QuoteRevisionDetailRecord };
 
 import { z } from "zod";
@@ -457,11 +533,12 @@ export const updateProjectSchema = z.object({
   contactId: assignedToId.optional(),
   siteId: assignedToId.optional(),
   assignedToId: assignedToId.optional(),
+  collaboratorIds: z.array(id).max(100).transform((values) => Array.from(new Set(values))).optional(),
   lifecycleDetails,
   status: z.enum(projectStatuses).optional(),
   budget: money.optional(),
-  startDate: optionalDate.optional(),
-  dueDate: optionalDate.optional()
+  startDate: nullableDate.optional(),
+  dueDate: nullableDate.optional()
 });
 
 export const createInvoiceSchema = z.object({
@@ -496,6 +573,30 @@ export const convertQuoteSchema = z.object({
   startDate: optionalDate,
   dueDate: optionalDate
 });
+
+export const approveQuoteSchema = convertQuoteSchema.extend({
+  projectId: optionalId
+});
+
+export const createChangeOrderSchema = z.object({}).strict();
+
+export const createProjectExpenseSchema = z.object({
+  occurredOn: optionalDate,
+  category: z.enum(projectExpenseCategories),
+  vendor: z.string().trim().max(200).optional(),
+  description: z.string().trim().min(1).max(1000),
+  amount: z.coerce.number().positive().max(9999999999),
+  receiptDocumentId: assignedToId.optional()
+}).strict();
+
+export const updateProjectExpenseSchema = z.object({
+  occurredOn: optionalDate.optional(),
+  category: z.enum(projectExpenseCategories).optional(),
+  vendor: z.string().trim().max(200).nullable().optional(),
+  description: z.string().trim().min(1).max(1000).optional(),
+  amount: z.coerce.number().positive().max(9999999999).optional(),
+  receiptDocumentId: assignedToId.optional()
+}).strict();
 
 export const createProjectInvoiceSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
@@ -535,6 +636,10 @@ export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;
 export type ConvertQuoteInput = z.infer<typeof convertQuoteSchema>;
+export type ApproveQuoteInput = z.infer<typeof approveQuoteSchema>;
+export type CreateChangeOrderInput = z.infer<typeof createChangeOrderSchema>;
+export type CreateProjectExpenseInput = z.infer<typeof createProjectExpenseSchema>;
+export type UpdateProjectExpenseInput = z.infer<typeof updateProjectExpenseSchema>;
 export type CreateProjectInvoiceInput = z.infer<typeof createProjectInvoiceSchema>;
 export type CreateProjectTaskInput = z.infer<typeof createProjectTaskSchema>;
 export type UpdateProjectTaskInput = z.infer<typeof updateProjectTaskSchema>;

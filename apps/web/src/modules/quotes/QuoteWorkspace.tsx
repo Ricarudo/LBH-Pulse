@@ -33,7 +33,7 @@ import {
   addCatalogQuoteItem,
   addQuoteKit,
   createQuoteRevision,
-  convertQuoteToProject,
+  approveQuote,
   fetchQuote,
   fetchQuoteRevision,
   fetchQuoteUpdateTeamMembers,
@@ -47,6 +47,7 @@ import {
   updateQuoteProposal
 } from "@/lib/api/quotes";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
+import { fetchProjects } from "@/lib/api/work";
 import { normalizeQuoteDetailRecord } from "@/lib/quoteDetail";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import {
@@ -63,6 +64,7 @@ import type {
   LegacyQuoteFinancials,
   QuoteCalculationMode,
   QuoteFinancialSummary,
+  ProjectRecord,
   QuoteRecord,
   QuoteRevisionDetailRecord,
   QuoteVersionSummary
@@ -94,6 +96,8 @@ type QuoteWorkspaceProps = {
   quoteId: string;
   initialTab?: LifecycleTab;
 };
+
+type ProjectHandoffMode = "create" | "attach";
 
 type AdHocDraft = {
   section: QuoteBomSection;
@@ -255,6 +259,13 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   const [modeDialogOpen, setModeDialogOpen] = useState(false);
   const [targetMode, setTargetMode] = useState<QuoteCalculationMode | null>(null);
   const [projectConversionOpen, setProjectConversionOpen] = useState(false);
+  const [projectStartDate, setProjectStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [projectDueDate, setProjectDueDate] = useState("");
+  const [projectHandoffMode, setProjectHandoffMode] = useState<ProjectHandoffMode>("create");
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [projectOptions, setProjectOptions] = useState<ProjectRecord[]>([]);
+  const [projectOptionsLoading, setProjectOptionsLoading] = useState(false);
+  const [projectOptionsError, setProjectOptionsError] = useState("");
   const [selectedVersion, setSelectedVersion] = useState<QuoteRevisionDetailRecord | null>(null);
   const [historyLoadingVersion, setHistoryLoadingVersion] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -291,6 +302,29 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
     const timeout = window.setTimeout(() => setToast(""), 4200);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    if (!projectConversionOpen || !quote || quote.projectReference) return;
+    const controller = new AbortController();
+    setProjectOptionsLoading(true);
+    setProjectOptionsError("");
+    void fetchProjects({ cache: "no-store", signal: controller.signal })
+      .then((data) => {
+        setProjectOptions(data.projects.filter((project) =>
+          project.clientId === quote.clientId && !["Completed", "Cancelled"].includes(project.status)
+        ));
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setProjectOptions([]);
+          setProjectOptionsError(error instanceof Error ? error.message : "Unable to load projects.");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setProjectOptionsLoading(false);
+      });
+    return () => controller.abort();
+  }, [projectConversionOpen, quote?.clientId, quote?.projectReference]);
 
   useEffect(() => {
     if (!addOpen) return;
@@ -418,12 +452,24 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
 
   function requestStatusChange(status: QuoteRecord["status"]) {
     if (!quote || status === quote.status) return;
+    if (status === "Approved") {
+      openProjectHandoff();
+      return;
+    }
     if (status === "On Hold") {
       setHoldReason("");
       setHoldDialogOpen(true);
       return;
     }
     void patchQuote({ status });
+  }
+
+  function openProjectHandoff() {
+    setProjectStartDate(new Date().toISOString().slice(0, 10));
+    setProjectDueDate("");
+    setProjectHandoffMode("create");
+    setSelectedProjectId("");
+    setProjectConversionOpen(true);
   }
 
   async function saveQuoteDetails() {
@@ -768,13 +814,22 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
 
   async function convertToProject() {
     if (!quote || busy) return;
+    if (!quote.projectReference && projectHandoffMode === "attach" && !selectedProjectId) {
+      setToast("Select the existing project for this change order.");
+      return;
+    }
     try {
       setBusy(true);
-      const data = await convertQuoteToProject(quote.id);
+      const data = await approveQuote(quote.id, {
+        ...(projectHandoffMode === "create" ? {
+          startDate: projectStartDate || undefined,
+          dueDate: projectDueDate || undefined
+        } : { projectId: selectedProjectId })
+      });
       setProjectConversionOpen(false);
       router.push(`/projects/${data.project.id}`);
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Unable to convert this quote.");
+      setToast(error instanceof Error ? error.message : "Unable to approve and hand off this quote.");
     } finally {
       setBusy(false);
     }
@@ -875,7 +930,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
               <RotateCcw size={16} />Request revision
             </button>
           ) : null}
-          {quote.status === "Draft" && !quote.projectId ? (
+          {quote.status === "Draft" && (!quote.projectId || quote.projectReference?.calculationModeLocked === false) ? (
             <button
               className="toolbar-button compact"
               type="button"
@@ -886,7 +941,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             </button>
           ) : null}
           {quote.status === "Approved" && !quote.projectId ? (
-            <button className="primary-button compact" type="button" disabled={!canWrite || busy} onClick={() => setProjectConversionOpen(true)}>Convert to project</button>
+            <button className="primary-button compact" type="button" disabled={!canWrite || busy} onClick={openProjectHandoff}>Complete project handoff</button>
           ) : null}
           {quote.calculationMode === "PULSE" ? <>
             <button className="toolbar-button compact" type="button" onClick={() => setAdHocOpen(true)} disabled={!canEditFinancials}><Plus size={16} />Ad hoc line</button>
@@ -897,6 +952,15 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
 
       <section className="quote-context-grid lifecycle-key-details" aria-label="Quote context">
         <article><span>Request</span><strong>{quote.context.requestNumber || "Manual quote"}</strong><p>{quote.context.requestTitle || quote.title}</p></article>
+        {quote.projectReference ? (
+          <article className="quote-context-linked">
+            <Link href={`/projects/${quote.projectReference.projectId}`}>
+              <span>{quote.projectReference.role === "CHANGE_ORDER" ? `Change order CO-${quote.projectReference.sequence}` : "Project"}</span>
+              <strong>{quote.projectReference.projectNumber}</strong>
+              <p>{quote.projectReference.projectTitle}</p>
+            </Link>
+          </article>
+        ) : null}
         <article className={quote.clientId ? "quote-context-linked lifecycle-client-key" : undefined}>
           {quote.clientId ? (
             <Link
@@ -1570,7 +1634,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
               </div>
               <div className="record-conversion-summary">
                 <strong>No automatic conversion will be attempted.</strong>
-                <span>This action is available only while the quote is a draft and is not connected to a project.</span>
+                <span>{quote.projectReference?.calculationModeLocked === false ? "This imported project has no original quote, so this draft change order may use either calculation mode." : "This action is available only while the quote is a draft and is not connected to a project."}</span>
               </div>
               <div className="record-dialog-actions">
                 <button type="button" onClick={() => setModeDialogOpen(false)}>Keep current mode</button>
@@ -1587,7 +1651,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             <section className="record-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-project-conversion-title">
               <div className="record-dialog-heading">
                 <span className="success"><FileText size={19} /></span>
-                <div><h2 id="quote-project-conversion-title">Convert approved quote?</h2><p>The project will use the pre-tax contract value as its operating budget.</p></div>
+                <div><h2 id="quote-project-conversion-title">{quote.projectReference?.role === "CHANGE_ORDER" ? "Approve change order?" : projectHandoffMode === "attach" ? "Approve and attach change order?" : "Approve and create project?"}</h2><p>The accepted financial snapshot will become part of project delivery.</p></div>
                 <button type="button" aria-label="Close dialog" onClick={() => setProjectConversionOpen(false)}><X size={19} /></button>
               </div>
               <div className="record-conversion-summary">
@@ -1595,9 +1659,19 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
                 <span>{formatMoney(quote.financialSummary.taxAmount)} tax remains separate · {formatMoney(quote.financialSummary.finalCustomerTotal)} customer total</span>
                 <p>No due date is inferred from estimated duration without a confirmed start date.</p>
               </div>
+              {!quote.projectReference ? <>
+                <div className="quote-handoff-options" role="radiogroup" aria-label="Project handoff method">
+                  <button type="button" role="radio" aria-checked={projectHandoffMode === "create"} className={projectHandoffMode === "create" ? "selected" : ""} onClick={() => { setProjectHandoffMode("create"); setSelectedProjectId(""); }}><strong>Create new project</strong><span>Use this quote as the original approved scope.</span></button>
+                  <button type="button" role="radio" aria-checked={projectHandoffMode === "attach"} className={projectHandoffMode === "attach" ? "selected" : ""} onClick={() => setProjectHandoffMode("attach")}><strong>Attach to existing project</strong><span>Record this imported quote as the next change order.</span></button>
+                </div>
+                {projectHandoffMode === "create" ? <div className="work-queue-form-grid quote-approval-dates">
+                  <label>Project start date<input type="date" value={projectStartDate} onChange={(event) => setProjectStartDate(event.target.value)} /></label>
+                  <label>Project due date (optional)<input type="date" min={projectStartDate || undefined} value={projectDueDate} onChange={(event) => setProjectDueDate(event.target.value)} /></label>
+                </div> : <label className="quote-handoff-project-select">Existing project<select autoFocus value={selectedProjectId} disabled={projectOptionsLoading} onChange={(event) => setSelectedProjectId(event.target.value)}><option value="">{projectOptionsLoading ? "Loading projects…" : "Select a project"}</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.projectNumber} · {project.title} · {project.status}</option>)}</select>{projectOptionsError ? <small>{projectOptionsError}</small> : !projectOptionsLoading && projectOptions.length === 0 ? <small>No active projects were found for {quote.clientName}.</small> : <small>Only active projects for {quote.clientName} are shown.</small>}</label>}
+              </> : null}
               <div className="record-dialog-actions">
                 <button type="button" onClick={() => setProjectConversionOpen(false)}>Cancel</button>
-                <button className="primary" type="button" disabled={busy} onClick={() => void convertToProject()}>{busy ? "Converting…" : "Create project"}</button>
+                <button className="primary" type="button" disabled={busy || (!quote.projectReference && projectHandoffMode === "attach" ? !selectedProjectId : Boolean(projectStartDate && projectDueDate && projectDueDate < projectStartDate))} onClick={() => void convertToProject()}>{busy ? "Approving…" : quote.projectReference?.role === "CHANGE_ORDER" || projectHandoffMode === "attach" ? "Approve change order" : "Approve and create project"}</button>
               </div>
             </section>
           </div>

@@ -1,6 +1,6 @@
 {
   "name": "@pulse/api",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "scripts": {
     "dev": "npm run prisma:generate && tsx watch src/main.ts",

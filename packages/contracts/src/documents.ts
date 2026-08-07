@@ -60,6 +60,7 @@ export const projectDocumentCategories = [
   "Permit",
   "Site Photo",
   "Closeout",
+  "Receipt",
   "Other"
 ] as const;
 

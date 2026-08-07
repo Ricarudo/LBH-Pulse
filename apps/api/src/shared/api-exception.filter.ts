@@ -309,6 +309,10 @@ const errorMap: Record<string, ErrorPayload> = {
     status: 409,
     body: { error: "Use Mark as sent so Pulse can lock the quote and record the delivery event." }
   },
+  QUOTE_APPROVAL_ACTION_REQUIRED: {
+    status: 409,
+    body: { error: "Use Approve and create project so Pulse records the client acceptance and delivery handoff together." }
+  },
   QUOTE_OUTCOME_REQUIRES_SENT: {
     status: 409,
     body: { error: "Mark the quote as sent before recording a client outcome or expiration." }
@@ -409,6 +413,11 @@ const errorMap: Record<string, ErrorPayload> = {
     body: { error: "Required item relations contain a cycle." }
   },
   PROJECT_NOT_FOUND: { status: 404, body: { error: "Project not found." } },
+  PROJECT_SOURCE_QUOTE_REQUIRED: { status: 409, body: { error: "Create projects by approving an original quote." } },
+  PROJECT_CHANGE_ORDER_STATUS_INVALID: { status: 409, body: { error: "Reopen this project before creating another change order." } },
+  PROJECT_BUDGET_QUOTE_DERIVED: { status: 409, body: { error: "This project budget is derived from its approved original and change-order quotes." } },
+  PROJECT_EXPENSE_NOT_FOUND: { status: 404, body: { error: "Project expense not found." } },
+  PROJECT_EXPENSE_RECEIPT_INVALID: { status: 400, body: { error: "Choose a receipt from this project's files." } },
   PROJECT_TASK_NOT_FOUND: { status: 404, body: { error: "Project task not found." } },
   PROJECT_TASK_ORDER_INVALID: { status: 409, body: { error: "The task list changed. Refresh before reordering it." } },
   INVOICE_NOT_FOUND: { status: 404, body: { error: "Invoice not found." } },

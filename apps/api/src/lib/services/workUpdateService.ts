@@ -30,7 +30,7 @@ type WorkThread = {
   number: string;
   title: string;
   requestIds: string[];
-  quoteId: string | null;
+  quoteIds: string[];
   projectId: string;
   invoiceId: string | null;
   currentStepId: string | null;
@@ -116,6 +116,18 @@ async function workThread(
             sourceRequestIdSnapshot: true,
             requests: { select: { id: true, currentStepId: true } }
           }
+        },
+        quoteLinks: {
+          select: {
+            quote: {
+              select: {
+                id: true,
+                currentStepId: true,
+                sourceRequestIdSnapshot: true,
+                requests: { select: { id: true, currentStepId: true } }
+              }
+            }
+          }
         }
       }
     });
@@ -125,8 +137,14 @@ async function workThread(
       id: project.id,
       number: project.projectNumber,
       title: project.title,
-      requestIds: quoteRequestIds(project.quote),
-      quoteId: project.quoteId,
+      requestIds: Array.from(new Set([
+        ...quoteRequestIds(project.quote),
+        ...project.quoteLinks.flatMap((link) => quoteRequestIds(link.quote))
+      ])),
+      quoteIds: Array.from(new Set([
+        ...(project.quoteId ? [project.quoteId] : []),
+        ...project.quoteLinks.map((link) => link.quote.id)
+      ])),
       projectId: project.id,
       invoiceId: null,
       currentStepId: project.currentStepId,
@@ -153,6 +171,18 @@ async function workThread(
               sourceRequestIdSnapshot: true,
               requests: { select: { id: true, currentStepId: true } }
             }
+          },
+          quoteLinks: {
+            select: {
+              quote: {
+                select: {
+                  id: true,
+                  currentStepId: true,
+                  sourceRequestIdSnapshot: true,
+                  requests: { select: { id: true, currentStepId: true } }
+                }
+              }
+            }
           }
         }
       }
@@ -164,8 +194,14 @@ async function workThread(
     id: invoice.id,
     number: invoice.invoiceNumber,
     title: invoice.title,
-    requestIds: quoteRequestIds(invoice.project?.quote),
-    quoteId: invoice.project?.quoteId ?? null,
+    requestIds: Array.from(new Set([
+      ...quoteRequestIds(invoice.project?.quote),
+      ...(invoice.project?.quoteLinks.flatMap((link) => quoteRequestIds(link.quote)) ?? [])
+    ])),
+    quoteIds: Array.from(new Set([
+      ...(invoice.project?.quoteId ? [invoice.project.quoteId] : []),
+      ...(invoice.project?.quoteLinks.map((link) => link.quote.id) ?? [])
+    ])),
     projectId: invoice.projectId ?? invoice.project?.id ?? "",
     invoiceId: invoice.id,
     currentStepId: invoice.currentStepId,
@@ -177,7 +213,7 @@ async function workThread(
 function threadWhere(thread: WorkThread) {
   const parents: Prisma.RequestUpdateWhereInput[] = [
     ...(thread.requestIds.length ? [{ requestId: { in: thread.requestIds } }] : []),
-    ...(thread.quoteId ? [{ quoteId: thread.quoteId }] : []),
+    ...(thread.quoteIds.length ? [{ quoteId: { in: thread.quoteIds } }] : []),
     ...(thread.projectId ? [{ projectId: thread.projectId }] : []),
     ...(thread.invoiceId ? [{ invoiceId: thread.invoiceId }] : [])
   ];

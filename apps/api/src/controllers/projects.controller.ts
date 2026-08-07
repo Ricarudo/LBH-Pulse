@@ -4,13 +4,27 @@ import type { Express, Request } from "express";
 import { mkdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { diskStorage } from "multer";
-import { archiveProject, createInvoiceFromProject, createProject, getProjectById, listProjects, updateProject } from "@/lib/services/workService";
+import {
+  archiveProject,
+  archiveProjectExpense,
+  createInvoiceFromProject,
+  createProject,
+  createProjectChangeOrder,
+  createProjectExpense,
+  getProjectById,
+  listProjects,
+  updateProject,
+  updateProjectExpense
+} from "@/lib/services/workService";
 import {
   createProjectInvoiceSchema,
+  createChangeOrderSchema,
+  createProjectExpenseSchema,
   createProjectSchema,
   createProjectTaskSchema,
   reorderProjectTasksSchema,
   updateProjectSchema,
+  updateProjectExpenseSchema,
   updateProjectTaskSchema
 } from "@pulse/contracts/work";
 import {
@@ -64,6 +78,32 @@ export class ProjectsController {
   @Post(":id/invoices") async invoice(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, { allOf: ["projects:write", "billing:write"] });
     return { invoice: await createInvoiceFromProject(id, createProjectInvoiceSchema.parse(body), user) };
+  }
+  @Post(":id/change-orders") async changeOrder(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, { allOf: ["projects:write", "quotes:write"] });
+    createChangeOrderSchema.parse(body ?? {});
+    return { quote: await createProjectChangeOrder(id, user) };
+  }
+  @Post(":id/expenses") async createExpense(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const user = await this.auth.requireUser(request, "projects:write");
+    return createProjectExpense(id, createProjectExpenseSchema.parse(body), user);
+  }
+  @Patch(":id/expenses/:expenseId") async updateExpense(
+    @Req() request: Request,
+    @Param("id") id: string,
+    @Param("expenseId") expenseId: string,
+    @Body() body: unknown
+  ) {
+    const user = await this.auth.requireUser(request, "projects:write");
+    return updateProjectExpense(id, expenseId, updateProjectExpenseSchema.parse(body), user);
+  }
+  @Delete(":id/expenses/:expenseId") async archiveExpense(
+    @Req() request: Request,
+    @Param("id") id: string,
+    @Param("expenseId") expenseId: string
+  ) {
+    const user = await this.auth.requireUser(request, "projects:write");
+    return archiveProjectExpense(id, expenseId, user);
   }
   @Post(":id/tasks") async createTask(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
     const user = await this.auth.requireUser(request, "projects:write");

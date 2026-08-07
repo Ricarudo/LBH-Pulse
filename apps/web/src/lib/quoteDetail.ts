@@ -34,6 +34,10 @@ export function normalizeQuoteDetailRecord(
     contact: quote.contact ?? null,
     dueDate: quote.dueDate ?? "",
     collaborators: quote.collaborators ?? [],
+    projectReference: quote.projectReference ? {
+      ...quote.projectReference,
+      calculationModeLocked: quote.projectReference.calculationModeLocked ?? true
+    } : null,
     contactOptions: quote.contactOptions ?? (quote.contact ? [quote.contact] : []),
     siteOptions: quote.siteOptions ?? (quote.site ? [quote.site] : []),
     trades: quote.trades ?? categoriesFromContext(quote.context?.serviceCategory),

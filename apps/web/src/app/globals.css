@@ -45,6 +45,520 @@
   color-scheme: light;
 }
 
+/* Project workspace v2: Pulse surfaces with Material elevation, HIG spacing, and Lightning density. */
+.project-workspace-v2 {
+  display: grid;
+  gap: 24px;
+}
+
+.work-queue-source-note {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid #c9d8ea;
+  border-radius: 10px;
+  background: #f4f8fd;
+  color: #42566c;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.quote-approval-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 20px 24px;
+}
+
+.quote-approval-dates label {
+  display: grid;
+  gap: 7px;
+  color: #42566c;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.quote-approval-dates input {
+  min-height: 44px;
+  border: 1px solid #aebdcd;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 11px;
+  color: #172b4d;
+  font: inherit;
+}
+
+.quote-approval-dialog-icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #e3f3e8;
+  color: #25683b;
+}
+
+.quote-handoff-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 24px;
+}
+
+.record-dialog .quote-handoff-options {
+  padding: 0;
+}
+
+.quote-handoff-options > button {
+  display: grid;
+  min-height: 76px;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--pulse-line);
+  border-radius: 12px;
+  background: var(--pulse-surface);
+  color: var(--pulse-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.quote-handoff-options > button:hover {
+  border-color: #8ca5d8;
+  background: var(--pulse-surface-soft);
+}
+
+.quote-handoff-options > button.selected {
+  border-color: var(--pulse-blue);
+  background: var(--pulse-blue-soft);
+  box-shadow: inset 0 0 0 1px var(--pulse-blue);
+}
+
+.quote-handoff-options strong {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.quote-handoff-options span {
+  color: var(--pulse-muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.quote-handoff-project-select {
+  display: grid;
+  gap: 7px;
+  padding: 4px 24px 20px;
+  color: var(--pulse-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.record-dialog .quote-handoff-project-select {
+  padding: 0;
+}
+
+.quote-handoff-project-select select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 11px;
+  border: 1px solid var(--pulse-line-strong);
+  border-radius: 9px;
+  background: var(--pulse-surface);
+  color: var(--pulse-text);
+  font: inherit;
+}
+
+.quote-handoff-project-select select:focus-visible,
+.quote-handoff-options > button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--pulse-blue) 24%, transparent);
+  outline-offset: 2px;
+}
+
+.quote-handoff-project-select small {
+  color: var(--pulse-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.project-section-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #546477;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-financial-overview,
+.project-ledger-panel,
+.project-quote-lifecycle {
+  border: 1px solid #dce3eb;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(27 48 72 / 7%);
+  padding: 22px;
+}
+
+.project-financial-overview > .panel-header > svg {
+  color: #146ef5;
+}
+
+.project-financial-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.project-financial-metrics article {
+  display: grid;
+  gap: 5px;
+  min-height: 112px;
+  align-content: center;
+  padding: 16px;
+  border: 1px solid #e4e9ef;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.project-financial-metrics article > span,
+.project-financial-meter-heading span {
+  color: #5f6f82;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.project-financial-metrics article > strong {
+  color: #172b4d;
+  font-size: clamp(1.18rem, 2vw, 1.55rem);
+  letter-spacing: -0.025em;
+}
+
+.project-financial-metrics article > small {
+  color: #69798c;
+}
+
+.project-financial-metrics article.is-danger {
+  border-color: #f2b8b5;
+  background: #fff5f4;
+}
+
+.project-financial-metrics article.is-danger > strong,
+.project-financial-metrics article.is-danger > small {
+  color: #b42318;
+}
+
+.project-financial-meters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.project-financial-meter {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #e4e9ef;
+  border-radius: 12px;
+}
+
+.project-financial-meter-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.project-financial-meter-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.project-financial-meter-heading > div:last-child {
+  text-align: right;
+}
+
+.project-financial-meter-heading strong {
+  color: #172b4d;
+  font-size: 1rem;
+}
+
+.project-financial-meter-track {
+  position: relative;
+  height: 14px;
+  margin: 4px 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2e844a 0 70%, #dd7a01 70% 90%, #ba0517 90% 100%);
+  box-shadow: inset 0 0 0 1px rgb(23 43 77 / 10%);
+}
+
+.project-financial-meter-marker {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 26px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #172b4d;
+  box-shadow: 0 1px 5px rgb(23 43 77 / 35%);
+  transform: translate(-2px, -50%);
+}
+
+.project-financial-meter.tone-danger .project-financial-meter-marker {
+  background: #ba0517;
+}
+
+.project-financial-meter > p {
+  margin: 0;
+  color: #69798c;
+  font-size: 0.76rem;
+}
+
+.project-expense-form {
+  display: grid;
+  grid-template-columns: 150px 180px minmax(160px, 1fr) 150px;
+  gap: 14px;
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid #c9d8ea;
+  border-radius: 12px;
+  background: #f4f8fd;
+}
+
+.project-details-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid #c9d8ea;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.project-details-edit-grid label,
+.project-collaborators-field {
+  display: grid;
+  gap: 7px;
+  color: #42566c;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.project-details-edit-grid input,
+.project-details-edit-grid select {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid #aebdcd;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 11px;
+  color: #172b4d;
+  font: inherit;
+}
+
+.project-details-title {
+  grid-column: 1 / -1;
+}
+
+.project-collaborators-field {
+  margin: 16px 0;
+}
+
+.project-collaborators-field > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.project-collaborators-field > div > label {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid #c5cfda;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.project-collaborators-field > div > label.selected {
+  border-color: #146ef5;
+  background: #edf5ff;
+  color: #0b5fcc;
+}
+
+.project-collaborators-field small {
+  color: #69798c;
+  font-weight: 500;
+}
+
+.project-expense-form label {
+  display: grid;
+  gap: 6px;
+  color: #42566c;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.project-expense-form input,
+.project-expense-form select {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid #aebdcd;
+  border-radius: 8px;
+  background: #fff;
+  color: #172b4d;
+  padding: 0 11px;
+  font: inherit;
+}
+
+.project-expense-form input:focus,
+.project-expense-form select:focus {
+  outline: 3px solid rgb(20 110 245 / 18%);
+  border-color: #146ef5;
+}
+
+.project-expense-description {
+  grid-column: span 2;
+}
+
+.project-expense-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.project-expense-table {
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+.project-expense-table td {
+  vertical-align: middle;
+}
+
+.project-expense-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.project-empty-row {
+  padding: 28px !important;
+  color: #69798c;
+  text-align: center;
+}
+
+.project-quote-lifecycle ol {
+  display: grid;
+  gap: 0;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-quote-lifecycle li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-height: 76px;
+  padding: 12px 4px;
+  border-top: 1px solid #e4e9ef;
+}
+
+.project-quote-lifecycle li:first-child {
+  border-top: 0;
+}
+
+.project-quote-sequence {
+  display: inline-flex;
+  justify-content: center;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eef2f6;
+  color: #42566c;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.project-quote-lifecycle li.is-approved .project-quote-sequence {
+  background: #e3f3e8;
+  color: #25683b;
+}
+
+.project-quote-lifecycle li > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.project-quote-lifecycle li > div > a {
+  color: #146ef5;
+  font-weight: 800;
+}
+
+.project-quote-lifecycle li > div > strong {
+  overflow: hidden;
+  color: #172b4d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-quote-lifecycle li > div > small {
+  color: #69798c;
+}
+
+@media (max-width: 1050px) {
+  .project-financial-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .project-expense-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .project-financial-overview,
+  .project-ledger-panel,
+  .project-quote-lifecycle {
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .project-financial-metrics,
+  .project-financial-meters,
+  .project-expense-form,
+  .project-details-edit-grid,
+  .quote-approval-dates,
+  .quote-handoff-options {
+    grid-template-columns: 1fr;
+  }
+
+  .project-expense-description,
+  .project-expense-actions {
+    grid-column: auto;
+  }
+
+  .project-quote-lifecycle li {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .project-quote-lifecycle li > .status-chip {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
 /* Quote calculation modes */
 .work-queue-heading-actions,
 .quote-mode-options {

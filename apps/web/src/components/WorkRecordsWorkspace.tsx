@@ -32,6 +32,7 @@ import {
 type WorkKind = "quotes" | "projects" | "invoices";
 type WorkRecord = QuoteRecord | ProjectRecord | InvoiceRecord;
 type QueueSort = "activity" | "number" | "value" | "due";
+type ProjectHandoffMode = "create" | "attach";
 
 type Props = {
   kind: WorkKind;
@@ -254,6 +255,13 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const [statusFilter, setStatusFilter] = useState(requestedStatus && quoteStatuses.includes(requestedStatus as (typeof quoteStatuses)[number]) ? requestedStatus : "All");
   const [pendingHold, setPendingHold] = useState<WorkRecord | null>(null);
   const [holdReason, setHoldReason] = useState("");
+  const [pendingApproval, setPendingApproval] = useState<QuoteRecord | null>(null);
+  const [approvalStartDate, setApprovalStartDate] = useState("");
+  const [approvalDueDate, setApprovalDueDate] = useState("");
+  const [approvalHandoffMode, setApprovalHandoffMode] = useState<ProjectHandoffMode>("create");
+  const [approvalProjectId, setApprovalProjectId] = useState("");
+  const [approvalProjectsLoading, setApprovalProjectsLoading] = useState(false);
+  const [approvalProjectsError, setApprovalProjectsError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [isLoading, setIsLoading] = useState(!hasFreshRecordCache);
@@ -552,6 +560,25 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   }
 
   async function changeStatus(record: WorkRecord, status: string, statusReason?: string) {
+    if (kind === "quotes" && status === "Approved" && record.status !== "Approved") {
+      setPendingApproval(record as QuoteRecord);
+      setApprovalStartDate("");
+      setApprovalDueDate("");
+      setApprovalHandoffMode("create");
+      setApprovalProjectId("");
+      setApprovalProjectsError("");
+      setApprovalProjectsLoading(true);
+      void requestJson<{ projects: ProjectRecord[] }>("/api/projects", { cache: "no-store" })
+        .then((data) => setProjects(data.projects.filter((project) =>
+          project.clientId === (record as QuoteRecord).clientId && !["Completed", "Cancelled"].includes(project.status)
+        )))
+        .catch((error) => {
+          setProjects([]);
+          setApprovalProjectsError(error instanceof Error ? error.message : "Unable to load projects.");
+        })
+        .finally(() => setApprovalProjectsLoading(false));
+      return;
+    }
     if (kind === "quotes" && status === "On Hold" && record.status !== "On Hold" && !statusReason) {
       setPendingHold(record);
       setHoldReason("");
@@ -575,6 +602,35 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       setToast(`${recordNumber(record)} moved to ${status}.`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Unable to update status.");
+    }
+  }
+
+  async function approveAndCreateProject() {
+    if (!pendingApproval || saving) return;
+    try {
+      setSaving(true);
+      const data = await requestJson<{ quote: QuoteRecord; project: ProjectRecord }>(
+        `/api/quotes/${pendingApproval.id}/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...(approvalHandoffMode === "create" ? {
+              startDate: approvalStartDate || undefined,
+              dueDate: approvalDueDate || undefined
+            } : { projectId: approvalProjectId })
+          })
+        }
+      );
+      setRecords((current) => current.map((record) => record.id === data.quote.id ? data.quote : record));
+      setPendingApproval(null);
+      setToast(approvalHandoffMode === "attach"
+        ? `${data.quote.quoteNumber} approved and attached to ${data.project.projectNumber}.`
+        : `${data.quote.quoteNumber} approved and ${data.project.projectNumber} created.`);
+      router.push(`/projects/${data.project.id}`);
+    } catch (approvalError) {
+      setToast(approvalError instanceof Error ? approvalError.message : "Unable to approve quote.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -627,7 +683,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             {copy.summary}
           </p>
         </div>
-        {kind !== "quotes" ? <div className="work-queue-heading-actions">
+        {kind === "invoices" ? <div className="work-queue-heading-actions">
           <button
             className="primary-button compact"
             type="button"
@@ -637,7 +693,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             <Plus size={17} />
             New {copy.singular.toLowerCase()}
           </button>
-        </div> : null}
+        </div> : kind === "projects" ? <div className="work-queue-heading-actions"><span className="work-queue-source-note">Projects begin with an approved quote.</span></div> : null}
       </header>
 
       <nav className="work-queue-views" aria-label={`${title} views`}>
@@ -1139,6 +1195,25 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
               <div className="quote-hold-dialog-heading"><span className="quote-hold-dialog-icon"><AlertTriangle size={22} /></span><div><span>Pause quote</span><h2 id="quote-hold-title">Place {recordNumber(pendingHold)} on hold?</h2><p>The quote will stay in Open and the reason will be recorded in its updates.</p></div><button type="button" onClick={() => setPendingHold(null)} aria-label="Close hold dialog"><X size={18} /></button></div>
               <div className="quote-hold-dialog-body"><label htmlFor="dashboard-hold-reason"><span>Reason for hold</span><textarea id="dashboard-hold-reason" autoFocus maxLength={2000} rows={4} placeholder="For example: Waiting for client approval or revised scope…" value={holdReason} onChange={(event) => setHoldReason(event.target.value)} /></label><small>{holdReason.length.toLocaleString()} / 2,000</small></div>
               <div className="work-queue-modal-actions quote-hold-dialog-actions"><button type="button" onClick={() => setPendingHold(null)}>Keep active</button><button className="primary-button quote-hold-confirm" type="button" disabled={!holdReason.trim()} onClick={() => { const record = pendingHold; const reason = holdReason.trim(); setPendingHold(null); void changeStatus(record, "On Hold", reason); }}>Place on hold</button></div>
+            </div>
+          </div>
+        </ViewportPortal>
+      ) : null}
+
+      {pendingApproval ? (
+        <ViewportPortal>
+          <div className="work-queue-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setPendingApproval(null); }}>
+            <div className="work-queue-modal quote-approval-dialog" role="dialog" aria-modal="true" aria-labelledby="queue-approve-title">
+              <div className="quote-hold-dialog-heading"><span className="quote-approval-dialog-icon"><CalendarClock size={22} /></span><div><span>Project handoff</span><h2 id="queue-approve-title">Approve {pendingApproval.quoteNumber}?</h2><p>Create its original project or attach an imported change order to existing delivery work.</p></div><button type="button" disabled={saving} onClick={() => setPendingApproval(null)} aria-label="Close approval dialog"><X size={18} /></button></div>
+              <div className="quote-handoff-options" role="radiogroup" aria-label="Project handoff method">
+                <button type="button" role="radio" aria-checked={approvalHandoffMode === "create"} className={approvalHandoffMode === "create" ? "selected" : ""} onClick={() => { setApprovalHandoffMode("create"); setApprovalProjectId(""); }}><strong>Create new project</strong><span>Use this quote as the original approved scope.</span></button>
+                <button type="button" role="radio" aria-checked={approvalHandoffMode === "attach"} className={approvalHandoffMode === "attach" ? "selected" : ""} onClick={() => setApprovalHandoffMode("attach")}><strong>Attach to existing project</strong><span>Record this imported quote as the next change order.</span></button>
+              </div>
+              {approvalHandoffMode === "create" ? <div className="quote-approval-dates">
+                <label><span>Planned start</span><input type="date" value={approvalStartDate} onChange={(event) => setApprovalStartDate(event.target.value)} /></label>
+                <label><span>Target completion</span><input type="date" min={approvalStartDate || undefined} value={approvalDueDate} onChange={(event) => setApprovalDueDate(event.target.value)} /></label>
+              </div> : <label className="quote-handoff-project-select"><span>Existing project</span><select autoFocus value={approvalProjectId} disabled={approvalProjectsLoading} onChange={(event) => setApprovalProjectId(event.target.value)}><option value="">{approvalProjectsLoading ? "Loading projects…" : "Select a project"}</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.projectNumber} · {project.title} · {project.status}</option>)}</select>{approvalProjectsError ? <small>{approvalProjectsError}</small> : !approvalProjectsLoading && projects.length === 0 ? <small>No active projects were found for {pendingApproval.clientName}.</small> : <small>Only active projects for {pendingApproval.clientName} are shown.</small>}</label>}
+              <div className="work-queue-modal-actions quote-hold-dialog-actions"><button type="button" disabled={saving} onClick={() => setPendingApproval(null)}>Cancel</button><button className="primary-button" type="button" disabled={saving || (approvalHandoffMode === "attach" ? !approvalProjectId : Boolean(approvalStartDate && approvalDueDate && approvalDueDate < approvalStartDate))} onClick={() => void approveAndCreateProject()}><Save size={17} />{saving ? "Approving…" : approvalHandoffMode === "attach" ? "Approve and attach" : "Approve and create project"}</button></div>
             </div>
           </div>
         </ViewportPortal>

@@ -8,6 +8,7 @@ import type {
 } from "@pulse/contracts/items";
 import type {
   ConvertQuoteInput,
+  ApproveQuoteInput,
   CreateQuoteRevisionInput,
   ProjectResponse,
   QuoteDetailRecord,
@@ -273,4 +274,14 @@ export function convertQuoteToProject(
     method: "POST",
     json: input
   });
+}
+
+export function approveQuote(
+  quoteId: string,
+  input: ApproveQuoteInput = { startDate: undefined, dueDate: undefined }
+) {
+  return apiRequest<{ quote: QuoteDetailRecord; project: ProjectResponse["project"] }>(
+    quotePath(quoteId, "/approve"),
+    { method: "POST", json: input }
+  );
 }

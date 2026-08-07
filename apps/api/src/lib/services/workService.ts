@@ -1,4 +1,4 @@
-import { LifecycleEntityType, Prisma } from "@/generated/prisma/client";
+import { LifecycleEntityType, Prisma, ProjectQuoteRole } from "@/generated/prisma/client";
 import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
@@ -37,6 +37,9 @@ import type { ClientContact } from "@pulse/contracts/clients";
 import type { RequestUpdate } from "@pulse/contracts/requests";
 import type {
   ConvertQuoteInput,
+  ApproveQuoteInput,
+  CreateProjectExpenseInput,
+  UpdateProjectExpenseInput,
   CreateQuoteRevisionInput,
   CreateInvoiceInput,
   CreateProjectInput,
@@ -54,6 +57,10 @@ import type {
   LifecycleRelationshipWarning,
   LifecycleSiteSummary,
   ProjectRecord,
+  ProjectDetailRecord,
+  ProjectExpenseRecord,
+  ProjectFinancialSummary,
+  ProjectQuoteSummary,
   ProjectQuoteFinancialSnapshot,
   ProjectProgress,
   ProjectTaskRecord,
@@ -173,7 +180,23 @@ export const quoteInclude = {
       }
     }
   },
-  project: { select: { id: true } }
+  project: { select: { id: true, projectNumber: true, title: true } },
+  projectLink: {
+    include: {
+      project: {
+        select: {
+          id: true,
+          projectNumber: true,
+          title: true,
+          quoteLinks: {
+            where: { role: ProjectQuoteRole.ORIGINAL },
+            select: { id: true },
+            take: 1
+          }
+        }
+      }
+    }
+  }
 } satisfies Prisma.QuoteInclude;
 
 const quoteItemsOrderBy = [
@@ -196,8 +219,53 @@ const itemForQuoteInclude = {
 } satisfies Prisma.ItemInclude;
 
 export const projectInclude = {
-  client: { select: { id: true, displayName: true } },
+  client: {
+    select: {
+      id: true,
+      displayName: true,
+      contacts: { select: quoteContactSelect, orderBy: { name: "asc" } },
+      sites: { select: lifecycleSiteSelect, orderBy: { siteName: "asc" } }
+    }
+  },
   quote: { select: { id: true, quoteNumber: true } },
+  quoteLinks: {
+    orderBy: [{ role: "asc" }, { sequence: "asc" }],
+    include: {
+      quote: {
+        select: {
+          id: true,
+          quoteNumber: true,
+          title: true,
+          status: true,
+          calculationMode: true,
+          sourceRequestIdSnapshot: true,
+          requestNumberSnapshot: true,
+          requestTitleSnapshot: true,
+          requestTypeSnapshot: true,
+          serviceCategorySnapshot: true,
+          legacyMaterialSale: true,
+          legacyMaterialCost: true,
+          legacyLaborSale: true,
+          legacyLaborCost: true,
+          legacyTaxAmount: true,
+          legacyEstimatedDurationBusinessDays: true,
+          items: {
+            select: {
+              itemType: true,
+              quantity: true,
+              unitCost: true,
+              lineSubtotal: true,
+              lineTax: true
+            }
+          }
+        }
+      }
+    }
+  },
+  expenses: {
+    where: { archivedAt: null },
+    orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }]
+  },
   contact: { select: quoteContactSelect },
   site: { select: lifecycleSiteSelect },
   assignedTo: { include: { accessRole: true } },
@@ -585,6 +653,8 @@ export function toQuoteRecord(
     : request?.trades?.length
       ? request.trades.map((trade) => trade.serviceCategory)
       : categoriesFromSnapshot(request?.serviceCategory);
+  const linkedProject = quote.projectLink?.project ?? quote.project ?? null;
+  const projectRole = quote.projectLink?.role ?? (quote.project ? ProjectQuoteRole.ORIGINAL : null);
   return {
     id: quote.id,
     quoteNumber: quote.quoteNumber,
@@ -615,7 +685,16 @@ export function toQuoteRecord(
     requestId: request?.id ?? null,
     requestNumber: request?.requestNumber ?? "",
     trades,
-    projectId: quote.project?.id ?? null,
+    projectId: linkedProject?.id ?? null,
+    projectReference: linkedProject && projectRole ? {
+      projectId: linkedProject.id,
+      projectNumber: linkedProject.projectNumber,
+      projectTitle: linkedProject.title,
+      role: projectRole,
+      sequence: quote.projectLink?.sequence ?? 0,
+      calculationModeLocked: projectRole === ProjectQuoteRole.ORIGINAL ||
+        Boolean(quote.projectLink?.project.quoteLinks.length)
+    } : null,
     createdAt: dateOutput(quote.createdAt),
     updatedAt: quote.updatedAt.toISOString(),
     documents,
@@ -879,24 +958,91 @@ function toProjectQuoteFinancialSnapshot(
   };
 }
 
+function projectQuoteSummary(link: ProjectWithRelations["quoteLinks"][number]): ProjectQuoteSummary {
+  const snapshot = toProjectQuoteFinancialSnapshot(link.financialSnapshot);
+  const live = quoteFinancialSummary(link.quote);
+  const financial = snapshot?.financialSummary ?? live;
+  return {
+    linkId: link.id,
+    quoteId: link.quoteId,
+    quoteNumber: link.quote.quoteNumber,
+    title: link.quote.title,
+    role: link.role,
+    sequence: link.sequence,
+    status: link.quote.status as ProjectQuoteSummary["status"],
+    calculationMode: link.quote.calculationMode,
+    approvedAt: dateTimeOutput(link.approvedAt),
+    salesPrice: link.approvedAt ? financial.preTaxContractValue : 0,
+    estimatedCost: link.approvedAt ? financial.totalEstimatedCost : 0,
+    taxAmount: link.approvedAt ? financial.taxAmount : 0,
+    finalCustomerTotal: link.approvedAt ? financial.finalCustomerTotal : 0
+  };
+}
+
+function toProjectExpenseRecord(expense: ProjectWithRelations["expenses"][number]): ProjectExpenseRecord {
+  return {
+    id: expense.id,
+    projectId: expense.projectId,
+    occurredOn: dateOutput(expense.occurredOn),
+    category: expense.category as ProjectExpenseRecord["category"],
+    vendor: empty(expense.vendor),
+    description: expense.description,
+    amount: Number(expense.amount),
+    receiptDocumentId: expense.receiptDocumentId,
+    createdByName: expense.createdByName,
+    updatedByName: expense.updatedByName,
+    createdAt: dateTimeOutput(expense.createdAt),
+    updatedAt: dateTimeOutput(expense.updatedAt)
+  };
+}
+
+export function calculateProjectFinancialSummary(
+  quoteLifecycle: ProjectQuoteSummary[],
+  expenses: ProjectExpenseRecord[]
+): ProjectFinancialSummary {
+  const approved = quoteLifecycle.filter((link) => Boolean(link.approvedAt) && link.status === "Approved");
+  const sum = (select: (link: ProjectQuoteSummary) => number) => approved.reduce((total, link) => total + select(link), 0);
+  const approvedSalesPrice = sum((link) => link.salesPrice);
+  const approvedEstimatedCost = sum((link) => link.estimatedCost);
+  const approvedTaxAmount = sum((link) => link.taxAmount);
+  const approvedCustomerTotal = sum((link) => link.finalCustomerTotal);
+  const currentExpense = expenses.reduce((total, expense) => total + expense.amount, 0);
+  return {
+    approvedSalesPrice,
+    approvedEstimatedCost,
+    approvedTaxAmount,
+    approvedCustomerTotal,
+    currentExpense,
+    plannedGrossProfit: approvedSalesPrice - approvedEstimatedCost,
+    remainingCostAllowance: approvedEstimatedCost - currentExpense,
+    costVariance: approvedEstimatedCost - currentExpense,
+    estimatedCostPercent: approvedSalesPrice > 0 ? (approvedEstimatedCost / approvedSalesPrice) * 100 : null,
+    expenseBurnPercent: approvedEstimatedCost > 0 ? (currentExpense / approvedEstimatedCost) * 100 : null
+  };
+}
+
 export function toProjectRecord(
   project: ProjectWithRelations,
   documents: LifecycleDocumentRecord[] = []
 ): ProjectRecord {
+  const originalLink = project.quoteLinks.find((link) => link.role === ProjectQuoteRole.ORIGINAL);
   return {
     id: project.id,
     projectNumber: project.projectNumber,
     title: project.title,
     clientId: project.clientId,
     clientName: project.client.displayName,
-    quoteId: project.quoteId,
-    quoteNumber: project.quote?.quoteNumber ?? "",
+    quoteId: originalLink?.quoteId ?? project.quoteId,
+    quoteNumber: originalLink?.quote.quoteNumber ?? project.quote?.quoteNumber ?? "",
     contactId: project.contactId,
     contact: toQuoteContact(project.contact),
     siteId: project.siteId,
     site: toLifecycleSite(project.site),
     assignedToId: project.assignedToId,
     assignedTo: toWorkAssignee(project.assignedTo),
+    collaborators: project.lifecycleContext?.collaborators
+      .map((collaborator) => toWorkAssignee(collaborator.user))
+      .filter((collaborator): collaborator is NonNullable<ReturnType<typeof toWorkAssignee>> => Boolean(collaborator)) ?? [],
     status: project.status as ProjectRecord["status"],
     budget: Number(project.budget),
     sourceQuoteRevisionNumber: project.sourceQuoteRevisionNumber,
@@ -1825,6 +1971,9 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
   const existing = await quoteOrThrow(id);
   const statusChanged = input.status !== undefined && input.status !== existing.status;
   const statusReason = input.statusReason?.trim() ?? "";
+  if (statusChanged && input.status === "Approved") {
+    throw new Error("QUOTE_APPROVAL_ACTION_REQUIRED");
+  }
   if (statusChanged && input.status === "Sent") {
     throw new Error("QUOTE_SENT_ACTION_REQUIRED");
   }
@@ -1874,8 +2023,9 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
   if (input.collaboratorIds !== undefined) {
     await Promise.all(input.collaboratorIds.map((userId) => activeUserOrThrow(userId)));
   }
-  if (client && existing.project?.id) {
-    const project = await prisma.project.findUnique({ where: { id: existing.project.id }, select: { clientId: true } });
+  const existingProjectId = existing.projectLink?.projectId ?? existing.project?.id;
+  if (client && existingProjectId) {
+    const project = await prisma.project.findUnique({ where: { id: existingProjectId }, select: { clientId: true } });
     if (project && project.clientId !== client.id) throw new Error("WORK_CLIENT_MISMATCH");
   }
   const quote = await prisma.$transaction(async (tx) => {
@@ -2208,7 +2358,11 @@ export async function switchQuoteCalculationMode(
       include: quoteDetailInclude
     });
     if (existing.status !== "Draft") throw new Error("QUOTE_MODE_SWITCH_DRAFT_REQUIRED");
-    if (existing.project) throw new Error("QUOTE_MODE_SWITCH_PROJECT_EXISTS");
+    const unlockedImportedChangeOrder = existing.projectLink?.role === ProjectQuoteRole.CHANGE_ORDER &&
+      existing.projectLink.project.quoteLinks.length === 0;
+    if (existing.project || (existing.projectLink && !unlockedImportedChangeOrder)) {
+      throw new Error("QUOTE_MODE_SWITCH_PROJECT_EXISTS");
+    }
     if (existing.calculationMode === input.calculationMode) {
       return { quote: existing, previousMode: existing.calculationMode, discarded: false };
     }
@@ -2287,7 +2441,11 @@ export async function createQuoteRevision(
     if (!revisionEligibleStatuses.has(quote.status)) {
       throw new Error("QUOTE_REVISION_STATUS_INVALID");
     }
-    if (quote.project) throw new Error("QUOTE_REVISION_PROJECT_EXISTS");
+    if (
+      quote.project ||
+      quote.projectLink?.role === ProjectQuoteRole.ORIGINAL ||
+      (quote.projectLink && quote.status === "Approved")
+    ) throw new Error("QUOTE_REVISION_PROJECT_EXISTS");
 
     const version = quoteVersionFields(quote);
     const nextRevisionNumber = version.revisionNumber + 1;
@@ -2467,14 +2625,21 @@ export async function getProjectById(id: string, viewerId?: string) {
     listProjectDocuments(project.id),
     listWorkUpdates("project", project.id, "all", undefined, 25, viewerId)
   ]);
+  const quoteLifecycle = project.quoteLinks.map(projectQuoteSummary);
+  const expenses = project.expenses.map(toProjectExpenseRecord);
   return {
     ...toProjectRecord(project, documents),
+    contactOptions: project.client.contacts.map(toQuoteContact).filter((contact): contact is ClientContact => Boolean(contact)),
+    siteOptions: project.client.sites.map(toLifecycleSite).filter((site): site is LifecycleSiteSummary => Boolean(site)),
     tasks: project.tasks.map(toProjectTask),
     progress: calculateProjectProgress(project.tasks),
+    quoteLifecycle,
+    expenses,
+    financialSummary: calculateProjectFinancialSummary(quoteLifecycle, expenses),
     currentStep: updateState.currentStep,
     unreadMentionCount: updateState.unreadMentionCount,
     updates: updateState.updates
-  };
+  } satisfies ProjectDetailRecord;
 }
 
 async function createProjectData(
@@ -2556,59 +2721,187 @@ async function createProjectData(
 }
 
 export async function createProject(input: CreateProjectInput, user?: AuthenticatedUser) {
-  const project = await prisma.$transaction(async (tx) => {
-    const created = await createProjectData(input, tx, user);
-    await recordLifecycleStatusEvent(tx, {
-      entityType: LifecycleEntityType.PROJECT,
-      entityId: created.id,
-      toStatus: created.status,
-      changedAt: created.createdAt,
-      valueSnapshot: Number(created.budget),
-      metadata: {
-        eventType: "project_created",
-        startDate: created.startDate?.toISOString() ?? null,
-        dueDate: created.dueDate?.toISOString() ?? null
-      },
-      user
-    });
-    await createWorkSystemUpdate(tx, {
-      stage: "project",
-      recordId: created.id,
-      title: `${created.projectNumber} created`,
-      body: created.quote?.quoteNumber
-        ? `Project created from ${created.quote.quoteNumber}.`
-        : "Project created by direct entry.",
-      user,
-      createdAt: created.createdAt,
-      metadata: { eventType: "project_created", toStatus: created.status }
-    });
-    return created;
-  });
-  await recordActivity({
-    user,
-    relatedEntityType: "Project",
-    relatedEntityId: project.id,
-    type: "Created",
-    title: `${project.projectNumber} created`,
-    detail: project.title
-  });
-  return toProjectRecord(project, await listProjectDocuments(project.id));
+  if (!input.quoteId) throw new Error("PROJECT_SOURCE_QUOTE_REQUIRED");
+  return convertQuoteToProject(input.quoteId, {
+    startDate: input.startDate,
+    dueDate: input.dueDate
+  }, user);
 }
 
 export async function convertQuoteToProject(
   id: string,
-  input: ConvertQuoteInput,
+  input: ConvertQuoteInput & { projectId?: string },
   user?: AuthenticatedUser
 ) {
   const result = await prisma.$transaction(async (tx) => {
     const lockedQuote = await lockQuoteOrThrow(tx, id);
-    const quote = await tx.quote.findUniqueOrThrow({
+    let quote = await tx.quote.findUniqueOrThrow({
       where: { id: lockedQuote.id },
       include: quoteInclude
     });
+    if (!["Sent", "Approved"].includes(quote.status)) throw new Error("QUOTE_APPROVAL_ACTION_REQUIRED");
+    const previousStatus = quote.status;
+    if (quote.status === "Sent") {
+      quote = await tx.quote.update({
+        where: { id: quote.id },
+        data: { status: "Approved" },
+        include: quoteInclude
+      });
+      await recordLifecycleStatusEvent(tx, {
+        entityType: LifecycleEntityType.QUOTE,
+        entityId: quote.id,
+        fromStatus: previousStatus,
+        toStatus: "Approved",
+        valueSnapshot: quoteFinancialSummaryDecimal(quote).preTaxContractValue.toNumber(),
+        metadata: await quoteAnalyticsSnapshot(tx, quote.id, "quote_approved"),
+        user
+      });
+      await createQuoteSystemUpdate(tx, {
+        quoteId: quote.id,
+        title: `${quote.quoteNumber} approved`,
+        body: "The accepted quote is being handed off to project delivery.",
+        user,
+        metadata: { eventType: "quote_approved", fromStatus: previousStatus, toStatus: "Approved" }
+      });
+    }
     if (!quote.clientId) throw new Error("QUOTE_CLIENT_REQUIRED");
+    const existingLink = await tx.projectQuote.findUnique({
+      where: { quoteId: quote.id },
+      include: { project: { include: projectInclude } }
+    });
+    if (existingLink) {
+      if (existingLink.role === ProjectQuoteRole.CHANGE_ORDER && !existingLink.approvedAt) {
+        const financialSummary = quoteFinancialSummaryDecimal(quote);
+        const version = quoteVersionFields(quote);
+        await tx.projectQuote.update({
+          where: { id: existingLink.id },
+          data: {
+            approvedAt: new Date(),
+            financialSnapshot: {
+              sourceQuoteId: quote.id,
+              sourceQuoteNumber: quote.quoteNumber,
+              sourceQuoteRevisionNumber: version.revisionNumber,
+              calculationMode: quote.calculationMode,
+              financialSummary: exactFinancialSummarySnapshot(financialSummary)
+            }
+          }
+        });
+        const approvedLinks = await tx.projectQuote.findMany({
+          where: { projectId: existingLink.projectId, approvedAt: { not: null } },
+          select: { financialSnapshot: true }
+        });
+        const approvedSalesPrice = approvedLinks.reduce((total, link) =>
+          total + (toProjectQuoteFinancialSnapshot(link.financialSnapshot)?.financialSummary.preTaxContractValue ?? 0), 0
+        );
+        await tx.project.update({
+          where: { id: existingLink.projectId },
+          data: { budget: approvedSalesPrice }
+        });
+        await createWorkSystemUpdate(tx, {
+          stage: "project",
+          recordId: existingLink.projectId,
+          title: `CO-${existingLink.sequence} approved`,
+          body: `${quote.quoteNumber} is now included in approved project scope and financials.`,
+          user,
+          metadata: {
+            eventType: "project_change_order_approved",
+            quoteId: quote.id,
+            sequence: existingLink.sequence
+          }
+        });
+      }
+      return {
+        project: await tx.project.findUniqueOrThrow({ where: { id: existingLink.projectId }, include: projectInclude }),
+        quote,
+        linkRole: existingLink.role,
+        linkSequence: existingLink.sequence
+      };
+    }
+    if (quote.project) {
+      const project = await tx.project.findUniqueOrThrow({ where: { id: quote.project.id }, include: projectInclude });
+      const existingSnapshot = project.quoteFinancialSnapshot;
+      await tx.projectQuote.create({
+        data: {
+          projectId: project.id,
+          quoteId: quote.id,
+          role: ProjectQuoteRole.ORIGINAL,
+          sequence: 0,
+          approvedAt: new Date(),
+          ...(existingSnapshot ? { financialSnapshot: existingSnapshot } : {})
+        }
+      });
+      return {
+        project: await tx.project.findUniqueOrThrow({ where: { id: project.id }, include: projectInclude }),
+        quote,
+        linkRole: ProjectQuoteRole.ORIGINAL,
+        linkSequence: 0
+      };
+    }
     const financialSummary = quoteFinancialSummaryDecimal(quote);
     const version = quoteVersionFields(quote);
+    if (input.projectId) {
+      const targetProject = await tx.project.findFirst({
+        where: { id: input.projectId, archivedAt: null },
+        include: projectInclude
+      });
+      if (!targetProject) throw new Error("PROJECT_NOT_FOUND");
+      if (targetProject.clientId !== quote.clientId) throw new Error("WORK_CLIENT_MISMATCH");
+      if (["Completed", "Cancelled"].includes(targetProject.status)) {
+        throw new Error("PROJECT_CHANGE_ORDER_STATUS_INVALID");
+      }
+      await tx.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${targetProject.id} FOR UPDATE`;
+      const latest = await tx.projectQuote.aggregate({
+        where: { projectId: targetProject.id, role: ProjectQuoteRole.CHANGE_ORDER },
+        _max: { sequence: true }
+      });
+      const sequence = (latest._max.sequence ?? 0) + 1;
+      const snapshot = {
+        sourceQuoteId: quote.id,
+        sourceQuoteNumber: quote.quoteNumber,
+        sourceQuoteRevisionNumber: version.revisionNumber,
+        calculationMode: quote.calculationMode,
+        financialSummary: exactFinancialSummarySnapshot(financialSummary)
+      };
+      await tx.projectQuote.create({
+        data: {
+          projectId: targetProject.id,
+          quoteId: quote.id,
+          role: ProjectQuoteRole.CHANGE_ORDER,
+          sequence,
+          approvedAt: new Date(),
+          financialSnapshot: snapshot
+        }
+      });
+      const approvedLinks = await tx.projectQuote.findMany({
+        where: { projectId: targetProject.id, approvedAt: { not: null } },
+        select: { financialSnapshot: true }
+      });
+      const approvedSalesPrice = approvedLinks.reduce((total, link) =>
+        total + (toProjectQuoteFinancialSnapshot(link.financialSnapshot)?.financialSummary.preTaxContractValue ?? 0), 0
+      );
+      await tx.project.update({
+        where: { id: targetProject.id },
+        data: { budget: approvedSalesPrice }
+      });
+      await createWorkSystemUpdate(tx, {
+        stage: "project",
+        recordId: targetProject.id,
+        title: `CO-${sequence} approved`,
+        body: `${quote.quoteNumber} was attached as an imported change order and is now included in approved project scope and financials.`,
+        user,
+        metadata: {
+          eventType: "project_imported_change_order_attached",
+          quoteId: quote.id,
+          sequence
+        }
+      });
+      return {
+        project: await tx.project.findUniqueOrThrow({ where: { id: targetProject.id }, include: projectInclude }),
+        quote,
+        linkRole: ProjectQuoteRole.CHANGE_ORDER,
+        linkSequence: sequence
+      };
+    }
     const assignedTo = quote.assignedToId
       ? await findEligibleWorkAssignee("project", quote.assignedToId, tx)
       : await resolveLegacyWorkAssignee("project", quote.owner, tx);
@@ -2644,6 +2937,22 @@ export async function convertQuoteToProject(
       },
       include: projectInclude
     });
+    await tx.projectQuote.create({
+      data: {
+        projectId: project.id,
+        quoteId: quote.id,
+        role: ProjectQuoteRole.ORIGINAL,
+        sequence: 0,
+        approvedAt: new Date(),
+        financialSnapshot: {
+          sourceQuoteId: quote.id,
+          sourceQuoteNumber: quote.quoteNumber,
+          sourceQuoteRevisionNumber: version.revisionNumber,
+          calculationMode: quote.calculationMode,
+          financialSummary: exactFinancialSummarySnapshot(financialSummary)
+        }
+      }
+    });
     await recordLifecycleStatusEvent(tx, {
       entityType: LifecycleEntityType.PROJECT,
       entityId: project.id,
@@ -2666,30 +2975,290 @@ export async function convertQuoteToProject(
       createdAt: project.createdAt,
       metadata: { eventType: "project_created_from_quote", toStatus: project.status }
     });
-    return { project, quote };
+    return {
+      project: await tx.project.findUniqueOrThrow({ where: { id: project.id }, include: projectInclude }),
+      quote,
+      linkRole: ProjectQuoteRole.ORIGINAL,
+      linkSequence: 0
+    };
   });
-  const { project, quote } = result;
+  const { project, quote, linkRole, linkSequence } = result;
   await Promise.all([
     recordActivity({
       user,
       relatedEntityType: "Quote",
       relatedEntityId: quote.id,
-      type: "Converted",
-      title: `${quote.quoteNumber} converted to ${project.projectNumber}`
+      type: linkRole === ProjectQuoteRole.CHANGE_ORDER ? "Approved" : "Converted",
+      title: linkRole === ProjectQuoteRole.CHANGE_ORDER
+        ? `${quote.quoteNumber} approved as CO-${linkSequence}`
+        : `${quote.quoteNumber} converted to ${project.projectNumber}`
     }),
     recordActivity({
       user,
       relatedEntityType: "Project",
       relatedEntityId: project.id,
-      type: "Created",
-      title: `${project.projectNumber} created from ${quote.quoteNumber}`
+      type: linkRole === ProjectQuoteRole.CHANGE_ORDER ? "Change Order Approved" : "Created",
+      title: linkRole === ProjectQuoteRole.CHANGE_ORDER
+        ? `CO-${linkSequence} approved for ${project.projectNumber}`
+        : `${project.projectNumber} created from ${quote.quoteNumber}`
     })
   ]);
   return toProjectRecord(project, await listProjectDocuments(project.id));
 }
 
+export async function approveQuoteToProject(
+  id: string,
+  input: ApproveQuoteInput,
+  user?: AuthenticatedUser
+) {
+  const project = await convertQuoteToProject(id, input, user);
+  return {
+    quote: await getQuoteById(id, user?.id),
+    project
+  };
+}
+
+export async function createProjectChangeOrder(
+  id: string,
+  user?: AuthenticatedUser
+) {
+  const result = await prisma.$transaction(async (tx) => {
+    const project = await tx.project.findFirst({
+      where: { archivedAt: null, OR: [{ id }, { projectNumber: id }] },
+      include: projectInclude
+    });
+    if (!project) throw new Error("PROJECT_NOT_FOUND");
+    if (["Completed", "Cancelled"].includes(project.status)) {
+      throw new Error("PROJECT_CHANGE_ORDER_STATUS_INVALID");
+    }
+    await tx.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${project.id} FOR UPDATE`;
+    const latest = await tx.projectQuote.aggregate({
+      where: { projectId: project.id, role: ProjectQuoteRole.CHANGE_ORDER },
+      _max: { sequence: true }
+    });
+    const sequence = (latest._max.sequence ?? 0) + 1;
+    const original = project.quoteLinks.find((link) => link.role === ProjectQuoteRole.ORIGINAL);
+    const quoteNumber = await allocateRecordNumber(tx, "quote");
+    const now = new Date();
+    const quote = await tx.quote.create({
+      data: {
+        quoteNumber,
+        baseQuoteNumber: quoteNumber,
+        revisionNumber: 0,
+        versionCreatedAt: now,
+        title: `${project.title} — Change Order ${sequence}`,
+        clientId: project.clientId,
+        contactId: project.contactId,
+        siteId: project.siteId,
+        assignedToId: project.assignedToId,
+        lifecycleContextId: project.lifecycleContextId,
+        clientName: project.client.displayName,
+        owner: project.assignedTo?.name ?? project.ownerSnapshot,
+        status: "Draft",
+        calculationMode: original?.quote.calculationMode ?? project.sourceQuoteCalculationMode ?? "PULSE",
+        total: 0,
+        sourceRequestIdSnapshot: original?.quote.sourceRequestIdSnapshot,
+        requestNumberSnapshot: original?.quote.requestNumberSnapshot,
+        requestTitleSnapshot: original?.quote.requestTitleSnapshot,
+        requestTypeSnapshot: original?.quote.requestTypeSnapshot,
+        serviceCategorySnapshot: original?.quote.serviceCategorySnapshot,
+        scopeDescriptionSnapshot: "",
+        internalNotesSnapshot: ""
+      },
+      include: quoteInclude
+    });
+    await tx.projectQuote.create({
+      data: {
+        projectId: project.id,
+        quoteId: quote.id,
+        role: ProjectQuoteRole.CHANGE_ORDER,
+        sequence
+      }
+    });
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.QUOTE,
+      entityId: quote.id,
+      toStatus: "Draft",
+      changedAt: now,
+      valueSnapshot: 0,
+      metadata: {
+        eventType: "project_change_order_created",
+        projectId: project.id,
+        sequence
+      },
+      user
+    });
+    await createQuoteSystemUpdate(tx, {
+      quoteId: quote.id,
+      title: `CO-${sequence} created for ${project.projectNumber}`,
+      body: "This blank change-order quote inherits the project client and delivery context.",
+      user,
+      createdAt: now,
+      metadata: { eventType: "project_change_order_created", projectId: project.id, sequence }
+    });
+    return { quoteId: quote.id, projectId: project.id, projectNumber: project.projectNumber, quoteNumber, sequence };
+  });
+  await Promise.all([
+    recordActivity({
+      user,
+      relatedEntityType: "Quote",
+      relatedEntityId: result.quoteId,
+      type: "Created",
+      title: `${result.quoteNumber} created as CO-${result.sequence}`
+    }),
+    recordActivity({
+      user,
+      relatedEntityType: "Project",
+      relatedEntityId: result.projectId,
+      type: "Change Order Created",
+      title: `CO-${result.sequence} opened from ${result.projectNumber}`
+    })
+  ]);
+  return getQuoteById(result.quoteId, user?.id);
+}
+
+async function projectExpenseDocumentOrThrow(
+  projectId: string,
+  documentId: string | null | undefined,
+  tx: Prisma.TransactionClient | typeof prisma = prisma
+) {
+  if (!documentId) return null;
+  const document = await tx.lifecycleDocument.findFirst({
+    where: { id: documentId, projectId, deletedAt: null },
+    select: { id: true }
+  });
+  if (!document) throw new Error("PROJECT_EXPENSE_RECEIPT_INVALID");
+  return document;
+}
+
+async function projectExpenseResponse(projectId: string, expense: ProjectExpenseRecord) {
+  const project = await projectOrThrow(projectId);
+  const quoteLifecycle = project.quoteLinks.map(projectQuoteSummary);
+  const expenses = project.expenses.map(toProjectExpenseRecord);
+  return {
+    expense,
+    financialSummary: calculateProjectFinancialSummary(quoteLifecycle, expenses)
+  };
+}
+
+export async function createProjectExpense(
+  id: string,
+  input: CreateProjectExpenseInput,
+  user?: AuthenticatedUser
+) {
+  const project = await projectOrThrow(id);
+  const expense = await prisma.$transaction(async (tx) => {
+    await projectExpenseDocumentOrThrow(project.id, input.receiptDocumentId, tx);
+    const created = await tx.projectExpense.create({
+      data: {
+        projectId: project.id,
+        occurredOn: dateInput(input.occurredOn) ?? new Date(),
+        category: input.category,
+        vendor: input.vendor || null,
+        description: input.description,
+        amount: input.amount,
+        receiptDocumentId: input.receiptDocumentId ?? null,
+        createdById: user?.id ?? null,
+        createdByName: user?.name ?? "Pulse System",
+        updatedById: user?.id ?? null,
+        updatedByName: user?.name ?? "Pulse System"
+      }
+    });
+    await createWorkSystemUpdate(tx, {
+      stage: "project",
+      recordId: project.id,
+      title: "Project expense added",
+      body: `${input.category}: ${input.description} — $${input.amount.toFixed(2)}`,
+      user,
+      metadata: { eventType: "project_expense_created", expenseId: created.id, amount: input.amount }
+    });
+    return created;
+  });
+  await recordActivity({
+    user,
+    relatedEntityType: "Project",
+    relatedEntityId: project.id,
+    type: "Expense Added",
+    title: `${project.projectNumber} expense added`,
+    detail: input.description,
+    metadata: { expenseId: expense.id, amount: input.amount, category: input.category }
+  });
+  return projectExpenseResponse(project.id, toProjectExpenseRecord(expense));
+}
+
+export async function updateProjectExpense(
+  id: string,
+  expenseId: string,
+  input: UpdateProjectExpenseInput,
+  user?: AuthenticatedUser
+) {
+  const project = await projectOrThrow(id);
+  const existing = await prisma.projectExpense.findFirst({
+    where: { id: expenseId, projectId: project.id, archivedAt: null }
+  });
+  if (!existing) throw new Error("PROJECT_EXPENSE_NOT_FOUND");
+  const expense = await prisma.$transaction(async (tx) => {
+    if (input.receiptDocumentId !== undefined) {
+      await projectExpenseDocumentOrThrow(project.id, input.receiptDocumentId, tx);
+    }
+    const updated = await tx.projectExpense.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.occurredOn !== undefined ? { occurredOn: dateInput(input.occurredOn) ?? existing.occurredOn } : {}),
+        ...(input.category !== undefined ? { category: input.category } : {}),
+        ...(input.vendor !== undefined ? { vendor: input.vendor || null } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.amount !== undefined ? { amount: input.amount } : {}),
+        ...(input.receiptDocumentId !== undefined ? { receiptDocumentId: input.receiptDocumentId } : {}),
+        updatedById: user?.id ?? null,
+        updatedByName: user?.name ?? "Pulse System"
+      }
+    });
+    await createWorkSystemUpdate(tx, {
+      stage: "project",
+      recordId: project.id,
+      title: "Project expense updated",
+      body: updated.description,
+      user,
+      metadata: { eventType: "project_expense_updated", expenseId: updated.id, amount: Number(updated.amount) }
+    });
+    return updated;
+  });
+  return projectExpenseResponse(project.id, toProjectExpenseRecord(expense));
+}
+
+export async function archiveProjectExpense(
+  id: string,
+  expenseId: string,
+  user?: AuthenticatedUser
+) {
+  const project = await projectOrThrow(id);
+  const existing = await prisma.projectExpense.findFirst({
+    where: { id: expenseId, projectId: project.id, archivedAt: null }
+  });
+  if (!existing) throw new Error("PROJECT_EXPENSE_NOT_FOUND");
+  await prisma.$transaction(async (tx) => {
+    await tx.projectExpense.update({ where: { id: existing.id }, data: { archivedAt: new Date() } });
+    await createWorkSystemUpdate(tx, {
+      stage: "project",
+      recordId: project.id,
+      title: "Project expense archived",
+      body: existing.description,
+      user,
+      metadata: { eventType: "project_expense_archived", expenseId: existing.id, amount: Number(existing.amount) }
+    });
+  });
+  const refreshed = await projectOrThrow(project.id);
+  const quoteLifecycle = refreshed.quoteLinks.map(projectQuoteSummary);
+  const expenses = refreshed.expenses.map(toProjectExpenseRecord);
+  return { expenses, financialSummary: calculateProjectFinancialSummary(quoteLifecycle, expenses) };
+}
+
 export async function updateProject(id: string, input: UpdateProjectInput, user?: AuthenticatedUser) {
   const existing = await projectOrThrow(id);
+  if (input.budget !== undefined && existing.quoteLinks.length) {
+    throw new Error("PROJECT_BUDGET_QUOTE_DERIVED");
+  }
   const assignedTo = input.assignedToId !== undefined
     ? await resolveWorkAssignee("project", input.assignedToId)
     : undefined;
@@ -2705,6 +3274,9 @@ export async function updateProject(id: string, input: UpdateProjectInput, user?
   const effectiveClientId = input.clientId ?? existing.clientId;
   if (input.contactId) await contactForClientOrThrow(input.contactId, effectiveClientId);
   if (input.siteId) await siteForClientOrThrow(input.siteId, effectiveClientId);
+  if (input.collaboratorIds !== undefined) {
+    await Promise.all(input.collaboratorIds.map((userId) => activeUserOrThrow(userId)));
+  }
   const project = await prisma.$transaction(async (tx) => {
     const lifecycleContextId = await updateLifecycleDetails(
       tx,
@@ -2712,6 +3284,23 @@ export async function updateProject(id: string, input: UpdateProjectInput, user?
       input.lifecycleDetails,
       user
     );
+    if (input.collaboratorIds !== undefined) {
+      if (!lifecycleContextId) throw new Error("PROJECT_LIFECYCLE_CONTEXT_REQUIRED");
+      await tx.lifecycleCollaborator.deleteMany({
+        where: {
+          lifecycleContextId,
+          ...(input.collaboratorIds.length ? { userId: { notIn: input.collaboratorIds } } : {})
+        }
+      });
+      await tx.lifecycleCollaborator.createMany({
+        data: input.collaboratorIds.map((userId) => ({
+          lifecycleContextId,
+          userId,
+          addedById: user?.id ?? null
+        })),
+        skipDuplicates: true
+      });
+    }
     const updated = await tx.project.update({
       where: { id: existing.id },
       data: {

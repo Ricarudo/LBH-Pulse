@@ -1,0 +1,14 @@
+{
+  "minimumVersion": "0.1.1",
+  "sourceMigrations": [
+    "202607210001_pulse_0_1_baseline",
+    "202607210002_enterprise_security",
+    "202607290001_record_number_sequences",
+    "202607300001_client_consolidation",
+    "202608030001_quote_due_date",
+    "202608030002_lifecycle_collaborators"
+  ],
+  "targetMigrations": [
+    "202608070001_project_quote_change_orders"
+  ]
+}

@@ -17,7 +17,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
     <PulseShell
       activePage="projects"
       title="Project Workspace"
-      subtitle="Delivery context, files, and lifecycle updates."
+      subtitle="Delivery progress, approved scope, actual cost, files, and lifecycle updates."
       compactHeader
     >
       <WorkRecordWorkspace stage="project" recordId={id} initialTab={initialTab} />

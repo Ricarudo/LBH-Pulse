@@ -6,8 +6,8 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { Client } from "pg";
 
-const sourceVersion = "0.1.0";
-const targetVersion = "0.1.1";
+const sourceVersion = "0.1.1";
+const targetVersion = "0.1.2";
 const targetDatabase = process.env.PULSE_CI_RELEASE_UPGRADE_DATABASE?.trim() || "pulse_release_upgrade_ci";
 const safeDatabaseName = /^[a-z][a-z0-9_]{5,62}$/;
 const prismaDirectory = resolve(process.cwd(), "prisma");
@@ -16,11 +16,12 @@ const sourceMigrations = [
   "202607210001_pulse_0_1_baseline",
   "202607210002_enterprise_security",
   "202607290001_record_number_sequences",
-  "202607300001_client_consolidation"
-];
-const targetMigrations = [
+  "202607300001_client_consolidation",
   "202608030001_quote_due_date",
   "202608030002_lifecycle_collaborators"
+];
+const targetMigrations = [
+  "202608070001_project_quote_change_orders"
 ];
 
 function required(name: string) {
