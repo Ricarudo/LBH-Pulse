@@ -102,6 +102,9 @@ const fixtureSql = `
   INSERT INTO "RequestCollaborator" ("id", "requestId", "userId", "addedById", "createdAt")
   VALUES ('upgrade-collaborator', 'upgrade-request', 'upgrade-user', 'upgrade-user', '2026-08-01T12:00:00Z');
 
+  INSERT INTO "LifecycleCollaborator" ("id", "lifecycleContextId", "userId", "addedById", "createdAt")
+  VALUES ('upgrade-collaborator', 'upgrade-lifecycle', 'upgrade-user', 'upgrade-user', '2026-08-01T12:00:00Z');
+
   INSERT INTO "Quote" (
     "id", "quoteNumber", "title", "assignedToId", "lifecycleContextId", "status", "owner", "updatedAt"
   ) VALUES (
@@ -118,6 +121,7 @@ async function fixtureDigest(client: Client) {
       'lifecycle', (SELECT to_jsonb(l) - 'createdAt' - 'updatedAt' FROM "LifecycleContext" l WHERE id = 'upgrade-lifecycle'),
       'request', (SELECT to_jsonb(r) - 'createdAt' - 'updatedAt' FROM "Request" r WHERE id = 'upgrade-request'),
       'requestCollaborator', (SELECT to_jsonb(c) FROM "RequestCollaborator" c WHERE id = 'upgrade-collaborator'),
+      'lifecycleCollaborator', (SELECT to_jsonb(c) FROM "LifecycleCollaborator" c WHERE id = 'upgrade-collaborator'),
       'quote', (SELECT to_jsonb(q) - 'createdAt' - 'updatedAt' - 'dueDate' FROM "Quote" q WHERE id = 'upgrade-quote')
     ) AS state
   `);
