@@ -2,7 +2,8 @@ import {
   dashboardWidgetIds,
   type DashboardPreferencesRecord,
   type DashboardWidgetId,
-  type DashboardWidgetPlacement
+  type DashboardWidgetPlacement,
+  type DashboardWorkItem
 } from "@pulse/contracts/dashboard";
 
 export const dashboardWidgetCatalog: Array<{
@@ -110,4 +111,12 @@ export function dashboardRecordHref(kind: string, entityId: string) {
   if (kind === "Project") return `/projects?record=${encodeURIComponent(entityId)}`;
   if (kind === "Invoice") return `/billing?record=${encodeURIComponent(entityId)}`;
   return undefined;
+}
+
+export function dashboardCompletionPath(
+  item: Pick<DashboardWorkItem, "kind" | "entityId" | "stepId">
+) {
+  if (!item.stepId) return "";
+  const collection = item.kind === "invoice" ? "invoices" : `${item.kind}s`;
+  return `/api/${collection}/${encodeURIComponent(item.entityId)}/updates/${encodeURIComponent(item.stepId)}/complete`;
 }

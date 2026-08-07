@@ -24,16 +24,20 @@ import {
   ArrowDown,
   ArrowRight,
   ArrowUp,
-  Blocks,
+  CalendarClock,
   CalendarDays,
   Check,
   EyeOff,
+  FileText,
+  FolderKanban,
   GripVertical,
+  Inbox,
   LayoutDashboard,
   Maximize2,
   Pencil,
   Plus,
   RefreshCw,
+  ReceiptText,
   RotateCcw,
   Save,
   X
@@ -49,6 +53,7 @@ import {
 import { canUser } from "@pulse/contracts/auth";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import {
+  dashboardCompletionPath,
   dashboardGreeting,
   dashboardWidgetCatalog,
   defaultDashboardPreferences,
@@ -59,10 +64,12 @@ import { useCurrentUser } from "@/lib/useCurrentUser";
 import { usePulsePreferences } from "@/components/PulseShell";
 import type {
   DashboardAttentionSummary,
+  DashboardDateKind,
   DashboardDataResponse,
   DashboardPreferencesRecord,
   DashboardScope,
   DashboardTiming,
+  DashboardWorkKind,
   DashboardWidgetId,
   DashboardWidgetPlacement,
   DashboardWorkItem
@@ -79,6 +86,24 @@ type AttentionFilter =
 const workQueuePageSize = 6;
 const upcomingDatesPageSize = 8;
 const recentActivityPageSize = 10;
+
+const dashboardStageMeta: Record<DashboardWorkKind, {
+  label: string;
+  icon: typeof Inbox;
+}> = {
+  request: { label: "Request", icon: Inbox },
+  quote: { label: "Quote", icon: FileText },
+  project: { label: "Project", icon: FolderKanban },
+  invoice: { label: "Invoice", icon: ReceiptText }
+};
+
+const dashboardDateMeta: Record<DashboardDateKind, {
+  label: string;
+  icon: typeof CalendarDays;
+}> = {
+  "due-date": { label: "Due date", icon: CalendarDays },
+  "current-step": { label: "Next step", icon: CalendarClock }
+};
 
 async function requestJson<T>(url: string, init?: RequestInit) {
   const response = await apiFetch(url, {
@@ -101,11 +126,11 @@ function widgetTitle(id: DashboardWidgetId) {
   return dashboardWidgetCatalog.find((widget) => widget.id === id)?.title ?? id;
 }
 
-function timingLabel(timing: DashboardTiming, dueDate?: string) {
-  if (timing === "overdue") return dueDate ? `Overdue · ${formatWorkspaceDate(dueDate)}` : "Overdue";
+function timingLabel(timing: DashboardTiming, date?: string) {
+  if (timing === "overdue") return date ? `Overdue · ${formatWorkspaceDate(date)}` : "Overdue";
   if (timing === "today") return "Due today";
-  if (timing === "upcoming") return dueDate ? `Due ${formatWorkspaceDate(dueDate)}` : "Due soon";
-  if (dueDate) return `Due ${formatWorkspaceDate(dueDate)}`;
+  if (timing === "upcoming") return date ? `Due ${formatWorkspaceDate(date)}` : "Due soon";
+  if (date) return `Due ${formatWorkspaceDate(date)}`;
   return "No due date";
 }
 
@@ -118,6 +143,14 @@ function groupScheduleDate(date: string, businessDate: string) {
   if (difference === 0) return "Today";
   if (difference <= 7) return "This week";
   return "Next week";
+}
+
+function activityStageKind(entityType: string): DashboardWorkKind | null {
+  if (entityType === "Request") return "request";
+  if (entityType === "Quote") return "quote";
+  if (entityType === "Project") return "project";
+  if (entityType === "Invoice") return "invoice";
+  return null;
 }
 
 function visibleWorkItems(items: DashboardWorkItem[], filter: AttentionFilter) {
@@ -359,45 +392,60 @@ function WorkQueueWidget({
             className={`dashboard-work-list dashboard-paged-content${pageCount > 1 ? " is-paginated" : ""}`}
             key={page}
           >
-            {pageItems.map((item) => (
-              <article className="dashboard-work-row" key={item.id}>
-                <div className={`dashboard-work-kind kind-${item.kind}`}>
-                  <Blocks size={17} />
-                </div>
-                <div className="dashboard-work-copy">
-                  <div className="dashboard-work-primary">
-                    <Link href={item.href}>{item.title}</Link>
-                    <span className={`dashboard-timing timing-${item.timing}`}>
-                      {timingLabel(item.timing, item.dueDate)}
-                    </span>
+            {pageItems.map((item) => {
+              const stage = dashboardStageMeta[item.kind];
+              const StageIcon = stage.icon;
+              return (
+                <article className="dashboard-work-row" key={item.id}>
+                  <div className="dashboard-work-kind" title={stage.label}>
+                    <StageIcon size={17} aria-hidden="true" />
+                    <span className="sr-only">{stage.label}</span>
                   </div>
-                  <p>{item.reference} · {item.context}</p>
-                  <div className="dashboard-work-meta">
-                    <span>{item.status}</span>
-                    <span>{item.owner || "Unassigned"}</span>
-                    {item.priority ? <span>{item.priority}</span> : null}
-                    {item.attentionReasons.map((reason) => (
-                      <span className="dashboard-reason" key={reason}>{reason}</span>
-                    ))}
+                  <div className="dashboard-work-copy">
+                    <div className="dashboard-work-primary">
+                      <Link href={item.href}>{item.title}</Link>
+                      <span className={`dashboard-timing timing-${item.timing}`}>
+                        {timingLabel(item.timing, item.timingDate)}
+                      </span>
+                    </div>
+                    <p>{item.reference} · {item.context}</p>
+                    <div className="dashboard-work-meta">
+                      <span>{item.status}</span>
+                      <span>{item.owner || "Unassigned"}</span>
+                      {item.priority ? <span>{item.priority}</span> : null}
+                      {item.stepTargetDate ? (
+                        <span className="dashboard-work-date date-current-step">
+                          <CalendarClock size={12} /> Next step {formatWorkspaceDate(item.stepTargetDate)}
+                        </span>
+                      ) : null}
+                      {item.recordDueDate ? (
+                        <span className="dashboard-work-date date-due-date">
+                          <CalendarDays size={12} /> Due date {formatWorkspaceDate(item.recordDueDate)}
+                        </span>
+                      ) : null}
+                      {item.attentionReasons.map((reason) => (
+                        <span className="dashboard-reason" key={reason}>{reason}</span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                {item.canComplete && item.stepId ? (
-                  <button
-                    className="dashboard-complete-button"
-                    type="button"
-                    disabled={completingStepId === item.stepId}
-                    onClick={() => onCompleteStep(item)}
-                  >
-                    <Check size={16} />
-                    {completingStepId === item.stepId ? "Completing…" : "Complete"}
-                  </button>
-                ) : (
-                  <Link className="dashboard-row-link" href={item.href} aria-label={`Open ${item.reference}`}>
-                    <ArrowRight size={17} />
-                  </Link>
-                )}
-              </article>
-            ))}
+                  {item.canComplete && item.stepId ? (
+                    <button
+                      className="dashboard-complete-button"
+                      type="button"
+                      disabled={completingStepId === item.stepId}
+                      onClick={() => onCompleteStep(item)}
+                    >
+                      <Check size={16} />
+                      {completingStepId === item.stepId ? "Completing…" : "Complete"}
+                    </button>
+                  ) : (
+                    <Link className="dashboard-row-link" href={item.href} aria-label={`Open ${item.reference}`}>
+                      <ArrowRight size={17} />
+                    </Link>
+                  )}
+                </article>
+              );
+            })}
           </div>
           <WidgetPagination
             page={page}
@@ -452,21 +500,31 @@ function UpcomingDatesWidget({
           return (
             <section key={group}>
               <h3>{group}</h3>
-              {groupItems.map((item) => (
-                <Link className="dashboard-schedule-row" href={item.href} key={item.id}>
-                  <span className={`dashboard-date-block timing-${item.timing}`}>
-                    <strong>{new Date(`${item.date}T12:00:00Z`).getUTCDate()}</strong>
-                    <small>{new Date(`${item.date}T12:00:00Z`).toLocaleString("en-US", {
-                      month: "short",
-                      timeZone: "UTC"
-                    })}</small>
-                  </span>
-                  <span>
-                    <strong>{item.title}</strong>
-                    <small>{item.reference} · {item.context}</small>
-                  </span>
-                </Link>
-              ))}
+              {groupItems.map((item) => {
+                const stage = dashboardStageMeta[item.kind];
+                const dateMeta = dashboardDateMeta[item.dateKind];
+                const StageIcon = stage.icon;
+                const DateIcon = dateMeta.icon;
+                return (
+                  <Link className="dashboard-schedule-row" href={item.href} key={item.id}>
+                    <span className={`dashboard-date-block timing-${item.timing}`}>
+                      <strong>{new Date(`${item.date}T12:00:00Z`).getUTCDate()}</strong>
+                      <small>{new Date(`${item.date}T12:00:00Z`).toLocaleString("en-US", {
+                        month: "short",
+                        timeZone: "UTC"
+                      })}</small>
+                    </span>
+                    <span>
+                      <span className="dashboard-schedule-kicker">
+                        <span><StageIcon size={11} /> {stage.label}</span>
+                        <span><DateIcon size={11} /> {dateMeta.label}</span>
+                      </span>
+                      <strong>{item.title}</strong>
+                      <small>{item.reference} · {item.context}</small>
+                    </span>
+                  </Link>
+                );
+              })}
             </section>
           );
         })}
@@ -511,9 +569,11 @@ function RecentActivityWidget({
         key={page}
       >
         {pageItems.map((item) => {
+          const stageKind = activityStageKind(item.entityType);
+          const ActivityIcon = stageKind ? dashboardStageMeta[stageKind].icon : Activity;
           const content = (
             <>
-              <span className="dashboard-activity-icon"><Activity size={15} /></span>
+              <span className="dashboard-activity-icon"><ActivityIcon size={15} /></span>
               <span>
                 <strong>{item.title}</strong>
                 <small>
@@ -554,14 +614,24 @@ function ModuleHealthWidget({
   if (!data) return <DashboardSkeleton />;
   return (
     <div className="dashboard-module-grid">
-      {data.items.map((item) => (
-        <Link className="dashboard-module-card" href={item.href} key={item.id}>
-          <span>{item.label}</span>
-          <strong>{item.count}</strong>
-          <small>{item.detail}</small>
-          <ArrowRight size={16} />
-        </Link>
-      ))}
+      {data.items.map((item) => {
+        const kind: DashboardWorkKind = item.id === "requests"
+          ? "request"
+          : item.id === "quotes"
+            ? "quote"
+            : item.id === "projects"
+              ? "project"
+              : "invoice";
+        const StageIcon = dashboardStageMeta[kind].icon;
+        return (
+          <Link className="dashboard-module-card" href={item.href} key={item.id}>
+            <span>{item.label}</span>
+            <strong>{item.count}</strong>
+            <small>{item.detail}</small>
+            <StageIcon size={17} />
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -776,10 +846,11 @@ export function HubDashboard() {
   }
 
   async function completeStep(item: DashboardWorkItem) {
-    if (!item.entityId || !item.stepId) return;
-    setCompletingStepId(item.stepId);
+    const completionPath = dashboardCompletionPath(item);
+    if (!completionPath) return;
+    setCompletingStepId(item.stepId!);
     try {
-      await requestJson(`/api/requests/${item.entityId}/updates/${item.stepId}/complete`, {
+      await requestJson(completionPath, {
         method: "POST",
         body: JSON.stringify({ completed: true })
       });

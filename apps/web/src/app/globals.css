@@ -1454,13 +1454,8 @@
   width: 32px;
   height: 32px;
   border-radius: 9px;
-  background: var(--pulse-blue-soft);
-  color: var(--pulse-blue);
-}
-
-.dashboard-work-kind.kind-request-task {
-  background: var(--pulse-green-soft);
-  color: var(--pulse-green);
+  background: var(--pulse-surface-soft);
+  color: var(--pulse-muted-strong);
 }
 
 .dashboard-work-copy {
@@ -1510,6 +1505,17 @@
   color: var(--pulse-muted-strong);
   font-size: 9px;
   font-weight: 800;
+}
+
+.dashboard-work-meta .dashboard-work-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dashboard-work-meta .dashboard-work-date.date-current-step {
+  border: 1px dashed var(--pulse-line-strong);
+  background: transparent;
 }
 
 .dashboard-timing {
@@ -1626,8 +1632,8 @@
   width: 38px;
   height: 38px;
   border-radius: 9px;
-  background: var(--pulse-blue-soft);
-  color: var(--pulse-blue);
+  background: var(--pulse-surface-soft);
+  color: var(--pulse-muted-strong);
   line-height: 1;
 }
 
@@ -1652,6 +1658,27 @@
   color: var(--pulse-amber);
 }
 
+.dashboard-date-block.timing-upcoming {
+  background: var(--pulse-blue-soft);
+  color: var(--pulse-blue);
+}
+
+.dashboard-schedule-row > span:last-child .dashboard-schedule-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--pulse-muted-strong);
+  font-size: 8px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.dashboard-schedule-kicker > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .dashboard-activity-list {
   gap: 3px;
 }
@@ -1662,8 +1689,8 @@
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: var(--pulse-purple-soft);
-  color: var(--pulse-purple);
+  background: var(--pulse-surface-soft);
+  color: var(--pulse-muted-strong);
 }
 
 .dashboard-module-grid {
