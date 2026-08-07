@@ -278,7 +278,11 @@ export function convertQuoteToProject(
 
 export function approveQuote(
   quoteId: string,
-  input: ApproveQuoteInput = { startDate: undefined, dueDate: undefined }
+  input: ApproveQuoteInput = {
+    startDate: undefined,
+    dueDate: undefined,
+    projectId: undefined
+  }
 ) {
   return apiRequest<{ quote: QuoteDetailRecord; project: ProjectResponse["project"] }>(
     quotePath(quoteId, "/approve"),

@@ -1,4 +1,5 @@
 {
+  "replacesUnpublishedRevision": "f3be822af98c69eed57ad41be4612191ce7ba1a1",
   "minimumVersion": "0.1.1",
   "sourceMigrations": [
     "202607210001_pulse_0_1_baseline",

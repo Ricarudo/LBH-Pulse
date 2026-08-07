@@ -821,10 +821,9 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
     try {
       setBusy(true);
       const data = await approveQuote(quote.id, {
-        ...(projectHandoffMode === "create" ? {
-          startDate: projectStartDate || undefined,
-          dueDate: projectDueDate || undefined
-        } : { projectId: selectedProjectId })
+        startDate: projectHandoffMode === "create" ? projectStartDate || undefined : undefined,
+        dueDate: projectHandoffMode === "create" ? projectDueDate || undefined : undefined,
+        projectId: projectHandoffMode === "attach" ? selectedProjectId : undefined
       });
       setProjectConversionOpen(false);
       router.push(`/projects/${data.project.id}`);
