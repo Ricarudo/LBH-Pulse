@@ -517,7 +517,7 @@
   color: #69798c;
 }
 
-@media (max-width: 1050px) {
+@media (max-width: 1023px) {
   .project-financial-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -527,7 +527,7 @@
   }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 639px) {
   .project-financial-overview,
   .project-ledger-panel,
   .project-quote-lifecycle {
