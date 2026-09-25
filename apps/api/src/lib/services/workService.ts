@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { recordActivity } from "@/lib/services/activityService";
 import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService";
 import { allocateRecordNumber } from "@/lib/services/recordNumberService";
+import { quoteCommercialContentLocked } from "@pulse/contracts/quote-lifecycle";
+import { assertQuoteCommercialEditable, hasQuoteCommercialChanges } from "@/lib/services/quoteLifecyclePolicy";
 import {
   createQuoteSystemUpdate,
   listQuoteCurrentSteps,
@@ -1451,7 +1453,7 @@ async function quoteIdOrThrow(tx: Prisma.TransactionClient, id: string) {
 async function lockQuoteOrThrow(tx: Prisma.TransactionClient, id: string) {
   const quote = await quoteIdOrThrow(tx, id);
   await tx.$queryRaw`SELECT "id" FROM "Quote" WHERE "id" = ${quote.id} FOR UPDATE`;
-  return tx.quote.findUniqueOrThrow({
+  const locked = await tx.quote.findUniqueOrThrow({
     where: { id: quote.id },
     select: {
       id: true,
@@ -1459,13 +1461,17 @@ async function lockQuoteOrThrow(tx: Prisma.TransactionClient, id: string) {
       calculationMode: true,
       total: true,
       status: true,
-      sentAt: true
+      sentAt: true,
+      updatedAt: true,
+      archivedAt: true
     }
   });
+  if (locked.archivedAt) throw new Error("QUOTE_NOT_FOUND");
+  return locked;
 }
 
 function assertQuoteFinancialsEditable(quote: { status: string; sentAt: Date | null }) {
-  if (quote.status === "Sent" || quote.sentAt) {
+  if (quoteCommercialContentLocked(quote)) {
     throw new Error("QUOTE_SENT_FINANCIALS_LOCKED");
   }
 }
@@ -1847,14 +1853,17 @@ export async function updateQuoteProposal(
   input: UpdateQuoteProposalInput,
   user?: AuthenticatedUser
 ) {
-  const existing = await quoteOrThrow(quoteId);
-  const quote = await prisma.quote.update({
-    where: { id: existing.id },
-    data: {
-      proposalNotes: input.proposalNotes || null,
-      proposalPreparedAt: input.proposalNotes ? new Date() : null
-    },
-    include: quoteDetailInclude
+  const quote = await prisma.$transaction(async (tx) => {
+    const locked = await lockQuoteOrThrow(tx, quoteId);
+    assertQuoteCommercialEditable(locked);
+    return tx.quote.update({
+      where: { id: locked.id },
+      data: {
+        proposalNotes: input.proposalNotes || null,
+        proposalPreparedAt: input.proposalNotes ? new Date() : null
+      },
+      include: quoteDetailInclude
+    });
   });
   await recordActivity({
     user,
@@ -1870,8 +1879,13 @@ function quoteRevisionSnapshot(quote: QuoteDetailWithRelations): Prisma.InputJso
   const version = quoteVersionFields(quote);
   const summary = quoteFinancialSummaryDecimal(quote);
   return JSON.parse(JSON.stringify({
+    schemaVersion: 1,
     dataAvailable: true,
     baseQuoteNumber: version.baseQuoteNumber,
+    title: quote.title,
+    clientName: quote.client?.displayName ?? quote.clientName ?? "",
+    site: toLifecycleSite(quote.site),
+    lifecycleDetails: quote.lifecycleContext?.details ?? quote.scopeDescriptionSnapshot ?? "",
     calculationMode: quote.calculationMode,
     legacyFinancials: legacyFinancialsRecord(quote),
     financialSummary: exactFinancialSummarySnapshot(summary),
@@ -1969,6 +1983,7 @@ export async function createQuote(input: CreateQuoteInput, user?: AuthenticatedU
 
 export async function updateQuote(id: string, input: UpdateQuoteInput, user?: AuthenticatedUser) {
   const existing = await quoteOrThrow(id);
+  if (hasQuoteCommercialChanges(input)) assertQuoteCommercialEditable(existing);
   const statusChanged = input.status !== undefined && input.status !== existing.status;
   const statusReason = input.statusReason?.trim() ?? "";
   if (statusChanged && input.status === "Approved") {
@@ -2029,6 +2044,13 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
     if (project && project.clientId !== client.id) throw new Error("WORK_CLIENT_MISMATCH");
   }
   const quote = await prisma.$transaction(async (tx) => {
+    const locked = await lockQuoteOrThrow(tx, existing.id);
+    if (hasQuoteCommercialChanges(input)) assertQuoteCommercialEditable(locked);
+    // Status/contact validation above must not be applied to a newer state.
+    // In particular an edit or outcome waiting behind send must re-read first.
+    if (locked.updatedAt.getTime() !== existing.updatedAt.getTime() || locked.status !== existing.status) {
+      throw new Error("QUOTE_STATE_CHANGED");
+    }
     const lifecycleContextId = await updateLifecycleDetails(
       tx,
       existing.lifecycleContextId,

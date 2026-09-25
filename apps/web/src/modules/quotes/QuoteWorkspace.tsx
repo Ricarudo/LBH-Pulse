@@ -23,6 +23,7 @@ import {
   X
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
+import { quoteCommercialContentLocked, quoteLifecycleGroup, quoteStatusLabel } from "@pulse/contracts/quote-lifecycle";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import { LifecycleDocuments } from "@/components/LifecycleDocuments";
 import { searchItems } from "@/lib/api/items";
@@ -329,22 +330,29 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   useEffect(() => {
     if (!addOpen) return;
     const controller = new AbortController();
+    setItemSearchLoading(true);
+    setItemSearchError("");
+    setItemResults([]);
     const timer = window.setTimeout(async () => {
       try {
         const data = await searchItems(
           { q: itemQuery },
           { cache: "no-store", signal: controller.signal }
         );
-        setItemResults(data.items);
+        if (!controller.signal.aborted) setItemResults(data.items);
       } catch {
-        if (!controller.signal.aborted) setItemResults([]);
+        if (!controller.signal.aborted) {
+          setItemSearchError("Unable to load items. Try again.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setItemSearchLoading(false);
       }
     }, 160);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [addOpen, itemQuery]);
+  }, [addOpen, itemQuery, itemSearchAttempt]);
 
   const selectedItem = itemResults.find((item) => item.id === selectedItemId);
   const kitComponents = selectedItem?.relations.filter((relation) => relation.relationType === "KIT_COMPONENT") ?? [];
@@ -362,7 +370,8 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
       ) as Record<QuoteBomSection, QuoteItemRecord[]>,
     [quote?.items]
   );
-  const canEditFinancials = canWrite && !quote?.sentAt && quote?.status !== "Sent";
+  const canEditCommercial = canWrite && Boolean(quote) && !quoteCommercialContentLocked(quote!);
+  const canEditFinancials = canEditCommercial;
 
   function updateQuoteState(nextQuote: QuoteDetailRecord | QuoteRecord) {
     setQuote((current) => {
@@ -418,7 +427,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
       const data = await markQuoteSent(quote.id);
       updateQuoteState(data.quote);
       setMarkSentDialogOpen(false);
-      setToast(`${data.quote.quoteNumber} marked as sent. Monetary values are locked.`);
+      setToast(`${data.quote.quoteNumber} marked as sent. Commercial details and pricing are locked.`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Unable to mark the quote as sent.");
     } finally {
@@ -541,7 +550,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   }
 
   async function createContactForQuote() {
-    if (!quote?.clientId || !canWriteClients) return;
+    if (!quote?.clientId || !canWriteClients || !canEditCommercial) return;
     const validation = validateQuoteContactDraft(newContactDraft);
     setNewContactDraft(validation.normalized);
     setNewContactErrors(validation.errors);
@@ -570,7 +579,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   }
 
   async function createSiteForQuote() {
-    if (!quote?.clientId || !canWriteClients) return;
+    if (!quote?.clientId || !canWriteClients || !canEditCommercial) return;
     const validation = validateQuoteSiteDraft(newSiteDraft);
     setNewSiteDraft(validation.normalized);
     setNewSiteErrors(validation.errors);
@@ -599,6 +608,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   }
 
   async function saveTrades() {
+    if (!canEditCommercial) return;
     setBusy(true);
     const saved = await patchQuote({ trades: tradeDraft });
     setBusy(false);
@@ -699,7 +709,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   }
 
   async function saveProposalNotes() {
-    if (!quote) return;
+    if (!quote || !canEditCommercial) return;
     const currentQuoteId = quote.id;
     try {
       setBusy(true);
@@ -828,7 +838,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
       setProjectConversionOpen(false);
       router.push(`/projects/${data.project.id}`);
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Unable to approve and hand off this quote.");
+      setToast(error instanceof Error ? error.message : "Unable to accept and hand off this quote.");
     } finally {
       setBusy(false);
     }
@@ -892,11 +902,15 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
         <div className="quote-header-actions lifecycle-record-actions">
           <select
             className={`lifecycle-record-status${quote.status === "On Hold" ? " tone-hold" : quote.status === "Review" ? " tone-review" : ""}`}
+            aria-label="Quote stage or outcome"
             value={quote.status}
             disabled={!canWrite}
             onChange={(event) => requestStatusChange(event.target.value as QuoteRecord["status"])}
           >
-            {selectableQuoteStatuses(quote.status).map((status) => <option key={status}>{status}</option>)}
+            {[{ group: "working", label: "Working" }, { group: "awaiting-response", label: "Awaiting response" }, { group: "closed", label: "Closed outcomes" }].map(({ group, label }) => {
+              const statuses = selectableQuoteStatuses(quote.status).filter(status => quoteLifecycleGroup(status) === group);
+              return statuses.length ? <optgroup key={group} label={label}>{statuses.map(status => <option key={status} value={status}>{quoteStatusLabel(status)}</option>)}</optgroup> : null;
+            })}
           </select>
           {markSentEligibleStatuses.has(quote.status) ? (
             <button
@@ -923,7 +937,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
               className="toolbar-button compact quote-revision-action"
               type="button"
               disabled={!canWrite || Boolean(quote.projectId)}
-              title={quote.projectId ? "This approved quote is already linked to a project." : undefined}
+              title={quote.projectId ? "This accepted quote is already linked to a project." : undefined}
               onClick={() => setRevisionDialogOpen(true)}
             >
               <RotateCcw size={16} />Request revision
@@ -1002,7 +1016,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
         <article className="quote-trades-card">
           <div className="quote-trades-heading">
             <span>{quote.trades.length === 1 ? "Trade" : "Trades"}</span>
-            {canWrite ? (
+            {canEditCommercial ? (
               <button
                 type="button"
                 onClick={() => {
@@ -1021,7 +1035,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
           ) : (
             <strong>Unclassified</strong>
           )}
-          {tradeEditorOpen ? (
+          {tradeEditorOpen && canEditCommercial ? (
             <div className="quote-trade-editor">
               {serviceCategories.map((trade) => (
                 <label key={trade} className={tradeDraft.includes(trade) ? "selected" : ""}>
@@ -1083,6 +1097,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             )}
           </div>
 
+          {quoteCommercialContentLocked(quote) ? <p className="panel-note" role="status">Commercial details are locked for this sent or closed quote. You can still update its assignment and collaborators.</p> : null}
           {quoteDetailsErrors.form ? <div className="form-alert error" role="alert">{quoteDetailsErrors.form}</div> : null}
 
           <div className="request-details-grid lifecycle-linked-grid">
@@ -1099,6 +1114,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
                   <input
                     maxLength={200}
                     value={quoteDetailsDraft.title}
+                    disabled={!canEditCommercial}
                     aria-invalid={Boolean(quoteDetailsErrors.title)}
                     onChange={(event) => {
                       setQuoteDetailsDraft({ ...quoteDetailsDraft, title: event.target.value });
@@ -1119,15 +1135,15 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
                     <select
                       aria-labelledby="quote-contact-label"
                       value={quoteDetailsDraft.contactId}
-                      disabled={!quote.contactOptions.length}
+                      disabled={!canEditCommercial || !quote.contactOptions.length}
                       onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, contactId: event.target.value })}
                     >
                       {!quoteDetailsDraft.contactId ? <option value="">Select a contact…</option> : null}
                       {quote.contactOptions.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}
                     </select>
-                    {canWriteClients ? <button type="button" className="toolbar-button compact" onClick={() => { setNewContactOpen((current) => !current); setNewContactErrors({}); }}>New contact</button> : null}
+                    {canWriteClients && canEditCommercial ? <button type="button" className="toolbar-button compact" onClick={() => { setNewContactOpen((current) => !current); setNewContactErrors({}); }}>New contact</button> : null}
                   </div>
-                  {newContactOpen ? (
+                  {newContactOpen && canEditCommercial ? (
                     <div className="quote-inline-create" aria-label="Create a client contact">
                       <div className="quote-inline-create-heading"><strong>New client contact</strong><small>Creates the contact now; the quote link applies when you save.</small></div>
                       <label>First name<input autoComplete="given-name" value={newContactDraft.firstName} aria-invalid={Boolean(newContactErrors.firstName)} onChange={(event) => { setNewContactDraft({ ...newContactDraft, firstName: event.target.value }); setNewContactErrors((current) => ({ ...current, firstName: undefined, form: undefined })); }} />{newContactErrors.firstName ? <small className="field-error">{newContactErrors.firstName}</small> : null}</label>
@@ -1151,15 +1167,15 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
                     <select
                       aria-labelledby="quote-site-label"
                       value={quoteDetailsDraft.siteId}
-                      disabled={!quote.siteOptions.length}
+                      disabled={!canEditCommercial || !quote.siteOptions.length}
                       onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, siteId: event.target.value })}
                     >
                       {!quoteDetailsDraft.siteId ? <option value="">Select a site…</option> : null}
                       {quote.siteOptions.map((site) => <option key={site.id} value={site.id}>{site.siteName}</option>)}
                     </select>
-                    {canWriteClients ? <button type="button" className="toolbar-button compact" onClick={() => { setNewSiteOpen((current) => !current); setNewSiteErrors({}); }}>New site</button> : null}
+                    {canWriteClients && canEditCommercial ? <button type="button" className="toolbar-button compact" onClick={() => { setNewSiteOpen((current) => !current); setNewSiteErrors({}); }}>New site</button> : null}
                   </div>
-                  {newSiteOpen ? (
+                  {newSiteOpen && canEditCommercial ? (
                     <div className="quote-inline-create" aria-label="Create a client site">
                       <div className="quote-inline-create-heading"><strong>New client site</strong><small>Creates the site now; the quote link applies when you save.</small></div>
                       <label>Site name<input value={newSiteDraft.siteName} aria-invalid={Boolean(newSiteErrors.siteName)} onChange={(event) => { setNewSiteDraft({ ...newSiteDraft, siteName: event.target.value }); setNewSiteErrors((current) => ({ ...current, siteName: undefined, form: undefined })); }} />{newSiteErrors.siteName ? <small className="field-error">{newSiteErrors.siteName}</small> : null}</label>
@@ -1190,7 +1206,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
 
             <section>
               {detailsEditing && quoteDetailsDraft ? (
-                <label className="quote-detail-field"><span>Send by</span><input aria-label="Send by" type="date" value={quoteDetailsDraft.dueDate} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, dueDate: event.target.value })} /></label>
+                <label className="quote-detail-field"><span>Send by</span><input aria-label="Send by" type="date" disabled={!canEditCommercial} value={quoteDetailsDraft.dueDate} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, dueDate: event.target.value })} /></label>
               ) : <><span>Send by</span><h3>{quote.dueDate ? formatWorkspaceDate(quote.dueDate) : "Not set"}</h3></>}
               <p>Target date for preparing this quote</p>
             </section>
@@ -1214,7 +1230,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
 
           <label className="material-field lifecycle-details-note">
             <span>Important quote information</span>
-            {detailsEditing && quoteDetailsDraft ? <textarea maxLength={5000} value={quoteDetailsDraft.lifecycleDetails} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, lifecycleDetails: event.target.value })} /> : <p>{quote.lifecycleContext.details || "No shared details have been added."}</p>}
+            {detailsEditing && quoteDetailsDraft ? <textarea maxLength={5000} disabled={!canEditCommercial} value={quoteDetailsDraft.lifecycleDetails} onChange={(event) => setQuoteDetailsDraft({ ...quoteDetailsDraft, lifecycleDetails: event.target.value })} /> : <p>{quote.lifecycleContext.details || "No shared details have been added."}</p>}
             <small>{detailsEditing && quoteDetailsDraft ? `${quoteDetailsDraft.lifecycleDetails.length}/5,000` : `Last updated by ${quote.lifecycleContext.updatedByName}`}</small>
           </label>
         </section>
@@ -1303,10 +1319,10 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
         </section>
       ) : null}
 
-      {activeTab === "work" && !canEditFinancials && (quote.sentAt || quote.status === "Sent") ? (
-        <section className="settings-callout" aria-label="Sent quote monetary lock">
+      {activeTab === "work" && quoteCommercialContentLocked(quote) ? (
+        <section className="settings-callout" aria-label="Quote commercial content lock">
           <Lock size={17} />
-          <span>Monetary values are locked because this quote was sent. Create a revision to change client pricing.</span>
+          <span>Commercial details and pricing are locked for this sent or closed quote.</span>
         </section>
       ) : null}
 
@@ -1416,9 +1432,9 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             </dl>
             <label>
               Internal proposal notes
-              <textarea value={proposalNotes} onChange={(event) => setProposalNotes(event.target.value)} disabled={!canWrite} />
+              <textarea value={proposalNotes} onChange={(event) => setProposalNotes(event.target.value)} disabled={!canEditCommercial} />
             </label>
-            <button className="primary-button compact" type="button" onClick={() => void saveProposalNotes()} disabled={!canWrite || busy}>
+            <button className="primary-button compact" type="button" onClick={() => void saveProposalNotes()} disabled={!canEditCommercial || busy}>
               <Save size={15} />Save prep
             </button>
           </section>
@@ -1565,7 +1581,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
                 <span className="success"><Send size={19} /></span>
                 <div>
                   <h2 id="quote-mark-sent-title">Mark {quote.quoteNumber} as sent?</h2>
-                  <p>The Send by date is the preparation deadline and will stop appearing on the dashboard. Monetary values and pricing details will be locked and cannot be edited afterward. Only an Administrator can undo this action.</p>
+                  <p>The Send by date is the preparation deadline and will stop appearing on the dashboard. Commercial details, proposal notes and pricing will be locked. Assignment and collaborators can still be updated. Only an Administrator can undo this action.</p>
                 </div>
                 <button type="button" disabled={busy} aria-label="Close dialog" onClick={() => setMarkSentDialogOpen(false)}><X size={19} /></button>
               </div>
@@ -1650,7 +1666,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             <section className="record-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-project-conversion-title">
               <div className="record-dialog-heading">
                 <span className="success"><FileText size={19} /></span>
-                <div><h2 id="quote-project-conversion-title">{quote.projectReference?.role === "CHANGE_ORDER" ? "Approve change order?" : projectHandoffMode === "attach" ? "Approve and attach change order?" : "Approve and create project?"}</h2><p>The accepted financial snapshot will become part of project delivery.</p></div>
+                <div><h2 id="quote-project-conversion-title">{quote.projectReference?.role === "CHANGE_ORDER" ? "Accept change order?" : projectHandoffMode === "attach" ? "Accept and attach change order?" : "Accept and create project?"}</h2><p>The accepted financial snapshot will become part of project delivery.</p></div>
                 <button type="button" aria-label="Close dialog" onClick={() => setProjectConversionOpen(false)}><X size={19} /></button>
               </div>
               <div className="record-conversion-summary">
@@ -1660,7 +1676,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
               </div>
               {!quote.projectReference ? <>
                 <div className="quote-handoff-options" role="radiogroup" aria-label="Project handoff method">
-                  <button type="button" role="radio" aria-checked={projectHandoffMode === "create"} className={projectHandoffMode === "create" ? "selected" : ""} onClick={() => { setProjectHandoffMode("create"); setSelectedProjectId(""); }}><strong>Create new project</strong><span>Use this quote as the original approved scope.</span></button>
+                  <button type="button" role="radio" aria-checked={projectHandoffMode === "create"} className={projectHandoffMode === "create" ? "selected" : ""} onClick={() => { setProjectHandoffMode("create"); setSelectedProjectId(""); }}><strong>Create new project</strong><span>Use this quote as the original accepted scope.</span></button>
                   <button type="button" role="radio" aria-checked={projectHandoffMode === "attach"} className={projectHandoffMode === "attach" ? "selected" : ""} onClick={() => setProjectHandoffMode("attach")}><strong>Attach to existing project</strong><span>Record this imported quote as the next change order.</span></button>
                 </div>
                 {projectHandoffMode === "create" ? <div className="work-queue-form-grid quote-approval-dates">
@@ -1670,7 +1686,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
               </> : null}
               <div className="record-dialog-actions">
                 <button type="button" onClick={() => setProjectConversionOpen(false)}>Cancel</button>
-                <button className="primary" type="button" disabled={busy || (!quote.projectReference && projectHandoffMode === "attach" ? !selectedProjectId : Boolean(projectStartDate && projectDueDate && projectDueDate < projectStartDate))} onClick={() => void convertToProject()}>{busy ? "Approving…" : quote.projectReference?.role === "CHANGE_ORDER" || projectHandoffMode === "attach" ? "Approve change order" : "Approve and create project"}</button>
+                <button className="primary" type="button" disabled={busy || (!quote.projectReference && projectHandoffMode === "attach" ? !selectedProjectId : Boolean(projectStartDate && projectDueDate && projectDueDate < projectStartDate))} onClick={() => void convertToProject()}>{busy ? "Accepting…" : quote.projectReference?.role === "CHANGE_ORDER" || projectHandoffMode === "attach" ? "Accept change order" : "Accept and create project"}</button>
               </div>
             </section>
           </div>

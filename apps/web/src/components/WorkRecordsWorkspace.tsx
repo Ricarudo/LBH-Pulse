@@ -13,6 +13,7 @@ import {
   X
 } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
+import { quoteLifecycleGroup, quoteLifecycleGroups, quoteLifecycleGroupLabels, quoteStatusLabel } from "@pulse/contracts/quote-lifecycle";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
 import { useCurrentUser } from "@/lib/useCurrentUser";
@@ -624,11 +625,11 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       setRecords((current) => current.map((record) => record.id === data.quote.id ? data.quote : record));
       setPendingApproval(null);
       setToast(approvalHandoffMode === "attach"
-        ? `${data.quote.quoteNumber} approved and attached to ${data.project.projectNumber}.`
-        : `${data.quote.quoteNumber} approved and ${data.project.projectNumber} created.`);
+        ? `${data.quote.quoteNumber} accepted and attached to ${data.project.projectNumber}.`
+        : `${data.quote.quoteNumber} accepted and ${data.project.projectNumber} created.`);
       router.push(`/projects/${data.project.id}`);
     } catch (approvalError) {
-      setToast(approvalError instanceof Error ? approvalError.message : "Unable to approve quote.");
+      setToast(approvalError instanceof Error ? approvalError.message : "Unable to accept quote.");
     } finally {
       setSaving(false);
     }
@@ -654,7 +655,10 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
         onClick={(event) => event.stopPropagation()}
         onChange={(event) => void changeStatus(record, event.target.value)}
       >
-        {selectableStatuses.map((status) => (
+        {kind === "quotes" ? quoteLifecycleGroups.map(group => {
+          const grouped = selectableStatuses.filter(status => quoteLifecycleGroup(status) === group);
+          return grouped.length ? <optgroup key={group} label={group === "closed" ? "Closed outcomes" : quoteLifecycleGroupLabels[group]}>{grouped.map(status => <option key={status} value={status}>{quoteStatusLabel(status)}</option>)}</optgroup> : null;
+        }) : selectableStatuses.map((status) => (
           <option key={status} value={status}>
             {status}
           </option>
@@ -662,7 +666,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       </select>
     ) : (
       <span className={`work-queue-status tone-${statusTone(record.status)}`}>
-        {record.status}
+        {kind === "quotes" ? quoteStatusLabel(record.status) : record.status}
       </span>
     );
   }
@@ -1204,16 +1208,16 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
         <ViewportPortal>
           <div className="work-queue-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setPendingApproval(null); }}>
             <div className="work-queue-modal quote-approval-dialog" role="dialog" aria-modal="true" aria-labelledby="queue-approve-title">
-              <div className="quote-hold-dialog-heading"><span className="quote-approval-dialog-icon"><CalendarClock size={22} /></span><div><span>Project handoff</span><h2 id="queue-approve-title">Approve {pendingApproval.quoteNumber}?</h2><p>Create its original project or attach an imported change order to existing delivery work.</p></div><button type="button" disabled={saving} onClick={() => setPendingApproval(null)} aria-label="Close approval dialog"><X size={18} /></button></div>
+              <div className="quote-hold-dialog-heading"><span className="quote-approval-dialog-icon"><CalendarClock size={22} /></span><div><span>Project handoff</span><h2 id="queue-approve-title">Accept {pendingApproval.quoteNumber}?</h2><p>Create its original project or attach an imported change order to existing delivery work.</p></div><button type="button" disabled={saving} onClick={() => setPendingApproval(null)} aria-label="Close approval dialog"><X size={18} /></button></div>
               <div className="quote-handoff-options" role="radiogroup" aria-label="Project handoff method">
-                <button type="button" role="radio" aria-checked={approvalHandoffMode === "create"} className={approvalHandoffMode === "create" ? "selected" : ""} onClick={() => { setApprovalHandoffMode("create"); setApprovalProjectId(""); }}><strong>Create new project</strong><span>Use this quote as the original approved scope.</span></button>
+                <button type="button" role="radio" aria-checked={approvalHandoffMode === "create"} className={approvalHandoffMode === "create" ? "selected" : ""} onClick={() => { setApprovalHandoffMode("create"); setApprovalProjectId(""); }}><strong>Create new project</strong><span>Use this quote as the original accepted scope.</span></button>
                 <button type="button" role="radio" aria-checked={approvalHandoffMode === "attach"} className={approvalHandoffMode === "attach" ? "selected" : ""} onClick={() => setApprovalHandoffMode("attach")}><strong>Attach to existing project</strong><span>Record this imported quote as the next change order.</span></button>
               </div>
               {approvalHandoffMode === "create" ? <div className="quote-approval-dates">
                 <label><span>Planned start</span><input type="date" value={approvalStartDate} onChange={(event) => setApprovalStartDate(event.target.value)} /></label>
                 <label><span>Target completion</span><input type="date" min={approvalStartDate || undefined} value={approvalDueDate} onChange={(event) => setApprovalDueDate(event.target.value)} /></label>
               </div> : <label className="quote-handoff-project-select"><span>Existing project</span><select autoFocus value={approvalProjectId} disabled={approvalProjectsLoading} onChange={(event) => setApprovalProjectId(event.target.value)}><option value="">{approvalProjectsLoading ? "Loading projects…" : "Select a project"}</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.projectNumber} · {project.title} · {project.status}</option>)}</select>{approvalProjectsError ? <small>{approvalProjectsError}</small> : !approvalProjectsLoading && projects.length === 0 ? <small>No active projects were found for {pendingApproval.clientName}.</small> : <small>Only active projects for {pendingApproval.clientName} are shown.</small>}</label>}
-              <div className="work-queue-modal-actions quote-hold-dialog-actions"><button type="button" disabled={saving} onClick={() => setPendingApproval(null)}>Cancel</button><button className="primary-button" type="button" disabled={saving || (approvalHandoffMode === "attach" ? !approvalProjectId : Boolean(approvalStartDate && approvalDueDate && approvalDueDate < approvalStartDate))} onClick={() => void approveAndCreateProject()}><Save size={17} />{saving ? "Approving…" : approvalHandoffMode === "attach" ? "Approve and attach" : "Approve and create project"}</button></div>
+              <div className="work-queue-modal-actions quote-hold-dialog-actions"><button type="button" disabled={saving} onClick={() => setPendingApproval(null)}>Cancel</button><button className="primary-button" type="button" disabled={saving || (approvalHandoffMode === "attach" ? !approvalProjectId : Boolean(approvalStartDate && approvalDueDate && approvalDueDate < approvalStartDate))} onClick={() => void approveAndCreateProject()}><Save size={17} />{saving ? "Accepting…" : approvalHandoffMode === "attach" ? "Accept and attach" : "Accept and create project"}</button></div>
             </div>
           </div>
         </ViewportPortal>

@@ -7,6 +7,14 @@ import { AuthError } from "@/shared/auth.service";
 import { changeRequestStatusSchema } from "@pulse/contracts/requests";
 
 describe("apiErrorPayload", () => {
+  it("returns actionable conflicts for frozen content and concurrent quote changes", () => {
+    for (const code of ["QUOTE_COMMERCIAL_CONTENT_LOCKED", "QUOTE_STATE_CHANGED"]) {
+      const payload = apiErrorPayload(new Error(code));
+      assert.equal(payload?.status, 409);
+      assert.equal(payload?.body.code, code);
+      assert.ok(payload?.body.error);
+    }
+  });
   it("maps authentication failures to their status code", () => {
     assert.deepEqual(apiErrorPayload(new AuthError("Authentication required.", 401)), {
       status: 401,

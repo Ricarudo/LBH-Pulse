@@ -13,7 +13,8 @@ import {
   replaceLegacyQuoteFinancials,
   switchQuoteCalculationMode,
   undoQuoteSent,
-  updateQuote
+  updateQuote,
+  updateQuoteProposal
 } from "@/lib/services/workService";
 
 const runDatabaseTests = process.env.PULSE_RUN_DB_TESTS === "1";
@@ -50,6 +51,65 @@ async function cleanupQuote(quoteId: string) {
     where: { id: { in: projects.flatMap((project) => project.lifecycleContextId ? [project.lifecycleContextId] : []) } }
   });
 }
+
+test("sending freezes commercial PATCH and proposal preparation but permits collaborator updates", { skip: !runDatabaseTests }, async () => {
+  const context = await prisma.lifecycleContext.create({ data: { details: "Original scope" } });
+  const quote = await prisma.quote.create({
+    data: { quoteNumber: key("CONTENT-LOCK"), title: "Original title", lifecycleContextId: context.id }
+  });
+  try {
+    await updateQuoteProposal(quote.id, { proposalNotes: "Original terms" });
+    await markQuoteSent(quote.id);
+    for (const input of [{ title: "Changed" }, { clientId: "other" }, { contactId: null },
+      { siteId: null }, { dueDate: null }, { lifecycleDetails: "Changed scope" }, { trades: [] }]) {
+      await assert.rejects(updateQuote(quote.id, input), /QUOTE_COMMERCIAL_CONTENT_LOCKED/);
+    }
+    await assert.rejects(updateQuoteProposal(quote.id, { proposalNotes: "Changed terms" }), /QUOTE_COMMERCIAL_CONTENT_LOCKED/);
+    await updateQuote(quote.id, { collaboratorIds: [] });
+    const stored = await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } });
+    assert.equal(stored.title, "Original title");
+    assert.equal(stored.proposalNotes, "Original terms");
+    assert.equal((await prisma.lifecycleContext.findUniqueOrThrow({ where: { id: context.id } })).details, "Original scope");
+    assert.equal((await updateQuote(quote.id, { status: "Rejected" })).status, "Rejected");
+  } finally {
+    await cleanupQuote(quote.id);
+    await prisma.lifecycleContext.delete({ where: { id: context.id } });
+  }
+});
+
+test("simultaneous send and commercial edits cannot leave content different from the sent snapshot", { skip: !runDatabaseTests }, async () => {
+  for (const field of ["proposalNotes", "title"] as const) {
+    const quote = await prisma.quote.create({ data: { quoteNumber: key("SEND-RACE"), title: "Original title", proposalNotes: "Original terms" } });
+    try {
+      const results = await Promise.allSettled([
+        markQuoteSent(quote.id),
+        field === "proposalNotes"
+          ? updateQuoteProposal(quote.id, { proposalNotes: "Concurrent terms" })
+          : updateQuote(quote.id, { title: "Concurrent title" })
+      ]);
+      assert.equal(results[0].status, "fulfilled");
+      if (results[1].status === "rejected") assert.match(String(results[1].reason), /QUOTE_COMMERCIAL_CONTENT_LOCKED|QUOTE_STATE_CHANGED/);
+      const stored = await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } });
+      const event = await prisma.lifecycleStatusEvent.findFirstOrThrow({ where: { entityType: "QUOTE", entityId: quote.id, toStatus: "Sent" } });
+      const snapshot = (event.metadata as { versionSnapshot: { schemaVersion: number; title: string; proposalNotes: string } }).versionSnapshot;
+      assert.equal(snapshot.schemaVersion, 1);
+      assert.equal(stored[field], snapshot[field]);
+      assert.equal(stored.status, "Sent");
+    } finally {
+      await cleanupQuote(quote.id);
+    }
+  }
+});
+
+test("a cancelled unsent quote rejects commercial and financial edits", { skip: !runDatabaseTests }, async () => {
+  const quote = await prisma.quote.create({ data: { quoteNumber: key("CLOSED-LOCK"), title: "Cancelled", status: "Cancelled" } });
+  try {
+    await assert.rejects(updateQuoteProposal(quote.id, { proposalNotes: "Changed" }), /QUOTE_COMMERCIAL_CONTENT_LOCKED/);
+    await assert.rejects(addAdHocQuoteItem(quote.id, addAdHocQuoteItemSchema.parse({ name: "Forbidden" })), /QUOTE_SENT_FINANCIALS_LOCKED/);
+  } finally {
+    await cleanupQuote(quote.id);
+  }
+});
 
 test("Legacy mode rejects QuoteItems and requires destructive confirmation to switch", { skip: !runDatabaseTests }, async () => {
   const quote = await prisma.quote.create({
@@ -258,7 +318,7 @@ test("project conversion snapshots Legacy finances and excludes tax from the bud
       clientId: client.id,
       contactId: contact.id,
       calculationMode: "LEGACY",
-      status: "Approved"
+      status: "Draft"
     }
   });
   try {
@@ -270,6 +330,7 @@ test("project conversion snapshots Legacy finances and excludes tax from the bud
       taxAmount: 120,
       estimatedDurationBusinessDays: 12
     });
+    await markQuoteSent(quote.id);
     const project = await convertQuoteToProject(quote.id, {
       startDate: undefined,
       dueDate: undefined

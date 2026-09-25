@@ -328,7 +328,15 @@ const errorMap: Record<string, ErrorPayload> = {
   },
   QUOTE_SENT_FINANCIALS_LOCKED: {
     status: 409,
-    body: { error: "Monetary values are locked because this quote was sent. Open a revision, or ask an Administrator to undo an incorrect sent event." }
+    body: { error: "Monetary values are locked for sent or closed quotes." }
+  },
+  QUOTE_COMMERCIAL_CONTENT_LOCKED: {
+    status: 409,
+    body: { code: "QUOTE_COMMERCIAL_CONTENT_LOCKED", error: "Commercial details and proposal notes are locked for sent or closed quotes. Assignments, collaborators and follow-up activity remain editable." }
+  },
+  QUOTE_STATE_CHANGED: {
+    status: 409,
+    body: { code: "QUOTE_STATE_CHANGED", error: "This quote changed while your update was being prepared. Reload it before trying again." }
   },
   QUOTE_SENT_UNDO_ADMIN_REQUIRED: {
     status: 403,
