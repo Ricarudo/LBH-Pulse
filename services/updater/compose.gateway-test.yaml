@@ -1,0 +1,39 @@
+name: pulse-updater-gateway-test
+services:
+  prepare:
+    image: node:24-alpine
+    working_dir: /repo
+    volumes: [../..:/repo:ro, status:/status]
+    command: [node, services/updater/test/gateway-fixture.mts, prepare]
+  pulse-update-status:
+    image: pulse-updater-check:local
+    user: '1000:1000'
+    read_only: true
+    volumes: [status:/status:ro]
+    command: [status-server]
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+  web:
+    image: node:24-alpine
+    working_dir: /repo
+    read_only: true
+    volumes: [../..:/repo:ro]
+    command: [node, services/updater/test/gateway-fixture.mts, web]
+  gateway:
+    image: caddy:2.11.4-alpine
+    environment: {PULSE_HOSTNAME: gateway}
+    volumes: [../../docker/caddy/Caddyfile.internal:/etc/caddy/Caddyfile:ro, status:/etc/caddy/managed:ro]
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+      pulse-update-status: {condition: service_started}
+      web: {condition: service_started}
+  tests:
+    image: node:24-alpine
+    working_dir: /repo
+    volumes: [../..:/repo:ro, status:/status]
+    command: [node, --test, services/updater/test/gateway.test.mts]
+    depends_on: [gateway]
+volumes:
+  status:
+networks:
+  default: {internal: true}

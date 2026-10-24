@@ -20,7 +20,9 @@ export const permissionKeys = [
   "settings:read",
   "settings:write",
   "users:manage",
-  "roles:manage"
+  "roles:manage",
+  "system:updates:read",
+  "system:updates:apply"
 ] as const;
 
 export type Permission = (typeof permissionKeys)[number];
@@ -38,6 +40,8 @@ export type PermissionDefinition = {
 };
 
 export const permissionDefinitions: PermissionDefinition[] = [
+  { key: "system:updates:read", group: "administration", resource: "updates", label: "View updates", description: "Check release availability and view update history.", dependencies: ["settings:read"] },
+  { key: "system:updates:apply", group: "administration", resource: "updates", label: "Install updates", description: "Back up and update this Pulse installation.", dependencies: ["system:updates:read"], protected: true },
   { key: "requests:read", group: "work", resource: "requests", label: "View", description: "Open request queues, records, and documents.", dependencies: [] },
   { key: "requests:write", group: "work", resource: "requests", label: "Manage", description: "Create, edit, archive, assign, upload, and convert requests.", dependencies: ["requests:read", "clients:read"] },
   { key: "clients:read", group: "work", resource: "clients", label: "View", description: "Open clients, contacts, and sites.", dependencies: [] },

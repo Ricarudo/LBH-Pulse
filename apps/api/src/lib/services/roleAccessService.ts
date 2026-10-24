@@ -45,7 +45,7 @@ export function effectiveRolePermissions(
   if (role.protected && role.systemKey === "ADMIN") return [...permissionKeys];
   const parsed = role.permissions.flatMap(({ permission }) => {
     const result = permissionSchema.safeParse(permission);
-    return result.success && result.data !== "roles:manage" ? [result.data] : [];
+    return result.success && result.data !== "roles:manage" && result.data !== "system:updates:apply" ? [result.data] : [];
   });
   return normalizePermissions(parsed);
 }

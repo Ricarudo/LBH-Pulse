@@ -3,15 +3,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  AlertTriangle,
-  ArrowUpDown,
-  CalendarClock,
-  Plus,
-  Save,
-  Search,
-  X
-} from "lucide-react";
+import { AlertTriangle, CalendarClock, Plus, Save, Search, X } from "lucide-react";
+import { ListFeedback, ListToolbar, ListTable } from "@/components/lists/ListControls";
+import { useDashboardList } from "@/lib/useDashboardList";
+import { lifecycleDefinition } from "@/lib/lifecycleLists";
 import { canUser } from "@pulse/contracts/auth";
 import { quoteLifecycleGroup, quoteLifecycleGroups, quoteLifecycleGroupLabels, quoteStatusLabel } from "@pulse/contracts/quote-lifecycle";
 import { ViewportPortal } from "@/components/ViewportPortal";
@@ -32,7 +27,6 @@ import {
 
 type WorkKind = "quotes" | "projects" | "invoices";
 type WorkRecord = QuoteRecord | ProjectRecord | InvoiceRecord;
-type QueueSort = "activity" | "number" | "value" | "due";
 type ProjectHandoffMode = "create" | "attach";
 
 type Props = {
@@ -53,13 +47,7 @@ type FormState = {
   calculationMode: QuoteCalculationMode | "";
 };
 
-type WorkView = {
-  key: string;
-  label: string;
-  statuses?: readonly string[];
-};
-
-const workRecordCache = new Map<WorkKind, { records: WorkRecord[]; cachedAt: number }>();
+const workRecordCache = new Map<string, { records: WorkRecord[]; cachedAt: number }>();
 const workRecordCacheLifetimeMs = 120_000;
 
 const emptyForm: FormState = {
@@ -98,37 +86,6 @@ const workspaceCopy: Record<
     singular: "Invoice",
     plural: "invoices"
   }
-};
-
-const workViews: Record<WorkKind, WorkView[]> = {
-  quotes: [
-    { key: "open", label: "Open", statuses: ["Draft", "Review", "On Hold"] },
-    { key: "sent", label: "Sent", statuses: ["Sent"] },
-    {
-      key: "completed",
-      label: "Completed",
-      statuses: ["Approved", "Rejected", "Expired", "Cancelled"]
-    },
-    { key: "all", label: "All quotes" }
-  ],
-  projects: [
-    { key: "all", label: "All projects" },
-    {
-      key: "active",
-      label: "Active",
-      statuses: ["Ready", "In Progress", "Field Work"]
-    },
-    { key: "hold", label: "On hold", statuses: ["On Hold"] },
-    { key: "completed", label: "Completed", statuses: ["Completed"] },
-    { key: "cancelled", label: "Cancelled", statuses: ["Cancelled"] }
-  ],
-  invoices: [
-    { key: "all", label: "All invoices" },
-    { key: "open", label: "Open", statuses: ["Draft", "Review", "Sent"] },
-    { key: "paid", label: "Paid", statuses: ["Paid"] },
-    { key: "overdue", label: "Overdue", statuses: ["Overdue"] },
-    { key: "void", label: "Void", statuses: ["Void"] }
-  ]
 };
 
 async function requestJson<T>(url: string, init?: RequestInit) {
@@ -218,17 +175,6 @@ function needsAttention(record: WorkRecord) {
   return !["Paid", "Void", "Completed", "Cancelled"].includes(record.status);
 }
 
-function activityTimestamp(record: WorkRecord) {
-  return Date.parse(record.updatedAt || record.createdAt) || 0;
-}
-
-function dueTimestamp(record: WorkRecord) {
-  const dueDate = recordDue(record);
-  return dueDate
-    ? Date.parse(`${dueDate}T00:00:00`)
-    : Number.MAX_SAFE_INTEGER;
-}
-
 function displayDate(value: string) {
   return formatWorkspaceDate(value) || "Not set";
 }
@@ -238,7 +184,8 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useCurrentUser();
-  const cachedRecords = workRecordCache.get(kind);
+  const recordCacheKey = `${user?.id ?? "anonymous"}:${kind}`;
+  const cachedRecords = workRecordCache.get(recordCacheKey);
   const hasFreshRecordCache = Boolean(cachedRecords && Date.now() - cachedRecords.cachedAt < workRecordCacheLifetimeMs);
   const [records, setRecords] = useState<WorkRecord[]>(hasFreshRecordCache ? cachedRecords!.records : []);
   const [clients, setClients] = useState<ClientRecord[]>([]);
@@ -246,14 +193,11 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const [assignees, setAssignees] = useState<RequestAssignee[]>([]);
   const [invoiceAssignees, setInvoiceAssignees] = useState<RequestAssignee[]>([]);
   const [invoiceSource, setInvoiceSource] = useState<ProjectRecord | null>(null);
-  const defaultView = kind === "quotes" ? "open" : "all";
-  const requestedView = searchParams.get("view") ?? defaultView;
-  const [activeView, setActiveView] = useState(workViews[kind].some((view) => view.key === requestedView) ? requestedView : defaultView);
-  const [searchTerm, setSearchTerm] = useState(searchParams.get("q") ?? "");
-  const requestedSort = searchParams.get("sort");
-  const [sort, setSort] = useState<QueueSort>(requestedSort === "number" || requestedSort === "value" || requestedSort === "due" ? requestedSort : "activity");
-  const requestedStatus = searchParams.get("status");
-  const [statusFilter, setStatusFilter] = useState(requestedStatus && quoteStatuses.includes(requestedStatus as (typeof quoteStatuses)[number]) ? requestedStatus : "All");
+  const definition = useMemo(() => lifecycleDefinition(kind, records), [kind, records]);
+  const list = useDashboardList(definition, records);
+  const { view: activeView, q: searchTerm } = list.state;
+  const setActiveView = list.setView;
+  const setSearchTerm = list.setSearch;
   const [pendingHold, setPendingHold] = useState<WorkRecord | null>(null);
   const [holdReason, setHoldReason] = useState("");
   const [pendingApproval, setPendingApproval] = useState<QuoteRecord | null>(null);
@@ -279,7 +223,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   const canCreateBilling = kind === "projects" && canUser(user, "billing:write");
   const requestedRecordId = searchParams.get("record") ?? "";
   const copy = workspaceCopy[kind];
-  const views = workViews[kind];
+  const views = list.definition.views!;
   const statuses =
     kind === "quotes"
       ? quoteStatuses
@@ -287,14 +231,6 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
         ? projectStatuses
         : invoiceStatuses;
   const queueReturnTo = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
-
-  function updateQueueQuery(key: string, value: string, fallback: string) {
-    if (kind !== "quotes") return;
-    const params = new URLSearchParams(searchParams.toString());
-    if (!value || value === fallback) params.delete(key);
-    else params.set(key, value);
-    router.replace(`${pathname}${params.size ? `?${params.toString()}` : ""}`, { scroll: false });
-  }
 
   useEffect(() => {
     async function load() {
@@ -331,7 +267,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             : Promise.resolve({ assignees: [] })
         ]);
         setRecords(workData[kind]);
-        workRecordCache.set(kind, { records: workData[kind], cachedAt: Date.now() });
+        workRecordCache.set(recordCacheKey, { records: workData[kind], cachedAt: Date.now() });
         setClients(clientData.clients);
         setProjects(projectData.projects);
         setAssignees(userData.assignees);
@@ -347,7 +283,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       }
     }
     void load();
-  }, [canCreateBilling, canWrite, kind, title]);
+  }, [canCreateBilling, canWrite, kind, title, recordCacheKey]);
 
   useEffect(() => {
     if (!toast) return;
@@ -370,8 +306,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     if (!requestedRecordId || !records.some((record) => record.id === requestedRecordId)) {
       return;
     }
-    setActiveView("all");
-    setSearchTerm("");
+    list.commit({ ...list.defaults, view: "all" });
     setFocusedRecordId(requestedRecordId);
     const focusTimer = window.setTimeout(() => {
       const row = document.querySelector<HTMLElement>(
@@ -387,57 +322,8 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
     };
   }, [records, requestedRecordId]);
 
-  const viewCounts = useMemo(
-    () =>
-      Object.fromEntries(
-        views.map((view) => [
-          view.key,
-          view.statuses
-            ? records.filter((record) => view.statuses?.includes(record.status))
-                .length
-            : records.length
-        ])
-      ),
-    [records, views]
-  );
-
-  const visibleRecords = useMemo(() => {
-    const selectedView = views.find((view) => view.key === activeView);
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
-    return records
-      .filter((record) => {
-        const matchesView =
-          !selectedView?.statuses ||
-          selectedView.statuses.includes(record.status);
-        const matchesStatus = statusFilter === "All" || record.status === statusFilter;
-        const matchesSearch =
-          !normalizedSearch ||
-          [
-            recordNumber(record),
-            record.title,
-            record.clientName,
-            recordAssignedName(record),
-            record.status,
-            ...recordTrades(record),
-            recordSource(record)
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(normalizedSearch);
-        return matchesView && matchesStatus && matchesSearch;
-      })
-      .sort((left, right) => {
-        if (sort === "number") {
-          return recordNumber(right).localeCompare(recordNumber(left), undefined, {
-            numeric: true
-          });
-        }
-        if (sort === "value") return recordValue(right) - recordValue(left);
-        if (sort === "due") return dueTimestamp(left) - dueTimestamp(right);
-        return activityTimestamp(right) - activityTimestamp(left);
-      });
-  }, [activeView, records, searchTerm, sort, statusFilter, views]);
+  const viewCounts = Object.fromEntries(views.map(view => [view.key, records.filter(record => view.matches(record, list.userId)).length]));
+  const visibleRecords = list.rows;
 
   function openCreate(project?: ProjectRecord) {
     const availableAssignees = project ? invoiceAssignees : assignees;
@@ -672,7 +558,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
   }
 
   return (
-    <section className="work-queue">
+    <section className="work-queue dashboard-list">
       <header className="work-queue-heading">
         <div>
           <nav className="breadcrumb work-queue-breadcrumb" aria-label="Breadcrumb">
@@ -707,7 +593,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
             type="button"
             className={activeView === view.key ? "active" : ""}
             aria-current={activeView === view.key ? "page" : undefined}
-            onClick={() => { setActiveView(view.key); updateQueueQuery("view", view.key, defaultView); }}
+            onClick={() => setActiveView(view.key)}
           >
             <span>{view.label}</span>
             <strong>{viewCounts[view.key] ?? 0}</strong>
@@ -716,72 +602,12 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
       </nav>
 
       <div className="work-queue-surface">
-        <div className="work-queue-toolbar">
-          <label className="work-queue-search">
-            <Search size={18} aria-hidden="true" />
-            <span className="sr-only">Search {title.toLowerCase()}</span>
-            <input
-              type="search"
-              placeholder={`Search ${copy.singular.toLowerCase()}, client, assigned person, or status`}
-              value={searchTerm}
-              onChange={(event) => { setSearchTerm(event.target.value); updateQueueQuery("q", event.target.value, ""); }}
-            />
-          </label>
-          <label className="work-queue-sort">
-            <ArrowUpDown size={16} aria-hidden="true" />
-            <span className="sr-only">Sort {title.toLowerCase()}</span>
-            <select
-              value={sort}
-              onChange={(event) => { const value = event.target.value as QueueSort; setSort(value); updateQueueQuery("sort", value, "activity"); }}
-            >
-              <option value="activity">Newest activity</option>
-              <option value="number">{copy.singular} number</option>
-              <option value="value">{valueLabel}: high to low</option>
-              <option value="due">{kind === "quotes" ? "Send by" : "Due date"}</option>
-            </select>
-          </label>
-          {kind === "quotes" ? (
-            <label className="work-queue-sort">
-              <span className="sr-only">Filter quotes by status</span>
-              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); updateQueueQuery("status", event.target.value, "All"); }}>
-                <option value="All">All statuses</option>
-                {quoteStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
-              </select>
-            </label>
-          ) : null}
+        <ListToolbar list={list} count={visibleRecords.length} />
 
-          <div className="work-queue-meta">
-            <span>
-              <strong>{visibleRecords.length}</strong>{" "}
-              {visibleRecords.length === 1
-                ? copy.singular.toLowerCase()
-                : copy.plural}
-            </span>
-            <span>
-              Sorted by{" "}
-              {sort === "activity"
-                ? "newest activity"
-                : sort === "number"
-                  ? `${copy.singular.toLowerCase()} number`
-                  : sort === "value"
-                    ? valueLabel.toLowerCase()
-                    : kind === "quotes" ? "send-by date" : "due date"}
-            </span>
-          </div>
-        </div>
-
-        {loadError ? (
-          <div className="work-queue-state error">
-            <AlertTriangle size={20} />
-            <div>
-              <strong>Unable to load {title.toLowerCase()}</strong>
-              <span>{loadError}</span>
-            </div>
-          </div>
-        ) : null}
+        <ListFeedback error={loadError} onRetry={() => window.location.reload()} />
 
         <div className="work-queue-desktop">
-          <table className={`work-queue-table${kind === "quotes" ? " quotes" : ""}`}>
+          <ListTable className={`work-queue-table${kind === "quotes" ? " quotes" : ""}`}>
             <thead>
               <tr>
                 <th>{copy.singular}</th>
@@ -790,7 +616,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                 {kind === "quotes" ? <th>Next Action</th> : null}
                 <th>{kind === "quotes" ? "Owner" : "Assigned to"}</th>
                 <th>{kind === "quotes" ? "Send by" : "Timing"}</th>
-                <th>{valueLabel}</th>
+                <th className="list-number-header">{valueLabel}</th>
               </tr>
             </thead>
             <tbody>
@@ -879,7 +705,7 @@ export function WorkRecordsWorkspace({ kind, title, valueLabel }: Props) {
                     );
                   })}
             </tbody>
-          </table>
+          </ListTable>
         </div>
 
         <div className="work-queue-mobile">

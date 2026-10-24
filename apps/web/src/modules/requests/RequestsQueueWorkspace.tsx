@@ -1,48 +1,17 @@
 "use client";
 
-import {
-  AlertTriangle,
-  ArrowUpDown,
-  CalendarClock,
-  CheckCircle2,
-  ChevronRight,
-  MoreHorizontal,
-  Plus,
-  RotateCcw,
-  Search,
-  SlidersHorizontal,
-  UserRound,
-  X
-} from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MoreHorizontal, Plus, RotateCcw, Search, UserRound, X } from "lucide-react";
 import Link from "next/link";
+import { ListFeedback, ListToolbar, ListTable } from "@/components/lists/ListControls";
+import { useDashboardList } from "@/lib/useDashboardList";
+import { lifecycleDefinition } from "@/lib/lifecycleLists";
+import { filterCount } from "@/lib/listState";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import { formatWorkspaceDate } from "@/lib/formatting";
 import { useResponsiveMode } from "@/lib/responsive";
-import {
-  requestPriorities,
-  requestSources,
-  requestStatuses,
-  serviceCategories,
-  type RequestAssignee,
-  type RequestPriority,
-  type RequestRecord,
-  type RequestSource,
-  type RequestStatus,
-  type ServiceCategory
-} from "@pulse/contracts/requests";
-
-type QueueView = "my" | "mentioned" | "open" | "unassigned" | "attention" | "closed";
-type QueueSort = "activity" | "due" | "priority" | "request";
-
-type QueueFilterState = {
-  status: "All" | RequestStatus;
-  priority: "All" | RequestPriority;
-  owner: string;
-  category: "All" | ServiceCategory;
-  source: "All" | RequestSource;
-};
+import { type RequestAssignee, type RequestPriority, type RequestRecord, type RequestStatus } from "@pulse/contracts/requests";
 
 type RequestsQueueWorkspaceProps = {
   requests: RequestRecord[];
@@ -89,22 +58,6 @@ function needsAttention(request: RequestRecord) {
   );
 }
 
-function activityTimestamp(request: RequestRecord) {
-  return Date.parse(request.lastActivityAt || request.updatedAt || request.createdAt) || 0;
-}
-
-function dueTimestamp(request: RequestRecord) {
-  const date = request.currentStep?.targetDate || request.dueDate;
-  return date ? Date.parse(`${date}T00:00:00`) : Number.MAX_SAFE_INTEGER;
-}
-
-function mentionTimestamp(request: RequestRecord) {
-  return request.updates.reduce((latest, update) => {
-    const hasUnreadMention = update.mentions.some((mention) => !mention.readAt);
-    return hasUnreadMention ? Math.max(latest, Date.parse(update.createdAt) || 0) : latest;
-  }, 0);
-}
-
 function formatShortDate(value: string) {
   return formatWorkspaceDate(value) || "Not set";
 }
@@ -137,51 +90,6 @@ function priorityTone(priority: RequestPriority) {
   return "neutral";
 }
 
-function requestMatchesUser(
-  request: RequestRecord,
-  currentUser?: { id: string; name: string } | null
-) {
-  return Boolean(
-    currentUser &&
-      (request.assignedToId === currentUser.id ||
-        request.assignedToName === currentUser.name ||
-        request.currentStep?.assignee?.id === currentUser.id ||
-        request.collaborators.some((collaborator) => collaborator.id === currentUser.id))
-  );
-}
-
-function parseView(value: string | null): QueueView {
-  return ["my", "mentioned", "open", "unassigned", "attention", "closed"].includes(value ?? "")
-    ? (value as QueueView)
-    : "my";
-}
-
-function parseSort(value: string | null): QueueSort {
-  return ["activity", "due", "priority", "request"].includes(value ?? "")
-    ? (value as QueueSort)
-    : "activity";
-}
-
-function filterChipLabel(
-  key: keyof QueueFilterState,
-  value: string,
-  assignees: RequestAssignee[]
-) {
-  if (key === "owner") {
-    if (value === "Unassigned") return "Owner: Unassigned";
-    return `Owner: ${assignees.find((assignee) => assignee.id === value)?.name ?? value}`;
-  }
-
-  const labels: Record<Exclude<keyof QueueFilterState, "owner">, string> = {
-    status: "Status",
-    priority: "Priority",
-    category: "Category",
-    source: "Source"
-  };
-
-  return `${labels[key]}: ${value}`;
-}
-
 export function RequestsQueueWorkspace({
   requests,
   assignees,
@@ -196,8 +104,7 @@ export function RequestsQueueWorkspace({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const responsiveMode = useResponsiveMode();
-  const [filtersOpen, setFiltersOpen] = useState(false);
+
   const [quickUpdateId, setQuickUpdateId] = useState("");
   const [updatingIds, setUpdatingIds] = useState<string[]>([]);
   const [statusMenuId, setStatusMenuId] = useState("");
@@ -208,16 +115,20 @@ export function RequestsQueueWorkspace({
     reopen?: boolean;
   } | null>(null);
 
-  const activeView = parseView(searchParams.get("view"));
-  const searchTerm = searchParams.get("q") ?? "";
-  const sort = parseSort(searchParams.get("sort"));
-  const filters: QueueFilterState = {
-    status: (searchParams.get("status") as RequestStatus | null) ?? "All",
-    priority: (searchParams.get("priority") as RequestPriority | null) ?? "All",
-    owner: searchParams.get("owner") ?? "All",
-    category: (searchParams.get("category") as ServiceCategory | null) ?? "All",
-    source: (searchParams.get("source") as RequestSource | null) ?? "All"
-  };
+  const definition = useMemo(() => {
+    const definition = lifecycleDefinition("requests", requests);
+  definition.views!.push(
+    { key: "mentioned", label: "Mentioned", statuses: definition.views![0].statuses, matches: request => isOpenRequest(request) && request.unreadMentionCount > 0 },
+    { key: "unassigned", label: "Unassigned", statuses: definition.views![0].statuses, matches: request => isOpenRequest(request) && !request.assignedToId },
+    { key: "attention", label: "Needs attention", statuses: definition.views![0].statuses, matches: needsAttention }
+  );
+    return definition;
+  }, [requests]);
+  const list = useDashboardList(definition, requests);
+  const { view: activeView, q: searchTerm } = list.state;
+  const setView = list.setView;
+  const clearSearchAndFilters = list.reset;
+  const activeFilters = Array.from({ length: filterCount(list.state) });
 
   useEffect(() => {
     function closeOverlay(event: KeyboardEvent) {
@@ -230,8 +141,7 @@ export function RequestsQueueWorkspace({
         setTerminalReason("");
       } else if (quickUpdateId) {
         setQuickUpdateId("");
-      } else if (filtersOpen) {
-        setFiltersOpen(false);
+
       } else {
         setStatusMenuId("");
       }
@@ -239,48 +149,7 @@ export function RequestsQueueWorkspace({
 
     window.addEventListener("keydown", closeOverlay);
     return () => window.removeEventListener("keydown", closeOverlay);
-  }, [filtersOpen, pendingTerminal, quickUpdateId]);
-
-  function updateQuery(key: string, value: string, defaultValue?: string) {
-    const next = new URLSearchParams(searchParams.toString());
-    if (!value || value === defaultValue) {
-      next.delete(key);
-    } else {
-      next.set(key, value);
-    }
-
-    const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
-
-  function setView(view: QueueView) {
-    updateQuery("view", view, "my");
-  }
-
-  function setFilter<K extends keyof QueueFilterState>(
-    key: K,
-    value: QueueFilterState[K]
-  ) {
-    updateQuery(key, value, "All");
-  }
-
-  function clearFilters() {
-    const next = new URLSearchParams(searchParams.toString());
-    ["status", "priority", "owner", "category", "source"].forEach((key) =>
-      next.delete(key)
-    );
-    const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
-
-  function clearSearchAndFilters() {
-    const next = new URLSearchParams(searchParams.toString());
-    ["q", "status", "priority", "owner", "category", "source"].forEach((key) =>
-      next.delete(key)
-    );
-    const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
+  }, [pendingTerminal, quickUpdateId]);
 
   async function runUpdate(requestId: string, update: () => Promise<void>) {
     setUpdatingIds((current) => [...current, requestId]);
@@ -307,119 +176,13 @@ export function RequestsQueueWorkspace({
     setTerminalReason("");
   }
 
-  const viewCounts = useMemo(
-    () => ({
-      my: requests.filter(
-        (request) => isOpenRequest(request) && requestMatchesUser(request, currentUser)
-      ).length,
-      mentioned: requests.filter(
-        (request) => isOpenRequest(request) && request.unreadMentionCount > 0
-      ).length,
-      open: requests.filter(isOpenRequest).length,
-      unassigned: requests.filter(
-        (request) => isOpenRequest(request) && !request.assignedToId
-      ).length,
-      attention: requests.filter(needsAttention).length,
-      closed: requests.filter((request) => !isOpenRequest(request)).length
-    }),
-    [currentUser, requests]
-  );
-
-  const filteredRequests = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-    const priorityRank: Record<RequestPriority, number> = {
-      Low: 0,
-      Normal: 1,
-      High: 2,
-      Urgent: 3
-    };
-
-    return requests
-      .filter((request) => {
-        const matchesView =
-          activeView === "my"
-            ? isOpenRequest(request) && requestMatchesUser(request, currentUser)
-            : activeView === "mentioned"
-              ? isOpenRequest(request) && request.unreadMentionCount > 0
-            : activeView === "open"
-              ? isOpenRequest(request)
-              : activeView === "unassigned"
-                ? isOpenRequest(request) && !request.assignedToId
-                : activeView === "attention"
-                  ? needsAttention(request)
-                  : !isOpenRequest(request);
-        const matchesSearch =
-          !normalizedSearch ||
-          [
-            request.requestNumber,
-            request.title,
-            request.companyName,
-            request.contactName,
-            request.siteName,
-            request.siteAddress,
-            ...request.serviceCategories,
-            request.currentStep?.title,
-            request.currentStep?.body,
-            request.currentStep?.assignee?.name
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(normalizedSearch);
-
-        return (
-          matchesView &&
-          matchesSearch &&
-          (filters.status === "All" || request.status === filters.status) &&
-          (filters.priority === "All" || request.priority === filters.priority) &&
-          (filters.owner === "All" ||
-            (filters.owner === "Unassigned"
-              ? !request.assignedToId
-              : request.assignedToId === filters.owner)) &&
-          (filters.category === "All" ||
-            request.serviceCategories.includes(filters.category)) &&
-          (filters.source === "All" || request.source === filters.source)
-        );
-      })
-      .sort((left, right) => {
-        if (sort === "due") {
-          return dueTimestamp(left) - dueTimestamp(right);
-        }
-
-        if (sort === "priority") {
-          return priorityRank[right.priority] - priorityRank[left.priority];
-        }
-
-        if (sort === "request") {
-          return right.requestNumber.localeCompare(left.requestNumber, undefined, {
-            numeric: true
-          });
-        }
-
-        if (activeView === "mentioned") {
-          return mentionTimestamp(right) - mentionTimestamp(left);
-        }
-
-        return activityTimestamp(right) - activityTimestamp(left);
-      });
-  }, [activeView, currentUser, filters, requests, searchTerm, sort]);
-
-  const activeFilters = (
-    Object.entries(filters) as [keyof QueueFilterState, string][]
-  ).filter(([, value]) => value !== "All");
+  const filteredRequests = list.rows;
   const quickUpdateRequest =
     requests.find((request) => request.id === quickUpdateId) ?? null;
   const terminalRequest =
     requests.find((request) => request.id === pendingTerminal?.requestId) ?? null;
-  const viewOptions: { key: QueueView; label: string; count: number }[] = [
-    { key: "my", label: "My work", count: viewCounts.my },
-    { key: "mentioned", label: "Mentioned", count: viewCounts.mentioned },
-    { key: "open", label: "All open", count: viewCounts.open },
-    { key: "unassigned", label: "Unassigned", count: viewCounts.unassigned },
-    { key: "attention", label: "Needs attention", count: viewCounts.attention },
-    { key: "closed", label: "Closed", count: viewCounts.closed }
-  ];
-  const activeViewLabel =
-    viewOptions.find((view) => view.key === activeView)?.label ?? "My work";
+  const viewOptions = definition.views!.map(view => ({ ...view, count: requests.filter(request => view.matches(request, list.userId)).length }));
+  const activeViewLabel = viewOptions.find(view => view.key === activeView)?.label ?? "All open";
   const queueReturnTo = `${pathname}${
     searchParams.toString() ? `?${searchParams.toString()}` : ""
   }`;
@@ -427,7 +190,7 @@ export function RequestsQueueWorkspace({
     `/requests/${requestId}?returnTo=${encodeURIComponent(queueReturnTo)}`;
 
   return (
-    <section className="requests-queue">
+    <section className="requests-queue dashboard-list">
       <header className="requests-queue-heading">
         <div>
           <nav className="breadcrumb requests-queue-breadcrumb" aria-label="Breadcrumb">
@@ -469,192 +232,12 @@ export function RequestsQueueWorkspace({
       </nav>
 
       <div className="requests-queue-surface">
-        <div className="requests-queue-toolbar">
-          <label className="requests-queue-search">
-            <Search size={18} aria-hidden="true" />
-            <span className="sr-only">Search requests</span>
-            <input
-              type="search"
-              placeholder="Search request, client, site, or category"
-              value={searchTerm}
-              onChange={(event) => updateQuery("q", event.target.value)}
-            />
-          </label>
+        <ListToolbar list={list} count={filteredRequests.length} />
 
-          <div className="requests-queue-tools">
-            <button
-              className={activeFilters.length ? "queue-tool active" : "queue-tool"}
-              type="button"
-              aria-expanded={filtersOpen}
-              onClick={() => setFiltersOpen((open) => !open)}
-            >
-              <SlidersHorizontal size={17} />
-              Filters
-              {activeFilters.length ? <strong>{activeFilters.length}</strong> : null}
-            </button>
-
-            <label className="queue-sort-control">
-              <ArrowUpDown size={16} aria-hidden="true" />
-              <span className="sr-only">Sort requests</span>
-              <select
-                value={sort}
-                onChange={(event) =>
-                  updateQuery("sort", event.target.value, "activity")
-                }
-              >
-                <option value="activity">Newest activity</option>
-                <option value="due">Due date</option>
-                <option value="priority">Priority</option>
-                <option value="request">Request number</option>
-              </select>
-            </label>
-
-          </div>
-
-          <div className="requests-queue-meta">
-            <span>
-              <strong>{filteredRequests.length}</strong>{" "}
-              {filteredRequests.length === 1 ? "request" : "requests"}
-            </span>
-          </div>
-        </div>
-
-        {filtersOpen ? (
-          <ViewportPortal enabled={responsiveMode === "compact"}>
-            <section className="requests-filter-panel" aria-label="Request filters">
-            <div className="requests-filter-heading">
-              <div>
-                <strong>Filter the queue</strong>
-                <span>Combine filters to narrow this saved view.</span>
-              </div>
-              <button
-                type="button"
-                aria-label="Close filters"
-                onClick={() => setFiltersOpen(false)}
-              >
-                <X size={19} />
-              </button>
-            </div>
-            <div className="requests-filter-grid">
-              <label>
-                Status
-                <select
-                  value={filters.status}
-                  onChange={(event) =>
-                    setFilter("status", event.target.value as QueueFilterState["status"])
-                  }
-                >
-                  <option value="All">All statuses</option>
-                  {requestStatuses.map((status) => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Priority
-                <select
-                  value={filters.priority}
-                  onChange={(event) =>
-                    setFilter(
-                      "priority",
-                      event.target.value as QueueFilterState["priority"]
-                    )
-                  }
-                >
-                  <option value="All">All priorities</option>
-                  {requestPriorities.map((priority) => (
-                    <option key={priority} value={priority}>{priority}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Owner
-                <select
-                  value={filters.owner}
-                  onChange={(event) => setFilter("owner", event.target.value)}
-                >
-                  <option value="All">All owners</option>
-                  <option value="Unassigned">Unassigned</option>
-                  {assignees.map((assignee) => (
-                    <option key={assignee.id} value={assignee.id}>
-                      {assignee.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Category
-                <select
-                  value={filters.category}
-                  onChange={(event) =>
-                    setFilter(
-                      "category",
-                      event.target.value as QueueFilterState["category"]
-                    )
-                  }
-                >
-                  <option value="All">All categories</option>
-                  {serviceCategories.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Source
-                <select
-                  value={filters.source}
-                  onChange={(event) =>
-                    setFilter("source", event.target.value as QueueFilterState["source"])
-                  }
-                >
-                  <option value="All">All sources</option>
-                  {requestSources.map((source) => (
-                    <option key={source} value={source}>{source}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="requests-filter-footer">
-              <span>{filteredRequests.length} matching requests</span>
-              <button type="button" onClick={clearFilters} disabled={!activeFilters.length}>
-                Clear all
-              </button>
-            </div>
-            </section>
-          </ViewportPortal>
-        ) : null}
-
-        {activeFilters.length ? (
-          <div className="requests-active-filters" aria-label="Active filters">
-            {activeFilters.map(([key, value]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setFilter(key, "All")}
-                aria-label={`Remove ${filterChipLabel(key, value, assignees)} filter`}
-              >
-                {filterChipLabel(key, value, assignees)}
-                <X size={14} />
-              </button>
-            ))}
-            <button className="clear" type="button" onClick={clearFilters}>
-              Clear all
-            </button>
-          </div>
-        ) : null}
-
-        {loadError ? (
-          <div className="requests-queue-state error">
-            <AlertTriangle size={20} />
-            <div>
-              <strong>Unable to load requests</strong>
-              <span>{loadError}</span>
-            </div>
-          </div>
-        ) : null}
+        <ListFeedback error={loadError} onRetry={() => window.location.reload()} />
 
         <div className="requests-queue-desktop">
-          <table className="requests-queue-table">
+          <ListTable className="requests-queue-table">
             <thead>
               <tr>
                 <th>Request</th>
@@ -868,7 +451,7 @@ export function RequestsQueueWorkspace({
                     );
                   })}
             </tbody>
-          </table>
+          </ListTable>
         </div>
 
         <div className="requests-queue-mobile">

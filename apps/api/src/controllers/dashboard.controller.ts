@@ -17,6 +17,7 @@ import {
 } from "@/lib/services/dashboardService";
 import {
   dashboardPreferencesSchema,
+  dashboardWorkQuerySchema,
   dashboardScopeSchema,
   dashboardWidgetIdSchema
 } from "@pulse/contracts/dashboard";
@@ -52,7 +53,8 @@ export class DashboardController {
   async data(
     @Req() request: Request,
     @Query("scope") scopeQuery?: string,
-    @Query("widgets") widgetsQuery?: string
+    @Query("widgets") widgetsQuery?: string,
+    @Query() query: Record<string, unknown> = {}
   ) {
     const user = await this.auth.requireUser(request);
     const scope = scopeQuery
@@ -66,6 +68,6 @@ export class DashboardController {
             .map((id) => dashboardWidgetIdSchema.parse(id))
         )) as DashboardWidgetId[]
       : [...dashboardWidgetIds];
-    return getDashboardData(user, scope, requestedWidgets);
+    return getDashboardData(user, scope, requestedWidgets, dashboardWorkQuerySchema.parse(query));
   }
 }

@@ -1,4 +1,7 @@
 "use client";
+import { ListFilterButton, ListTable, ListSortControl } from "./lists/ListControls";
+import { useDashboardList } from "@/lib/useDashboardList";
+import { dateRange, businessDate, type ListDefinition } from "@/lib/listState";
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -26,28 +29,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import {
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpDown,
-  ArrowUpRight,
-  BarChart3,
-  CalendarDays,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleDollarSign,
-  Clock3,
-  Database,
-  Filter,
-  Info,
-  Layers3,
-  RefreshCw,
-  Sparkles,
-  TrendingUp,
-  TriangleAlert,
-  X
-} from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpDown, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Database, Info, Layers3, RefreshCw, Sparkles, TrendingUp, TriangleAlert, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -78,37 +60,16 @@ const viewLabels: Record<AnalyticsView, string> = {
   operations: "Operations",
   billing: "Billing"
 };
-
-const analyticsViewStorageKey = "pulse.analytics.view";
 const donutColors = ["#2563eb", "#7c3aed", "#16a34a", "#0f9f8f", "#d97706", "#64748b"];
 
 type SortKey = "reference" | "client" | "status" | "owner" | "date" | "value";
 type SortDirection = "asc" | "desc";
 type ChartDatum = Record<string, unknown> & { __point: AnalyticsPoint; label: string };
-type AnalyticsPeriod = "30" | "90" | "12m" | "ytd" | "all" | "custom";
 
 type AnalyticsWorkspaceProps = {
   embeddedClientId?: string;
   clientSince?: string;
 };
-
-function localDate(timeZone: string, date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(date);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("year")}-${value("month")}-${value("day")}`;
-}
-
-function shiftDate(date: string, days: number) {
-  const instant = new Date(`${date}T12:00:00Z`);
-  instant.setUTCDate(instant.getUTCDate() + days);
-  return instant.toISOString().slice(0, 10);
-}
 
 function formatValue(
   value: number | null | undefined,
@@ -645,7 +606,7 @@ function DetailPanel({
   direction: SortDirection;
   modal: boolean;
   reduced: boolean;
-  onSort: (sort: SortKey) => void;
+  onSort: (sort: SortKey, direction?: SortDirection) => void;
   onPage: (page: number) => void;
   onClose: () => void;
 }) {
@@ -663,7 +624,7 @@ function DetailPanel({
     <div className="analytics-detail-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <m.aside
         ref={shellRef}
-        className="analytics-detail-shell"
+        className="analytics-detail-shell dashboard-list"
         role="dialog"
         aria-modal={modal || undefined}
         aria-labelledby="analytics-detail-title"
@@ -677,16 +638,17 @@ function DetailPanel({
           <div><span className="analytics-eyebrow"><Database size={12} /> Calculation evidence</span><h2 id="analytics-detail-title">{details?.label ?? "Loading detail…"}</h2><p id="analytics-detail-summary">{details?.summary ?? "Loading the exact records behind this selection."}</p></div>
           <div><span className="analytics-live-indicator"><i /> On demand</span><button type="button" className="analytics-detail-close" onClick={onClose}><X size={16} /> Close</button></div>
         </div>
+        <div className="analytics-detail-sort"><ListSortControl definition={{ label: "report records", defaultSort: "date", defaultDirection: "desc", sorts: ["reference", "client", "status", "owner", "date", "value"].map(key => ({ key, label: key[0].toUpperCase() + key.slice(1), date: key === "date", numeric: key === "value" || key === "reference", value: () => null })) }} sort={sort} direction={direction} onChange={(key, order) => onSort(key as SortKey, order)} /></div>
         <div className="analytics-table-frame">
           {loading ? <div className="analytics-table-shimmer" aria-label="Loading detail records" /> : null}
-          <table>
-            <thead><tr><th>{header("Record", "reference")}</th><th>{header("Client", "client")}</th><th>Trades</th><th>{header("Status", "status")}</th><th>{header("Owner", "owner")}</th><th>{header("Date", "date")}</th><th>{header(details?.valueLabel ?? "Value", "value")}</th><th><span className="sr-only">Action</span></th></tr></thead>
+          <ListTable report>
+            <thead><tr><th>{header("Record", "reference")}</th><th>{header("Client", "client")}</th><th>Trades</th><th>{header("Status", "status")}</th><th>{header("Owner", "owner")}</th><th>{header("Date", "date")}</th><th className="list-number-header">{header(details?.valueLabel ?? "Value", "value")}</th><th><span className="sr-only">Action</span></th></tr></thead>
             <AnimatePresence initial={false} mode="popLayout">
               <tbody key={`${details?.metric}-${details?.segment}-${page}-${sort}-${direction}`}>
                 {rows.map((row, index) => <DetailRow key={row.id} row={row} index={index} reduced={reduced} />)}
               </tbody>
             </AnimatePresence>
-          </table>
+          </ListTable>
           {!loading && !rows.length ? <div className="analytics-empty-table"><Sparkles size={22} /><strong>No matching records</strong><span>This metric may be unavailable or the selected bucket is empty.</span></div> : null}
         </div>
         <div className="analytics-detail-mobile-list">
@@ -704,23 +666,11 @@ export function AnalyticsWorkspace({
   embeddedClientId,
   clientSince = ""
 }: AnalyticsWorkspaceProps = {}) {
-  const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = usePulseAuth();
   const { workspace, motionMode } = usePulsePreferences();
   const prefersReduced = useReducedMotion();
   const reduced = Boolean(prefersReduced || motionMode === "subtle");
   const embedded = Boolean(embeddedClientId);
-  const initialView = searchParams.get(embedded ? "lens" : "view") as AnalyticsView | null;
-  const [view, setView] = useState<AnalyticsView>(initialView && initialView in viewLabels ? initialView : "overview");
-  const [from, setFrom] = useState(searchParams.get("from") ?? "");
-  const [to, setTo] = useState(searchParams.get("to") ?? "");
-  const initialPeriod = searchParams.get("period") as AnalyticsPeriod | null;
-  const [preset, setPreset] = useState<AnalyticsPeriod>(
-    from ? "custom" : embedded && initialPeriod ? initialPeriod : embedded ? "12m" : "30"
-  );
-  const [trade, setTrade] = useState(searchParams.get("trade") ?? "");
-  const [owner, setOwner] = useState(searchParams.get("owner") ?? "");
-  const [clientId, setClientId] = useState(embeddedClientId ?? searchParams.get("clientId") ?? "");
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -729,26 +679,45 @@ export function AnalyticsWorkspace({
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selected, setSelected] = useState<AnalyticsDrilldown | null>(null);
   const [page, setPage] = useState(0);
-  const [sort, setSort] = useState<SortKey>("date");
-  const [direction, setDirection] = useState<SortDirection>("desc");
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const definition: ListDefinition<never> = {
+    id: embedded ? "client-analytics" : "analytics", prefix: embedded ? "report." : "", label: "analytics",
+    defaultView: embedded ? "overview" : defaultViewForUser(user), defaultSort: "date", defaultDirection: "desc",
+    views: (data?.availableViews ?? ["overview", "sales", "operations", "billing"]).map(key => ({ key, label: viewLabels[key], matches: () => true })),
+    filters: [
+      { key: "trade", label: "Trade", single: true, options: data?.filters.trades ?? [] },
+      { key: "owner", label: "Owner", single: true, options: data?.filters.owners ?? [] },
+      ...(!embedded ? [{ key: "clientId", label: "Client", single: true, options: data?.filters.clients ?? [] }] : [])
+    ], dates: [{ key: "reportDate", label: "Reporting period", value: () => null }],
+    datePresets: ["30", "90", "12m", "ytd", "all", "custom"], defaultDatePreset: embedded ? "12m" : "30", requireDateBounds: true,
+    sorts: ["reference", "client", "status", "owner", "date", "value"].map(key => ({ key, label: key[0].toUpperCase() + key.slice(1), value: () => null })),
+    search: () => "", rowId: () => ""
+  };
+  // Analytics never filters a loaded page. All applied controls feed the server query.
+  const report = useDashboardList(definition, []);
+  const view = report.state.view as AnalyticsView;
+  const setView = (view: AnalyticsView) => report.setView(view);
+  const sort = report.state.sort as SortKey;
+  const direction = report.state.direction;
+  const preset = report.state.datePreset;
+  const range = dateRange(report.state, businessDate(new Date(), workspace.timeZone));
+  const from = preset === "all" && clientSince ? clientSince.slice(0, 10) : range.from;
+  const to = range.to;
+  const trade = report.state.filters.trade?.[0] ?? "";
+  const owner = report.state.filters.owner?.[0] ?? "";
+  const clientId = embeddedClientId ?? report.state.filters.clientId?.[0] ?? "";
   const [detailModal, setDetailModal] = useState(false);
   const [openKpi, setOpenKpi] = useState<string | null>(null);
   const detailRequest = useRef(0);
   const detailReturnFocus = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const mobileFilters = window.matchMedia("(max-width: 639px)");
     const mobileDetails = window.matchMedia("(max-width: 767px)");
     const syncResponsiveState = () => {
-      setFiltersOpen(!mobileFilters.matches);
       setDetailModal(mobileDetails.matches);
     };
     syncResponsiveState();
-    mobileFilters.addEventListener("change", syncResponsiveState);
     mobileDetails.addEventListener("change", syncResponsiveState);
     return () => {
-      mobileFilters.removeEventListener("change", syncResponsiveState);
       mobileDetails.removeEventListener("change", syncResponsiveState);
     };
   }, []);
@@ -763,23 +732,6 @@ export function AnalyticsWorkspace({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [openKpi, selected]);
 
-  useEffect(() => {
-    if (!user || initialView) return;
-    if (embedded) return;
-    const saved = window.localStorage.getItem(analyticsViewStorageKey) as AnalyticsView | null;
-    setView(saved && saved in viewLabels ? saved : defaultViewForUser(user));
-  }, [embedded, initialView, user]);
-
-  useEffect(() => {
-    if (!embeddedClientId) return;
-    setClientId(embeddedClientId);
-  }, [embeddedClientId]);
-
-  useEffect(() => {
-    if (!embedded || from || to) return;
-    applyPreset(preset);
-  }, [embedded, from, preset, to]);
-
   const params = useMemo(() => {
     const next = new URLSearchParams({ view });
     if (from && to) { next.set("from", from); next.set("to", to); }
@@ -790,33 +742,13 @@ export function AnalyticsWorkspace({
   }, [clientId, from, owner, to, trade, view]);
 
   useEffect(() => {
-    if (embedded) {
-      const next = new URLSearchParams(window.location.search);
-      next.set("tab", "relationship");
-      next.set("lens", view);
-      next.set("period", preset);
-      next.delete("clientId");
-      if (preset === "custom") {
-        if (from) next.set("from", from);
-        if (to) next.set("to", to);
-      } else {
-        next.delete("from");
-        next.delete("to");
-      }
-      window.history.replaceState(null, "", `${window.location.pathname}?${next.toString()}`);
-      return;
-    }
-    window.history.replaceState(null, "", `/statistics?${params.toString()}`);
-    window.localStorage.setItem(analyticsViewStorageKey, view);
-  }, [embedded, from, params, preset, to, view]);
-
-  useEffect(() => {
     if (!user) return;
     const controller = new AbortController();
     setLoading(true);
     setError("");
     apiRequest<AnalyticsResponse>(`/api/analytics?${params.toString()}`, { cache: "no-store", signal: controller.signal })
       .then((response) => {
+        if (controller.signal.aborted) return;
         setData(
           preset === "all"
             ? {
@@ -837,7 +769,7 @@ export function AnalyticsWorkspace({
         if (reason instanceof DOMException && reason.name === "AbortError") return;
         setError(reason instanceof Error ? reason.message : "Unable to load analytics.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [params, preset, refreshKey, user, view]);
 
@@ -870,29 +802,9 @@ export function AnalyticsWorkspace({
     }
   }, [direction, params, sort]);
 
-  function applyPreset(next: AnalyticsPeriod) {
-    setPreset(next);
-    if (next === "custom") return;
-    const today = localDate(workspace.timeZone);
-    setTo(today);
-    setFrom(
-      next === "30"
-        ? shiftDate(today, -29)
-        : next === "90"
-          ? shiftDate(today, -89)
-          : next === "12m"
-            ? shiftDate(today, -364)
-            : next === "all"
-              ? clientSince.slice(0, 10) || shiftDate(today, -364)
-              : `${today.slice(0, 4)}-01-01`
-    );
-  }
-
   function selectDetail(drilldown: AnalyticsDrilldown) {
     detailReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSort("date");
-    setDirection("desc");
-    void loadDetails(drilldown, 0, "date", "desc");
+    void loadDetails(drilldown, 0, sort, direction);
     window.requestAnimationFrame(() => document.querySelector(".analytics-detail-shell")?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" }));
   }
 
@@ -904,11 +816,10 @@ export function AnalyticsWorkspace({
     window.requestAnimationFrame(() => returnFocus?.focus({ preventScroll: true }));
   }
 
-  function changeSort(next: SortKey) {
+  function changeSort(next: SortKey, order?: SortDirection) {
     if (!selected) return;
-    const nextDirection = sort === next ? direction === "asc" ? "desc" : "asc" : next === "date" || next === "value" ? "desc" : "asc";
-    setSort(next);
-    setDirection(nextDirection);
+    const nextDirection = order ?? (sort === next ? direction === "asc" ? "desc" : "asc" : next === "date" || next === "value" ? "desc" : "asc");
+    report.commit({ ...report.state, sort: next, direction: nextDirection });
     void loadDetails(selected, 0, next, nextDirection);
   }
 
@@ -936,27 +847,9 @@ export function AnalyticsWorkspace({
               </button>
             ))}
           </nav>
-          <div className="analytics-periods" aria-label="Date range presets">
-            {(embedded ? ["30", "90", "12m", "all", "custom"] as const : ["30", "90", "ytd", "custom"] as const).map((item) => (
-              <button type="button" aria-pressed={preset === item} key={item} className={preset === item ? "is-active" : ""} onClick={() => applyPreset(item)}>
-                {item === "30" ? "30D" : item === "90" ? "90D" : item === "12m" ? "12M" : item === "all" ? "All" : item === "ytd" ? "YTD" : "Custom"}
-              </button>
-            ))}
-          </div>
+          <ListFilterButton state={report.state} fields={definition.filters} dates={definition.dates} datePresets={definition.datePresets} requireDateBounds defaults={report.defaults} onApply={report.commit} label="analytics" />
         </section>
-
-        <section className="analytics-filters" aria-label="Analytics filters">
-          <button className="analytics-filter-toggle" type="button" aria-expanded={filtersOpen} aria-controls="analytics-filter-fields" onClick={() => setFiltersOpen((current) => !current)}>
-            <span><Filter size={15} /> Refine intelligence</span><ChevronDown size={15} aria-hidden="true" />
-          </button>
-          <div className="analytics-filter-fields" id="analytics-filter-fields" hidden={!filtersOpen}>
-            <label><span>Trade</span><select value={trade} onChange={(event) => setTrade(event.target.value)}><option value="">All trades</option>{data?.filters.trades.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label><span>Owner</span><select value={owner} onChange={(event) => setOwner(event.target.value)}><option value="">All owners</option>{data?.filters.owners.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            {!embedded ? <label><span>Client</span><select value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">All clients</option>{data?.filters.clients.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label> : null}
-            {preset === "custom" ? <><label><span>From</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label><span>To</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label></> : null}
-            <small><CalendarDays size={13} /><span>{data?.range.label ?? "Selected period"}</span>{preset !== "all" ? <em>vs {data?.range.comparisonLabel}</em> : <em>All recorded history</em>}</small>
-          </div>
-        </section>
+        <p className="analytics-range-context">{data?.range.label ?? "Selected period"}{preset !== "all" && data?.range.comparisonLabel ? ` · vs ${data.range.comparisonLabel}` : ""}</p>
 
         {error ? <div className="analytics-error" role="alert"><TriangleAlert size={18} /><span><strong>Analytics signal interrupted</strong>{error}</span><button type="button" onClick={() => setRefreshKey((value) => value + 1)}>Retry</button></div> : null}
         {data?.dataQuality.message ? <div className="analytics-quality"><Clock3 size={15} /><span>{data.dataQuality.message}</span><strong>{data.dataQuality.exactLifecycleEvents} exact · {data.dataQuality.estimatedLifecycleEvents} estimated</strong></div> : null}

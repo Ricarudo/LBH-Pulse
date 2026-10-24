@@ -15,4 +15,5 @@ export * from "./request-checklists";
 export * from "./search";
 export * from "./settings";
 export * from "./work";
+export * from "./updates";
 export * from "./quote-lifecycle";

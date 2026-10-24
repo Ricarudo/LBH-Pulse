@@ -1,15 +1,11 @@
 "use client";
+import { ListFeedback, ListToolbar } from "@/components/lists/ListControls";
+import { useDashboardList } from "@/lib/useDashboardList";
+import { options, businessDate, dateRange, type ListDefinition } from "@/lib/listState";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  Boxes,
-  Filter,
-  ImageIcon,
-  PackagePlus,
-  Search
-} from "lucide-react";
+import { ArrowLeft, Boxes, ImageIcon, PackagePlus } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import { createItem, fetchItemCategories, fetchItems } from "@/lib/api/items";
@@ -52,17 +48,27 @@ export function ItemsModule() {
   const canWrite = canUser(user, "items:write");
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
-  const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"All" | ItemType>("All");
-  const [statusFilter, setStatusFilter] = useState<"All" | ItemStatus>("All");
-  const [categoryFilter, setCategoryFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [draft, setDraft] = useState(blankDraft);
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const definition = useMemo<ListDefinition<ItemRecord>>(() => ({
+    id: "items", label: "items", defaultView: "all", defaultSort: "name", defaultDirection: "asc",
+    filters: [
+      { key: "type", label: "Type", options: options(itemTypes) },
+      { key: "status", label: "Status", options: options(itemStatuses) },
+      { key: "category", label: "Category", options: options(categories) }
+    ],
+    dates: [{ key: "createdAt", label: "Created", value: row => row.createdAt }, { key: "updatedAt", label: "Updated", value: row => row.updatedAt }],
+    sorts: [{ key: "name", label: "Name", value: row => row.name, direction: "asc" }, { key: "updatedAt", label: "Updated", date: true, value: row => row.updatedAt, direction: "desc" }, { key: "sellPrice", label: "Sell price", numeric: true, value: row => row.sellPrice, direction: "desc" }],
+    search: row => row.name, rowId: row => row.id
+  }), [categories]);
+  // Results are filtered and sorted by the API before its 200-record cap.
+  const list = useDashboardList(definition, []);
+  const queryKey = JSON.stringify(list.state);
+
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,15 +91,25 @@ export function ItemsModule() {
           setError("");
           const data = await fetchItems(
             {
-              q: query,
-              type: typeFilter === "All" ? undefined : typeFilter,
-              status: statusFilter === "All" ? undefined : statusFilter,
-              category: categoryFilter === "All" ? undefined : categoryFilter,
-              includeInactive: true
+              q: list.state.q.slice(0, 100),
+              types: list.state.filters.type as ItemType[] | undefined,
+              statuses: list.state.filters.status as ItemStatus[] | undefined,
+              categories: list.state.filters.category,
+              includeInactive: true,
+              sort: list.state.sort as "name" | "updatedAt" | "sellPrice",
+              direction: list.state.direction,
+              ...(list.state.datePreset !== "any" ? {
+                dateField: list.state.dateField as "createdAt" | "updatedAt",
+                timeZone: list.timeZone,
+                ...(list.state.datePreset === "missing" ? { dateMode: "missing" as const } : (() => {
+                  const range = dateRange(list.state, businessDate(new Date(), list.timeZone));
+                  return { dateFrom: range.from || undefined, dateTo: range.to || undefined };
+                })())
+              } : {})
             },
             { cache: "no-store", signal: controller.signal }
           );
-          setItems(data.items);
+          if (!controller.signal.aborted) setItems(data.items);
         } catch (loadError) {
           if (!(loadError instanceof DOMException && loadError.name === "AbortError")) {
             setError(loadError instanceof Error ? loadError.message : "Unable to load items.");
@@ -108,7 +124,7 @@ export function ItemsModule() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [categoryFilter, query, statusFilter, typeFilter]);
+  }, [queryKey, list.timeZone]);
 
   useEffect(() => {
     if (!toast) return;
@@ -117,12 +133,6 @@ export function ItemsModule() {
   }, [toast]);
 
   const filteredItems = items;
-
-  const activeFilterCount = [
-    categoryFilter !== "All",
-    typeFilter !== "All",
-    statusFilter !== "All"
-  ].filter(Boolean).length;
 
   function openCreate() {
     setDraft({ ...blankDraft, relations: [] });
@@ -156,7 +166,7 @@ export function ItemsModule() {
   }
 
   return (
-    <section className="items-module">
+    <section className="items-module dashboard-list">
       <header className="clients-command-bar items-command-bar">
         <div className="clients-command-primary">
           <Link
@@ -197,58 +207,10 @@ export function ItemsModule() {
       </header>
 
       <section className="items-surface">
-        <div className="items-catalog-toolbar">
-          <label className="lead-search">
-            <Search size={17} />
-            <input
-              aria-label="Search items"
-              placeholder="Search name, SKU, part number, brand..."
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </label>
-          <div className="items-catalog-filter-area" data-open={filtersOpen}>
-            <button
-              className="toolbar-button compact items-mobile-filters-toggle"
-              type="button"
-              aria-controls="items-catalog-filters"
-              aria-expanded={filtersOpen}
-              onClick={() => setFiltersOpen((current) => !current)}
-            >
-              <Filter size={16} />
-              <span>Filters</span>
-              {activeFilterCount ? <strong>{activeFilterCount}</strong> : null}
-            </button>
-            <div className="items-catalog-filters" id="items-catalog-filters">
-              <Filter size={16} />
-              <select
-                aria-label="Filter items by category"
-                value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
-              >
-                <option value="All">All categories</option>
-                {categories.map((category) => (
-                  <option value={category} key={category}>{category}</option>
-                ))}
-              </select>
-              <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as "All" | ItemType)}>
-                <option value="All">All types</option>
-                {itemTypes.map((type) => <option value={type} key={type}>{type}</option>)}
-              </select>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "All" | ItemStatus)}>
-                <option value="All">All statuses</option>
-                {itemStatuses.map((status) => <option value={status} key={status}>{status}</option>)}
-              </select>
-            </div>
-          </div>
-          <span className="items-result-count">
-            {filteredItems.length === 200 ? "Showing the first 200 matching items" : `${filteredItems.length} matching items`}
-          </span>
-        </div>
+        <ListToolbar list={list} count={loading ? "Loading…" : filteredItems.length === 200 ? "Showing the first 200 matching items" : `${filteredItems.length} matching items`} />
 
-        {error ? <div className="work-queue-state error">{error}</div> : null}
-        {loading ? <div className="work-queue-state">Loading items...</div> : null}
+        <ListFeedback error={error} onRetry={() => window.location.reload()} />
+        <ListFeedback loading={loading && !error} />
         {!loading && !error ? (
           filteredItems.length ? (
             <div className="items-catalog-grid">

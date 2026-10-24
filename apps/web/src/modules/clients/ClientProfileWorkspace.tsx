@@ -1,29 +1,7 @@
 "use client";
+import { ClientWorkList } from "./ClientWorkList";
 
-import {
-  ArrowLeft,
-  Building2,
-  CalendarClock,
-  ChevronDown,
-  Clock3,
-  CreditCard,
-  Edit3,
-  FileText,
-  FolderKanban,
-  History,
-  Mail,
-  MapPin,
-  MoreHorizontal,
-  Phone,
-  Plus,
-  ReceiptText,
-  Search,
-  SlidersHorizontal,
-  StickyNote,
-  Upload,
-  UserRound,
-  X
-} from "lucide-react";
+import { ArrowLeft, Building2, CalendarClock, ChevronDown, Clock3, CreditCard, Edit3, FileText, FolderKanban, History, Mail, MapPin, MoreHorizontal, Phone, Plus, ReceiptText, Search, StickyNote, Upload, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent, KeyboardEvent, ReactNode, RefObject } from "react";
@@ -80,28 +58,6 @@ type ActivityResponse = {
 const clientProfileTabs = ["Work", "People & Sites", "Details", "Relationship"] as const;
 type ClientProfileTab = (typeof clientProfileTabs)[number];
 type ClientWorkType = "All work" | "Requests" | "Quotes" | "Projects" | "Invoices";
-type ClientWorkFilter =
-  | "All Records"
-  | "Active Work"
-  | "Completed Work"
-  | "Open Requests"
-  | "Closed Requests"
-  | "Draft Quotes"
-  | "Other Quotes"
-  | "Active Projects"
-  | "Closed Projects"
-  | "Open Invoices"
-  | "Paid / Void Invoices";
-
-const closedRequestStatuses = new Set<RequestStatus>([
-  "Converted to Quote",
-  "No Bid",
-  "Cancelled",
-  "Duplicate"
-]);
-const closedQuoteStatuses = new Set(["Approved", "Rejected", "Expired", "Cancelled"]);
-const closedProjectStatuses = new Set(["Completed", "Cancelled"]);
-const closedInvoiceStatuses = new Set(["Paid", "Void"]);
 
 const tabQuery: Record<ClientProfileTab, string> = {
   Work: "work",
@@ -574,199 +530,6 @@ function ClientHistoryDialog({
   );
 }
 
-function lifecycleStatusClass(type: "Request" | "Quote" | "Project" | "Invoice", status: string) {
-  if (type === "Request") return requestStatusClass(status as RequestStatus);
-  if (type === "Invoice" && status === "Overdue") return "status-pill danger";
-  if (
-    (type === "Quote" && ["Rejected", "Expired", "Cancelled"].includes(status)) ||
-    (type === "Project" && status === "Cancelled") ||
-    (type === "Invoice" && status === "Void")
-  ) return "status-pill danger";
-  if (
-    (type === "Quote" && ["Draft", "Review"].includes(status)) ||
-    (type === "Project" && status === "On Hold") ||
-    (type === "Invoice" && ["Draft", "Review"].includes(status))
-  ) return "status-pill warning";
-  return "status-pill";
-}
-
-function WorkTable({
-  type,
-  requests,
-  quotes,
-  projects,
-  invoices,
-  hasFilters
-}: {
-  type: ClientWorkType;
-  requests: RequestRecord[];
-  quotes: QuoteRecord[];
-  projects: ProjectRecord[];
-  invoices: InvoiceRecord[];
-  hasFilters: boolean;
-}) {
-  const workLabel = type === "All work" ? "work records" : type.toLowerCase();
-  const empty = (
-    <EmptyPanel
-      title={hasFilters ? `No ${workLabel} match the current filters.` : `No ${workLabel} are linked yet.`}
-      detail={hasFilters ? "Clear the search or choose a broader status." : "Linked records will appear here as the relationship progresses."}
-    />
-  );
-
-  if (type === "All work") {
-    const records = [
-      ...requests.map((record) => ({
-        id: `request-${record.id}`,
-        type: "Request" as const,
-        number: record.requestNumber,
-        title: record.title,
-        status: record.status,
-        owner: record.assignedToName,
-        value: "—",
-        updatedAt: record.updatedAt,
-        href: `/requests/${record.id}`
-      })),
-      ...quotes.map((record) => ({
-        id: `quote-${record.id}`,
-        type: "Quote" as const,
-        number: record.quoteNumber,
-        title: record.title,
-        status: record.status,
-        owner: record.owner,
-        value: formatMoney(record.total),
-        updatedAt: record.updatedAt,
-        href: `/quotes/${record.id}`
-      })),
-      ...projects.map((record) => ({
-        id: `project-${record.id}`,
-        type: "Project" as const,
-        number: record.projectNumber,
-        title: record.title,
-        status: record.status,
-        owner: record.assignedTo?.name ?? "Unassigned",
-        value: formatMoney(record.budget),
-        updatedAt: record.updatedAt,
-        href: `/projects/${record.id}`
-      })),
-      ...invoices.map((record) => ({
-        id: `invoice-${record.id}`,
-        type: "Invoice" as const,
-        number: record.invoiceNumber,
-        title: record.title,
-        status: record.status,
-        owner: record.assignedTo?.name ?? "Unassigned",
-        value: formatMoney(record.amount),
-        updatedAt: record.updatedAt,
-        href: `/billing/${record.id}`
-      }))
-    ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-
-    if (!records.length) return empty;
-    return (
-      <div className="client-work-table-wrap">
-        <table className="data-table client-360-table">
-          <thead><tr><th>Stage</th><th>Record</th><th>Status</th><th>Owner</th><th>Value</th><th>Updated</th><th /></tr></thead>
-          <tbody>{records.map((record) => (
-            <tr key={record.id}>
-              <td data-label="Stage"><span className="client-lifecycle-stage">{record.type}</span></td>
-              <td data-label="Record"><Link href={record.href}><strong>{record.number}</strong></Link><br /><span className="table-muted">{record.title}</span></td>
-              <td data-label="Status"><span className={lifecycleStatusClass(record.type, record.status)}>{record.status}</span></td>
-              <td data-label="Owner">{record.owner}</td>
-              <td data-label="Value">{record.value}</td>
-              <td data-label="Updated">{displayDate(record.updatedAt)}</td>
-              <td><Link className="toolbar-button compact" href={record.href}>Open</Link></td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    );
-  }
-
-  if (type === "Requests") {
-    if (!requests.length) return empty;
-    return (
-      <div className="client-work-table-wrap">
-        <table className="data-table client-360-table">
-          <thead><tr><th>Request</th><th>Status</th><th>Type</th><th>Category</th><th>Owner</th><th>Received</th><th /></tr></thead>
-          <tbody>{requests.map((request) => (
-            <tr key={request.id}>
-              <td data-label="Request"><strong>{request.requestNumber}</strong><br /><span className="table-muted">{request.title}</span></td>
-              <td data-label="Status"><span className={requestStatusClass(request.status)}>{request.status}</span></td>
-              <td data-label="Type">{request.requestType}</td>
-              <td data-label="Category">{request.serviceCategories.join(", ")}</td>
-              <td data-label="Owner">{request.assignedToName}</td>
-              <td data-label="Received">{displayDate(request.receivedDate)}</td>
-              <td><Link className="toolbar-button compact" href={`/requests/${request.id}`}>Open</Link></td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    );
-  }
-
-  if (type === "Quotes") {
-    if (!quotes.length) return empty;
-    return (
-      <div className="client-work-table-wrap">
-        <table className="data-table client-360-table">
-          <thead><tr><th>Quote</th><th>Status</th><th>Owner</th><th>Total</th><th>Created from</th><th>Updated</th></tr></thead>
-          <tbody>{quotes.map((quote) => (
-            <tr key={quote.id}>
-              <td data-label="Quote"><Link href={`/quotes/${quote.id}`}><strong>{quote.quoteNumber}</strong></Link><br /><span className="table-muted">{quote.title}</span></td>
-              <td data-label="Status"><span className={quote.status === "Draft" ? "status-pill warning" : "status-pill"}>{quote.status}</span></td>
-              <td data-label="Owner">{quote.owner}</td>
-              <td data-label="Total">{formatMoney(quote.total)}</td>
-              <td data-label="Created from">{quote.requestId ? <Link href={`/requests/${quote.requestId}`}>{quote.requestNumber}</Link> : "Manual quote"}</td>
-              <td data-label="Updated">{displayDate(quote.updatedAt)}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    );
-  }
-
-  if (type === "Projects") {
-    if (!projects.length) return empty;
-    return (
-      <div className="client-work-table-wrap">
-        <table className="data-table client-360-table">
-          <thead><tr><th>Project</th><th>Status</th><th>Owner</th><th>Budget</th><th>Source quote</th><th>Due</th></tr></thead>
-          <tbody>{projects.map((project) => (
-            <tr key={project.id}>
-              <td data-label="Project"><strong>{project.projectNumber}</strong><br /><span className="table-muted">{project.title}</span></td>
-              <td data-label="Status"><span className={project.status === "On Hold" ? "status-pill warning" : "status-pill"}>{project.status}</span></td>
-              <td data-label="Owner">{project.assignedTo?.name ?? "Unassigned"}</td>
-              <td data-label="Budget">{formatMoney(project.budget)}</td>
-              <td data-label="Source quote">{project.quoteNumber || "Manual project"}</td>
-              <td data-label="Due">{displayDate(project.dueDate)}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    );
-  }
-
-  if (!invoices.length) return empty;
-  return (
-    <div className="client-work-table-wrap">
-      <table className="data-table client-360-table">
-        <thead><tr><th>Invoice</th><th>Status</th><th>Owner</th><th>Amount</th><th>Project</th><th>Issued</th><th>Due</th></tr></thead>
-        <tbody>{invoices.map((invoice) => (
-          <tr key={invoice.id}>
-            <td data-label="Invoice"><strong>{invoice.invoiceNumber}</strong><br /><span className="table-muted">{invoice.title}</span></td>
-            <td data-label="Status"><span className={invoice.status === "Overdue" ? "status-pill danger" : invoice.status === "Draft" || invoice.status === "Review" ? "status-pill warning" : "status-pill"}>{invoice.status}</span></td>
-            <td data-label="Owner">{invoice.assignedTo?.name ?? "Unassigned"}</td>
-            <td data-label="Amount">{formatMoney(invoice.amount)}</td>
-            <td data-label="Project">{invoice.projectNumber || "No project"}</td>
-            <td data-label="Issued">{displayDate(invoice.issuedDate)}</td>
-            <td data-label="Due">{displayDate(invoice.dueDate)}</td>
-          </tr>
-        ))}</tbody>
-      </table>
-    </div>
-  );
-}
-
 export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps) {
   const { user } = useCurrentUser();
   const router = useRouter();
@@ -787,8 +550,13 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     averageRevisions: null
   });
   const [activeTab, setActiveTab] = useState<ClientProfileTab>("Work");
-  const [workType, setWorkType] = useState<ClientWorkType>("All work");
-  const [workspaceFilter, setWorkspaceFilter] = useState<ClientWorkFilter>("All Records");
+  const requestedWorkType = searchParams.get("workType");
+  const workType: ClientWorkType = (["All work", "Requests", "Quotes", "Projects", "Invoices"] as string[]).includes(requestedWorkType ?? "") ? requestedWorkType as ClientWorkType : "All work";
+  function setWorkType(type: ClientWorkType) {
+    const next = new URL(window.location.href);
+    next.searchParams.set("workType", type);
+    window.history.replaceState(window.history.state, "", next);
+  }
   const [profileSearch, setProfileSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -892,7 +660,6 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
 
   function selectTab(tab: ClientProfileTab) {
     setActiveTab(tab);
-    setWorkspaceFilter("All Records");
     setProfileSearch("");
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tabQuery[tab]);
@@ -933,69 +700,6 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   }
 
   const normalizedSearch = profileSearch.trim().toLowerCase();
-  const filteredRequests = useMemo(() => requests.filter((request) => {
-    const filterMatches = workspaceFilter === "Open Requests"
-      ? !closedRequestStatuses.has(request.status)
-      : workspaceFilter === "Closed Requests"
-        ? closedRequestStatuses.has(request.status)
-        : workspaceFilter === "Active Work"
-          ? !closedRequestStatuses.has(request.status)
-          : workspaceFilter === "Completed Work"
-            ? closedRequestStatuses.has(request.status)
-        : true;
-    return filterMatches && matchesSearch(
-      [request.requestNumber, request.title, request.status, request.requestType, ...request.serviceCategories, request.assignedToName],
-      normalizedSearch
-    );
-  }), [normalizedSearch, requests, workspaceFilter]);
-  const filteredQuotes = useMemo(() => quotes.filter((quote) => {
-    const closed = closedQuoteStatuses.has(quote.status);
-    const filterMatches = workspaceFilter === "Draft Quotes"
-      ? quote.status === "Draft"
-      : workspaceFilter === "Other Quotes"
-        ? quote.status !== "Draft"
-        : workspaceFilter === "Active Work"
-          ? !closed
-          : workspaceFilter === "Completed Work"
-            ? closed
-        : true;
-    return filterMatches && matchesSearch(
-      [quote.quoteNumber, quote.title, quote.status, quote.owner, quote.requestNumber, quote.total],
-      normalizedSearch
-    );
-  }), [normalizedSearch, quotes, workspaceFilter]);
-  const filteredProjects = useMemo(() => projects.filter((project) => {
-    const closed = closedProjectStatuses.has(project.status);
-    const filterMatches = workspaceFilter === "Active Projects"
-      ? !closed
-      : workspaceFilter === "Closed Projects"
-        ? closed
-        : workspaceFilter === "Active Work"
-          ? !closed
-          : workspaceFilter === "Completed Work"
-            ? closed
-        : true;
-    return filterMatches && matchesSearch(
-      [project.projectNumber, project.title, project.status, project.assignedTo?.name, project.quoteNumber],
-      normalizedSearch
-    );
-  }), [normalizedSearch, projects, workspaceFilter]);
-  const filteredInvoices = useMemo(() => invoices.filter((invoice) => {
-    const closed = closedInvoiceStatuses.has(invoice.status);
-    const filterMatches = workspaceFilter === "Open Invoices"
-      ? !closed
-      : workspaceFilter === "Paid / Void Invoices"
-        ? closed
-        : workspaceFilter === "Active Work"
-          ? !closed
-          : workspaceFilter === "Completed Work"
-            ? closed
-        : true;
-    return filterMatches && matchesSearch(
-      [invoice.invoiceNumber, invoice.title, invoice.status, invoice.assignedTo?.name, invoice.projectNumber],
-      normalizedSearch
-    );
-  }), [invoices, normalizedSearch, workspaceFilter]);
   const filteredContacts = useMemo(() => (client?.contacts ?? []).filter((contact) => matchesSearch(
     [contact.name, contact.title, contact.department, contact.email, contact.phone, contact.mobile, contact.siteName],
     normalizedSearch
@@ -1004,14 +708,6 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
     [site.siteName, site.siteType, site.address, site.city, site.state, site.country],
     normalizedSearch
   )), [client?.sites, normalizedSearch]);
-
-  const workFilters = useMemo<ClientWorkFilter[]>(() => {
-    if (workType === "All work") return ["All Records", "Active Work", "Completed Work"];
-    if (workType === "Requests") return ["All Records", "Open Requests", "Closed Requests"];
-    if (workType === "Quotes") return ["All Records", "Draft Quotes", "Other Quotes"];
-    if (workType === "Projects") return ["All Records", "Active Projects", "Closed Projects"];
-    return ["All Records", "Open Invoices", "Paid / Void Invoices"];
-  }, [workType]);
 
   const lifecycleEvents = useMemo(() => [
     ...requests.map((record) => ({ id: `request-${record.id}`, type: "Request", title: `${record.requestNumber} · ${record.title}`, detail: record.status, date: record.receivedDate })),
@@ -1055,12 +751,6 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
   const identityAliases = aliases.filter((alias) => !normalizedIdentityNames.has(alias.name.trim().toLocaleLowerCase()));
   const visibleAliases = identityAliases.slice(0, 3);
   const remainingAliases = Math.max(0, identityAliases.length - visibleAliases.length);
-  const activeResultCount =
-    workType === "All work" ? filteredRequests.length + filteredQuotes.length + filteredProjects.length + filteredInvoices.length :
-    workType === "Requests" ? filteredRequests.length :
-    workType === "Quotes" ? filteredQuotes.length :
-    workType === "Projects" ? filteredProjects.length :
-    filteredInvoices.length;
 
   return (
     <section className="client-360-page">
@@ -1155,16 +845,16 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
 
         <section className="client-360-metric-grid client-record-highlights" aria-label="Operational highlights">
           <ClientMetricCard label="Open requests" value={workSummary.activeRequests} icon={<FileText size={19} />} onClick={() => {
-            selectTab("Work"); setWorkType("Requests"); setWorkspaceFilter("Open Requests");
+            selectTab("Work"); setWorkType("Requests");
           }} />
           <ClientMetricCard label="Active quotes" value={workSummary.activeQuotes} icon={<ReceiptText size={19} />} onClick={() => {
-            selectTab("Work"); setWorkType("Quotes"); setWorkspaceFilter("Other Quotes");
+            selectTab("Work"); setWorkType("Quotes");
           }} />
           <ClientMetricCard label="Active projects" value={workSummary.activeProjects} icon={<FolderKanban size={19} />} onClick={() => {
-            selectTab("Work"); setWorkType("Projects"); setWorkspaceFilter("Active Projects");
+            selectTab("Work"); setWorkType("Projects");
           }} />
           <ClientMetricCard label="Outstanding balance" value={formatMoney(workSummary.outstandingInvoiceBalance)} icon={<CreditCard size={19} />} onClick={() => {
-            selectTab("Work"); setWorkType("Invoices"); setWorkspaceFilter("Open Invoices");
+            selectTab("Work"); setWorkType("Invoices");
           }} />
         </section>
       </header>
@@ -1201,21 +891,9 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                 ["Invoices", invoices.length]
               ] as Array<[ClientWorkType, number]>).map(([type, count]) => (
                 <button key={type} type="button" role="tab" aria-selected={workType === type} className={workType === type ? "active" : ""} onClick={() => {
-                  setWorkType(type); setWorkspaceFilter("All Records"); setProfileSearch("");
+                  setWorkType(type);
                 }}>{type}<span>{count}</span></button>
               ))}
-            </div>
-            <div className="client-context-toolbar">
-              <label className="lead-search client-360-search"><Search size={17} />
-                <input aria-label={`Search client ${workType.toLowerCase()}`} placeholder={`Search ${workType.toLowerCase()}`} value={profileSearch} onChange={(event) => setProfileSearch(event.target.value)} />
-                {profileSearch ? <button type="button" aria-label={`Clear ${workType.toLowerCase()} search`} onClick={() => setProfileSearch("")}><X size={16} /></button> : null}
-              </label>
-              <label className="client-360-filter-control"><SlidersHorizontal size={16} />
-                <select aria-label={`Filter ${workType.toLowerCase()} by status`} value={workspaceFilter} onChange={(event) => setWorkspaceFilter(event.target.value as ClientWorkFilter)}>
-                  {workFilters.map((filter) => <option key={filter}>{filter}</option>)}
-                </select>
-              </label>
-              <span className="client-360-result-count">{activeResultCount} records</span>
             </div>
             {workType === "Quotes" ? (
               <section className="client-quote-revision-strip" aria-label="Quote revision metrics">
@@ -1225,14 +903,12 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
                 <div><span>Average revisions</span><strong>{workSummary.averageRevisions === null ? "Not captured" : workSummary.averageRevisions.toFixed(1)}</strong></div>
               </section>
             ) : null}
-            <WorkTable
-              type={workType}
-              requests={filteredRequests}
-              quotes={filteredQuotes}
-              projects={filteredProjects}
-              invoices={filteredInvoices}
-              hasFilters={Boolean(profileSearch || workspaceFilter !== "All Records")}
-            />
+            <ClientWorkList key={workType} clientId={clientId} type={workType} rows={[
+              ...requests.map(record => ({ kind: "requests" as const, record })),
+              ...quotes.map(record => ({ kind: "quotes" as const, record })),
+              ...projects.map(record => ({ kind: "projects" as const, record })),
+              ...invoices.map(record => ({ kind: "invoices" as const, record }))
+            ]} />
           </div>
         ) : null}
 

@@ -80,3 +80,15 @@ The CI project validates type checks/tests/responsive checks/builds, clean migra
 - The local `client-list-cleaned.csv`, populated environment files, reports, plaintext secret files, and backup archives are excluded from Git and production build contexts.
 
 Pulse 0.1 release scope and accepted limitations are recorded in the [0.1.2 release notes](docs/releases/0.1.2.md), [data-repair policy](docs/production/data-repairs.md), and the [technical-debt register](docs/technical-debt.md).
+
+## Pulse 0.2.0 planning
+
+The [release design draft](docs/releases/0.2.0-design.md) defines the proposed
+quoting, estimating, proposal and productization scope. The
+[implementation map](docs/releases/0.2.0-implementation-plan.md) reconciles it
+with the verified 0.1.2 baseline and records dependencies, delivery gates and
+open decisions. These are planning documents, not shipped-feature claims.
+
+### Managed Docker installation and updates (0.2)
+
+The new deployment path uses Docker commands for installation and **Settings → Updates** for routine releases. See [Docker installation](docs/production/docker-installation.md) and [updater qualification](docs/production/updater-qualification.md). Release publication requires signed metadata and Linux/Windows qualification; historical `.exe` releases remain recovery references.

@@ -6,8 +6,12 @@
   "types": "./dist/index.d.ts",
   "typesVersions": {
     "*": {
-      "*": ["dist/*"],
-      "": ["dist/index.d.ts"]
+      "*": [
+        "dist/*"
+      ],
+      "": [
+        "dist/index.d.ts"
+      ]
     }
   },
   "exports": {
@@ -79,13 +83,21 @@
       "types": "./dist/settings.d.ts",
       "default": "./dist/settings.js"
     },
+    "./work": {
+      "types": "./dist/work.d.ts",
+      "default": "./dist/work.js"
+    },
+    "./list-dates": {
+      "types": "./dist/list-dates.d.ts",
+      "default": "./dist/list-dates.js"
+    },
     "./quote-lifecycle": {
       "types": "./dist/quote-lifecycle.d.ts",
       "default": "./dist/quote-lifecycle.js"
     },
-    "./work": {
-      "types": "./dist/work.d.ts",
-      "default": "./dist/work.js"
+    "./updates": {
+      "types": "./dist/updates.d.ts",
+      "default": "./dist/updates.js"
     }
   },
   "files": [

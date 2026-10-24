@@ -1,3 +1,4 @@
+import { inMaintenance } from "@/shared/maintenance";
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { prisma } from "@/lib/db";
 import {
@@ -16,6 +17,7 @@ export class ActivityRetentionService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
 
   async enforce(now = new Date()) {
+    if (inMaintenance()) return { count: 0 };
     const policy = activityRetentionPolicy();
     return prisma.activity.deleteMany({
       where: {

@@ -1,5 +1,7 @@
 # Pulse production setup and future updates
 
+For the 0.2 managed Docker distribution, use [Docker installation and in-app updates](./docker-installation.md). The procedures below describe the historical source/installer deployment and manual recovery path.
+
 This guide is the production operator's entrypoint for a new Pulse installation
 and for later releases. It summarizes the safe order of operations; the
 [production runbook](./runbook.md), [first-run and import guide](./initial-setup.md),

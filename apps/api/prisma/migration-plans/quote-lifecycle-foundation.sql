@@ -56,7 +56,8 @@ CREATE TABLE pulse."QuoteVersion" (
   CHECK (NOT "onHold" OR length(btrim("holdReason")) > 0 AND "holdReason" IS NOT NULL),
   CHECK (("validThrough" IS NULL) = ("validityTimeZone" IS NULL)),
   CHECK (("publicationState" = 'SENT') = ("sentAt" IS NOT NULL)),
-  CHECK ("publicationState" <> 'SENT' OR "frozenSnapshotId" IS NOT NULL)
+  CHECK ("publicationState" <> 'SENT' OR "frozenSnapshotId" IS NOT NULL),
+  CHECK ("outcome" NOT IN ('ACCEPTED', 'REJECTED', 'SUPERSEDED', 'CORRECTED') OR "publicationState" = 'SENT')
 );
 CREATE UNIQUE INDEX "QuoteVersion_one_open_draft" ON pulse."QuoteVersion"("familyId")
   WHERE "publicationState" = 'DRAFT' AND "outcome" IS NULL;
@@ -122,3 +123,98 @@ $$;
 CREATE TRIGGER "QuoteContentSnapshot_immutable"
   BEFORE UPDATE OR DELETE ON pulse."QuoteContentSnapshot"
   FOR EACH ROW EXECUTE FUNCTION pulse.quote_snapshot_immutable();
+
+-- Enforce the frozen boundary even if an old write path reaches a managed Quote.
+-- Operational ownership, activity, outcomes and archiving remain separate.
+CREATE FUNCTION pulse.quote_family_commercial_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE target_id TEXT;
+BEGIN
+  IF TG_TABLE_NAME = 'Quote' THEN
+    target_id := OLD.id;
+  ELSIF TG_OP = 'INSERT' THEN
+    target_id := NEW."quoteId";
+  ELSE
+    target_id := OLD."quoteId";
+  END IF;
+  -- Item writers and send serialize on the same parent; include the destination
+  -- when moving a line so a line cannot be inserted into a frozen quote.
+  IF TG_TABLE_NAME = 'QuoteItem' THEN
+    PERFORM id FROM pulse."Quote" WHERE id = target_id FOR UPDATE;
+    IF TG_OP = 'UPDATE' AND NEW."quoteId" <> OLD."quoteId" THEN
+      PERFORM id FROM pulse."Quote" WHERE id = NEW."quoteId" FOR UPDATE;
+      IF EXISTS (SELECT 1 FROM pulse."QuoteVersion" WHERE "quoteId" = NEW."quoteId" AND "publicationState" = 'SENT') THEN
+        RAISE EXCEPTION 'Sent quote content is immutable' USING ERRCODE = '23514';
+      END IF;
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pulse."QuoteVersion" WHERE "quoteId" = target_id AND ("publicationState" = 'SENT' OR outcome IS NOT NULL)) THEN
+    IF TG_TABLE_NAME = 'Quote' AND TG_OP = 'UPDATE' THEN
+      IF (to_jsonb(NEW) - ARRAY['status','owner','assignedToId','currentStepId','updatedAt','archivedAt'])
+         = (to_jsonb(OLD) - ARRAY['status','owner','assignedToId','currentStepId','updatedAt','archivedAt']) THEN
+        RETURN NEW;
+      END IF;
+    END IF;
+    RAISE EXCEPTION 'Sent quote content is immutable' USING ERRCODE = '23514';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+$$;
+CREATE TRIGGER "Quote_family_commercial_guard" BEFORE UPDATE OR DELETE ON pulse."Quote"
+  FOR EACH ROW EXECUTE FUNCTION pulse.quote_family_commercial_guard();
+CREATE TRIGGER "QuoteItem_family_commercial_guard" BEFORE INSERT OR UPDATE OR DELETE ON pulse."QuoteItem"
+  FOR EACH ROW EXECUTE FUNCTION pulse.quote_family_commercial_guard();
+
+CREATE FUNCTION pulse.quote_version_frozen_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.outcome IS NOT NULL THEN
+    IF TG_OP = 'DELETE' OR NEW.outcome IS DISTINCT FROM OLD.outcome THEN
+      RAISE EXCEPTION 'Closed quote versions cannot be reopened' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+  IF OLD."publicationState" = 'SENT' OR OLD.outcome IS NOT NULL THEN
+    IF TG_OP = 'DELETE' OR (to_jsonb(NEW) - ARRAY['outcome','nextFollowUpOn','onHold','holdReason'])
+      IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['outcome','nextFollowUpOn','onHold','holdReason']) THEN
+      RAISE EXCEPTION 'Sent quote version cannot be reopened or rewritten' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+$$;
+CREATE TRIGGER "QuoteVersion_frozen_guard" BEFORE UPDATE OR DELETE ON pulse."QuoteVersion"
+  FOR EACH ROW EXECUTE FUNCTION pulse.quote_version_frozen_guard();
+
+-- Existing draft writers can participate without silently retaining old readiness.
+-- A command may change several lines; contentVersion is a monotonic token, not an edit count.
+CREATE FUNCTION pulse.quote_draft_content_changed() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE target_id TEXT;
+BEGIN
+  IF TG_TABLE_NAME = 'Quote' THEN
+    IF (to_jsonb(NEW) - ARRAY['status','owner','assignedToId','currentStepId','updatedAt','archivedAt','sentAt','sentAtPrecision'])
+       = (to_jsonb(OLD) - ARRAY['status','owner','assignedToId','currentStepId','updatedAt','archivedAt','sentAt','sentAtPrecision']) THEN RETURN NEW; END IF;
+    target_id := NEW.id;
+  ELSIF TG_TABLE_NAME = 'LifecycleContext' THEN
+    IF NEW.details IS NOT DISTINCT FROM OLD.details THEN RETURN NEW; END IF;
+    UPDATE pulse."QuoteVersion" SET "contentVersion" = "contentVersion" + 1, "readyContentVersion" = NULL
+      WHERE "publicationState" = 'DRAFT' AND outcome IS NULL
+        AND "quoteId" IN (SELECT id FROM pulse."Quote" WHERE "lifecycleContextId" = NEW.id);
+    RETURN NEW;
+  ELSE
+    IF TG_OP = 'DELETE' THEN target_id := OLD."quoteId"; ELSE target_id := NEW."quoteId"; END IF;
+  END IF;
+  UPDATE pulse."QuoteVersion" SET "contentVersion" = "contentVersion" + 1, "readyContentVersion" = NULL
+    WHERE "quoteId" = target_id AND "publicationState" = 'DRAFT' AND outcome IS NULL;
+  IF TG_TABLE_NAME = 'QuoteItem' THEN
+    IF TG_OP = 'UPDATE' AND OLD."quoteId" <> NEW."quoteId" THEN
+      UPDATE pulse."QuoteVersion" SET "contentVersion" = "contentVersion" + 1, "readyContentVersion" = NULL
+        WHERE "quoteId" = OLD."quoteId" AND "publicationState" = 'DRAFT' AND outcome IS NULL;
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+CREATE TRIGGER "Quote_draft_content_changed" AFTER UPDATE ON pulse."Quote"
+  FOR EACH ROW EXECUTE FUNCTION pulse.quote_draft_content_changed();
+CREATE TRIGGER "QuoteItem_draft_content_changed" AFTER INSERT OR UPDATE OR DELETE ON pulse."QuoteItem"
+  FOR EACH ROW EXECUTE FUNCTION pulse.quote_draft_content_changed();
+CREATE TRIGGER "LifecycleContext_draft_content_changed" AFTER UPDATE ON pulse."LifecycleContext"
+  FOR EACH ROW EXECUTE FUNCTION pulse.quote_draft_content_changed();

@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Building2, Filter, Plus, Search, UserRound, X } from "lucide-react";
+import { ListFeedback, ListToolbar } from "@/components/lists/ListControls";
+import { useDashboardList } from "@/lib/useDashboardList";
+import { options, uniqueOptions, filterCount, type ListDefinition } from "@/lib/listState";
+
+import { ArrowLeft, Building2, Plus, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
@@ -115,22 +119,9 @@ function flattenContacts(clients: ClientRecord[]): ContactRow[] {
   );
 }
 
-function ownerOptions(clients: ClientRecord[]) {
-  return Array.from(
-    new Set([
-      ...clientOwners,
-      ...clients.map((client) => client.accountOwner).filter(Boolean)
-    ])
-  );
-}
-
 export function ContactsModule() {
   const { user } = useCurrentUser();
   const [clients, setClients] = useState<ClientRecord[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"All" | ClientStatus>("All");
-  const [ownerFilter, setOwnerFilter] = useState("All");
-  const [flagFilter, setFlagFilter] = useState<ContactFlagFilter>("All");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -161,58 +152,23 @@ export function ContactsModule() {
   }, []);
 
   const contacts = useMemo(() => flattenContacts(clients), [clients]);
-  const owners = useMemo(() => ownerOptions(clients), [clients]);
-  const hasActiveFilters =
-    searchTerm.trim() !== "" ||
-    statusFilter !== "All" ||
-    ownerFilter !== "All" ||
-    flagFilter !== "All";
-
-  const filteredContacts = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
-    return contacts.filter((row) => {
-      const siteName = contactSiteName(row.client, row.contact);
-      const flags = row.flags.length ? row.flags : ["General"];
-      const haystack = [
-        row.contact.name,
-        row.contact.firstName,
-        row.contact.lastName,
-        row.contact.title,
-        row.contact.email,
-        row.contact.phone,
-        row.contact.mobile,
-        row.client.displayName,
-        row.client.legalName,
-        row.client.companyName,
-        row.client.clientNumber,
-        siteName,
-        row.client.accountOwner,
-        row.client.status,
-        flags.join(" ")
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      const matchesSearch =
-        !normalizedSearch || haystack.includes(normalizedSearch);
-      const matchesStatus =
-        statusFilter === "All" || row.client.status === statusFilter;
-      const matchesOwner =
-        ownerFilter === "All" || row.client.accountOwner === ownerFilter;
-      const matchesFlag =
-        flagFilter === "All" || row.flags.includes(flagFilter);
-
-      return matchesSearch && matchesStatus && matchesOwner && matchesFlag;
-    });
-  }, [contacts, flagFilter, ownerFilter, searchTerm, statusFilter]);
-
-  function clearFilters() {
-    setSearchTerm("");
-    setStatusFilter("All");
-    setOwnerFilter("All");
-    setFlagFilter("All");
-  }
+  const definition = useMemo<ListDefinition<ContactRow>>(() => ({
+    id: "contacts", label: "contacts", defaultView: "all", defaultSort: "name", defaultDirection: "asc",
+    filters: [
+      { key: "status", label: "Client status", options: options(clientStatuses), values: row => row.client.status },
+      { key: "client", label: "Client", options: uniqueOptions(clients.map(client => ({ value: client.id, label: client.displayName }))), values: row => row.client.id },
+      { key: "owner", label: "Client owner", options: options(clients.map(row => row.accountOwner)), values: row => row.client.accountOwner },
+      { key: "flag", label: "Contact role", options: options(contactFlagFilters.filter(flag => flag !== "All")), values: row => row.flags }
+    ],
+    sorts: [{ key: "name", label: "Name", value: row => row.contact.name, direction: "asc" }, { key: "client", label: "Client", value: row => row.client.displayName, direction: "asc" }, { key: "site", label: "Site", value: row => contactSiteName(row.client, row.contact) }, { key: "role", label: "Job title", value: row => row.contact.title }],
+    search: row => [row.contact.name, row.contact.title, row.contact.email, row.contact.phone, row.contact.mobile, row.client.displayName, row.client.legalName, row.client.clientNumber, contactSiteName(row.client, row.contact), row.client.accountOwner, ...row.flags].join(" "),
+    rowId: row => row.contact.id
+  }), [clients]);
+  const list = useDashboardList(definition, contacts);
+  const filteredContacts = list.rows;
+  const searchTerm = list.state.q;
+  const hasActiveFilters = Boolean(searchTerm || filterCount(list.state));
+  const clearFilters = list.reset;
 
   function contactCreated(client: ClientRecord, contactName: string) {
     setClients((current) => {
@@ -228,7 +184,7 @@ export function ContactsModule() {
   }
 
   return (
-    <div className="clients-module contacts-module">
+    <div className="clients-module contacts-module dashboard-list">
       <section className="clients-command-bar">
         <div className="clients-command-primary">
           <Link className="toolbar-button compact clients-directory-return" href="/directory">
@@ -270,75 +226,9 @@ export function ContactsModule() {
 
       <section className="clients-workspace contacts-workspace">
         <div className="client-list-panel">
-          <div className="client-list-toolbar">
-            <label className="lead-search">
-              <Search size={17} />
-              <input
-                aria-label="Search contacts"
-                placeholder="Search contacts, clients, sites, owners..."
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-              />
-            </label>
-            <div className="lead-filter-row">
-              <Filter size={16} />
-              <select
-                value={statusFilter}
-                onChange={(event) =>
-                  setStatusFilter(event.target.value as "All" | ClientStatus)
-                }
-              >
-                <option value="All">All statuses</option>
-                {clientStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
-              >
-                <option value="All">All owners</option>
-                {owners.map((owner) => (
-                  <option key={owner} value={owner}>
-                    {owner}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={flagFilter}
-                onChange={(event) =>
-                  setFlagFilter(event.target.value as ContactFlagFilter)
-                }
-              >
-                {contactFlagFilters.map((flag) => (
-                  <option key={flag} value={flag}>
-                    {flag === "All" ? "All flags" : flag}
-                  </option>
-                ))}
-              </select>
-              {hasActiveFilters ? (
-                <button
-                  className="toolbar-button compact"
-                  type="button"
-                  onClick={clearFilters}
-                >
-                  <X size={16} />
-                  Clear
-                </button>
-              ) : null}
-            </div>
-          </div>
+          <ListToolbar list={list} count={filteredContacts.length} />
 
-          <div className="client-list-meta">
-            <span>
-              Showing {filteredContacts.length} of {contacts.length} contacts
-            </span>
-            {hasActiveFilters ? <strong>Filters active</strong> : null}
-          </div>
-
-          {loadError ? <div className="form-alert error">{loadError}</div> : null}
+          <ListFeedback error={loadError} onRetry={() => window.location.reload()} />
           {successMessage ? (
             <div className="form-alert contact-create-success" role="status">
               {successMessage}
@@ -419,7 +309,7 @@ export function ContactsModule() {
             </div>
           ) : null}
 
-          {!isLoading && filteredContacts.length === 0 ? (
+          {!isLoading && !loadError && filteredContacts.length === 0 ? (
             <div className="lead-empty-state client-empty-state">
               <strong>
                 {contacts.length === 0

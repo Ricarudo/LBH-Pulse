@@ -1,0 +1,36 @@
+name: pulse-updater-operations-test
+services:
+  maintenance-image:
+    image: pulse-updater-maintenance-test:local
+    platform: ${PULSE_TEST_PLATFORM:-linux/amd64}
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+      target: maintenance
+  minio-init-image:
+    image: pulse-updater-minio-test:local
+    platform: ${PULSE_TEST_PLATFORM:-linux/amd64}
+    build:
+      context: ../..
+      dockerfile: docker/minio/Dockerfile
+  tests:
+    image: pulse-updater-check:local
+    working_dir: /repo
+    entrypoint: [node]
+    command: [--test, services/updater/test/operations.test.mts]
+    environment:
+      PULSE_TEST_PLATFORM: ${PULSE_TEST_PLATFORM:-linux/amd64}
+      PULSE_TEST_MINIO_INIT_IMAGE: ${PULSE_TEST_MINIO_INIT_IMAGE:-pulse-updater-minio-test:local}
+    volumes:
+      - ../..:/repo:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - state:/state
+      - work:/work
+      - backups:/backups
+      - secrets:/secrets
+volumes:
+  state:
+  work:
+    name: pulse-updater-data-test-update-work
+  backups:
+  secrets:

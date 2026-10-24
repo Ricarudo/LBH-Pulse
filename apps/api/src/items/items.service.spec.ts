@@ -114,7 +114,8 @@ test("item list applies filters before the intentional 200-record limit", async 
   assert.deepEqual(captured.orderBy, [
     { status: "asc" },
     { updatedAt: "desc" },
-    { name: "asc" }
+    { name: "asc" },
+    { id: "asc" }
   ]);
   assert.equal(captured.where.status, "ACTIVE");
   assert.equal(captured.where.itemType, "PRODUCT");
@@ -295,4 +296,17 @@ test("item deletion is a soft transition to inactive", async () => {
     (updateQuery as { where: unknown; data: unknown }).data,
     { status: "INACTIVE" }
   );
+});
+
+test("popup filters and sell-price ordering reach the database before the catalog cap", async () => {
+  let query: any;
+  const prisma = { item: { findMany: async (input: unknown) => { query = input; return []; } } } as unknown as PrismaClient;
+  await new ItemsService(prisma, new ItemRelationsService()).listItems({ q: "", includeInactive: true, types: ["PRODUCT", "LABOR"], statuses: ["ACTIVE", "INACTIVE"], categories: ["Networking", "Labor"], sort: "sellPrice", direction: "desc", dateField: "updatedAt", dateFrom: "2026-03-08", dateTo: "2026-03-08", timeZone: "America/New_York" });
+  assert.equal(query.take, 200);
+  assert.deepEqual(query.orderBy, [{ sellPrice: "desc" }, { id: "asc" }]);
+  assert.deepEqual(query.where.itemType, { in: ["PRODUCT", "LABOR"] });
+  assert.deepEqual(query.where.status, { in: ["ACTIVE", "INACTIVE"] });
+  assert.deepEqual(query.where.category, { in: ["Networking", "Labor"] });
+  assert.equal(query.where.updatedAt.gte.toISOString(), "2026-03-08T05:00:00.000Z");
+  assert.equal(query.where.updatedAt.lt.toISOString(), "2026-03-09T04:00:00.000Z");
 });

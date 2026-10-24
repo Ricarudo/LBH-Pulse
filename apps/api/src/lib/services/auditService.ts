@@ -39,7 +39,7 @@ function categoryWhere(category: AuditLogQuery["category"]): Prisma.ActivityWher
       ]
     };
   }
-  return { relatedEntityType: { in: ["WorkspaceSettings", "AuditLog"] } };
+  return { relatedEntityType: { in: ["WorkspaceSettings", "AuditLog", "SystemUpdate"] } };
 }
 
 function auditDateRange(from?: string, to?: string): Prisma.DateTimeFilter | undefined {

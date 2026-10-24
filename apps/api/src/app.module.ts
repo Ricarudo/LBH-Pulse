@@ -1,3 +1,5 @@
+import { UpdateAuditService } from "@/lib/services/updateAuditService";
+import { UpdatesController } from "@/controllers/updates.controller";
 import { Module } from "@nestjs/common";
 import { AuditController } from "@/controllers/audit.controller";
 import { AnalyticsController } from "@/controllers/analytics.controller";
@@ -31,6 +33,7 @@ import { ActivityRetentionService } from "@/lib/services/activityRetentionServic
     ProposalsModule
   ],
   controllers: [
+    UpdatesController,
     AnalyticsController,
     AuditController,
     AuthController,
@@ -46,6 +49,6 @@ import { ActivityRetentionService } from "@/lib/services/activityRetentionServic
     SearchController,
     SettingsController
   ],
-  providers: [ActivityRetentionService]
+  providers: [ActivityRetentionService, UpdateAuditService]
 })
 export class AppModule {}

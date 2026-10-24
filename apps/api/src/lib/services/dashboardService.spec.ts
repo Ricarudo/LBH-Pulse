@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   classifyDashboardDate,
+  getDashboardData,
   dashboardRecordMatchesScope,
   earliestDashboardDate,
   effectiveDashboardDueDate,
   normalizeDashboardOwner,
   quoteAppearsOnDashboard,
+  quoteDashboardDueDate,
   selectDownstreamDashboardSteps,
   workspaceBusinessDate
 } from "@/lib/services/dashboardService";
@@ -15,6 +17,7 @@ import {
   normalizeDashboardPreferences
 } from "@/lib/dashboardPreferences";
 import { dashboardPreferencesSchema } from "@pulse/contracts/dashboard";
+import { prisma } from "@/lib/db";
 import { toAuthenticatedUser } from "@pulse/contracts/auth";
 
 describe("dashboard date classification", () => {
@@ -72,6 +75,37 @@ describe("dashboard date classification", () => {
     assert.equal(quoteAppearsOnDashboard("Sent"), false);
     assert.equal(quoteAppearsOnDashboard("Rejected"), false);
   });
+
+  it("keeps approved handoffs actionable but removes converted original and change-order quotes", () => {
+    assert.equal(quoteAppearsOnDashboard("Approved"), true);
+    assert.equal(quoteAppearsOnDashboard("Approved", true), false);
+    for (const status of ["Sent", "Rejected", "Expired", "Cancelled"]) {
+      assert.equal(quoteAppearsOnDashboard(status), false);
+      assert.equal(quoteAppearsOnDashboard(status, true), false);
+    }
+    for (const status of ["Draft", "Review", "On Hold"]) {
+      assert.equal(quoteAppearsOnDashboard(status, true), true);
+    }
+  });
+
+  it("does not revive an overdue preparation deadline on approval, including request fallbacks", () => {
+    const past = new Date("2026-07-01T12:00:00Z");
+    for (const dates of [[past], [null, past], [null, null, past]]) {
+      for (const status of ["Draft", "Review", "On Hold"]) {
+        assert.equal(classifyDashboardDate(quoteDashboardDueDate(status, ...dates), "2026-07-05"), "overdue");
+      }
+      for (const status of ["Sent", "Approved", "Rejected", "Expired", "Cancelled"]) {
+        const due = quoteDashboardDueDate(status, ...dates);
+        assert.equal(due, "");
+        assert.equal(classifyDashboardDate(due, "2026-07-05"), "none");
+      }
+    }
+    // An actual open follow-up keeps its own deadline after approval.
+    assert.equal(classifyDashboardDate(earliestDashboardDate(
+      quoteDashboardDueDate("Approved", past), "2026-07-04"
+    ), "2026-07-05"), "overdue");
+  });
+
 });
 
 describe("dashboard lifecycle current steps", () => {
@@ -181,5 +215,63 @@ describe("dashboard owner matching input", () => {
     assert.equal(dashboardRecordMatchesScope("team", user, assignedRecord, null, null, new Set()), true);
     assert.equal(dashboardRecordMatchesScope("mine", user, unassignedRecord, null, "Alex Morgan", new Set()), true);
     assert.equal(dashboardRecordMatchesScope("mine", user, unassignedRecord, null, null, new Set()), false);
+  });
+});
+
+
+describe("dashboard quote lifecycle regression", () => {
+  it("keeps widget counts, queue, and schedule consistent through approval and project handoff", async (t) => {
+    const user = toAuthenticatedUser({ id: "audit-user", name: "Owner", email: "owner@example.com", role: "Admin" });
+    const past = new Date("2000-01-01T12:00:00Z");
+    const quote = {
+      id: "quote-1", quoteNumber: "Q1", title: "Quote", status: "Draft",
+      assignedToId: user.id, assignedTo: { name: user.name, role: user.role },
+      owner: user.name, total: 100, dueDate: past, currentStepId: null,
+      sourceRequestIdSnapshot: null, clientName: "Client", client: null,
+      requests: [], lifecycleContext: null,
+      project: null as { id: string } | null,
+      projectLink: null as { id: string } | null
+    };
+    // Prisma delegates are proxies; replace resolved methods and restore them after the test.
+    const stub = (delegate: object, method: string, implementation: () => Promise<unknown>) => {
+      const target = delegate as Record<string, unknown>;
+      const original = target[method];
+      target[method] = implementation;
+      t.after(() => { target[method] = original; });
+    };
+    stub(prisma.localUser, "findUniqueOrThrow", async () => ({ dashboardPreferences: null }));
+    stub(prisma.localUser, "findMany", async () => []);
+    stub(prisma.workspaceSettings, "findUnique", async () => ({ timeZone: "UTC" }));
+    stub(prisma.request, "findMany", async () => []);
+    stub(prisma.quote, "findMany", async () => [quote]);
+    stub(prisma.project, "findMany", async () => []);
+    stub(prisma.invoice, "findMany", async () => []);
+    const widgets = async () => (await getDashboardData(user, "all", [
+      "attention-summary", "work-queue", "upcoming-dates", "module-health"
+    ])).widgets;
+    for (const status of ["Draft", "Review", "On Hold", "Sent", "Approved", "Rejected", "Expired", "Cancelled"]) {
+      quote.status = status;
+      const data = await widgets();
+      const preparing = ["Draft", "Review", "On Hold"].includes(status);
+      const visible = preparing || status === "Approved";
+      assert.equal(data["attention-summary"]?.overdue, preparing ? 1 : 0, status);
+      assert.equal(data["work-queue"]?.total, visible ? 1 : 0, status);
+      assert.equal(data["upcoming-dates"]?.total, preparing ? 1 : 0, status);
+      assert.equal(data["module-health"]?.items.find(item => item.id === "quotes")?.count, visible ? 1 : 0, status);
+      if (status === "Approved") {
+        assert.equal(data["work-queue"]?.items[0].timing, "none");
+        assert.ok(data["work-queue"]?.items[0].attentionReasons.includes("Ready for project handoff"));
+      }
+    }
+    quote.status = "Approved";
+    for (const link of ["project", "projectLink"] as const) {
+      quote[link] = { id: "project-link" };
+      const data = await widgets();
+      assert.equal(data["attention-summary"]?.overdue, 0, link);
+      assert.equal(data["work-queue"]?.total, 0, link);
+      assert.equal(data["upcoming-dates"]?.total, 0, link);
+      assert.equal(data["module-health"]?.items.find(item => item.id === "quotes")?.count, 0, link);
+      quote[link] = null;
+    }
   });
 });

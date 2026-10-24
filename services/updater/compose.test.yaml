@@ -1,0 +1,31 @@
+name: pulse-updater-tests
+services:
+  unit:
+    image: node:24-alpine
+    working_dir: /repo
+    volumes:
+      - ../..:/repo:ro
+    command: [node, --test, services/updater/test/release.test.mts, services/updater/test/engine.test.mts]
+  image:
+    image: pulse-updater-check:local
+    build:
+      context: ../..
+      dockerfile: docker/updater/Dockerfile
+    entrypoint: [node]
+    command: [--version]
+  config:
+    image: pulse-updater-check:local
+    working_dir: /repo
+    volumes:
+      - ../..:/repo:ro
+    entrypoint: [node]
+    command: [--test, services/updater/test/config.test.mts]
+  checks:
+    build:
+      context: ../..
+      dockerfile: docker/ci/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://test@127.0.0.1:1/pulse?schema=pulse
+    volumes:
+      - .:/workspace/services/updater:ro
+    command: [npm, run, typecheck]

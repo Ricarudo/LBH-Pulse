@@ -46,6 +46,7 @@ const required = [
   "api", "web", "maintenance", "minioInit", "clamav", "backupCrypto",
   "gatewayInternal", "gatewayPublic", "postgres", "minio", "minioMc"
 ];
+if (args.get("--managed") === "true") required.push("updater");
 const images = {};
 for (const filename of readdirSync(input).filter((name) => name.endsWith(".json") && name !== "build-bases.json").sort()) {
   const entry = JSON.parse(readFileSync(resolve(input, filename), "utf8"));

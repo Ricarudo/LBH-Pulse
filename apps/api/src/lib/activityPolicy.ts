@@ -1,6 +1,7 @@
 import type { AuditEventCategory } from "@pulse/contracts/audit";
 
 export const securityAuditEntityTypes = [
+  "SystemUpdate",
   "User",
   "Authentication",
   "AccessRole",

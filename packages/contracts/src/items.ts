@@ -245,8 +245,18 @@ export const itemSearchSchema = z.object({
     .max(120)
     .optional()
     .transform((value) => value?.replace(/\s+/g, " ")),
-  includeInactive: queryBoolean
-}).strict();
+  includeInactive: queryBoolean,
+  types: z.union([itemTypeSchema, z.array(itemTypeSchema).max(20)]).transform(value => typeof value === "string" ? [value] : value).optional(),
+  statuses: z.union([itemStatusSchema, z.array(itemStatusSchema).max(20)]).transform(value => typeof value === "string" ? [value] : value).optional(),
+  categories: z.union([z.string().trim().max(120), z.array(z.string().trim().max(120)).max(100)]).transform(value => typeof value === "string" ? [value] : value).optional(),
+  sort: z.enum(["name", "updatedAt", "sellPrice"]).optional(),
+  direction: z.enum(["asc", "desc"]).optional(),
+  dateField: z.enum(["createdAt", "updatedAt"]).optional(),
+  dateFrom: z.iso.date().optional(),
+  dateTo: z.iso.date().optional(),
+  dateMode: z.literal("missing").optional(),
+  timeZone: z.string().max(100).refine(value => { try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; } }, "Invalid time zone.").optional()
+}).strict().refine(value => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, "Start date must be on or before end date.");
 
 export const addQuoteItemSchema = z.object({
   itemId: idSchema,

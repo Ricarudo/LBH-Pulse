@@ -11,6 +11,7 @@ RUN npm ci
 COPY packages ./packages
 COPY apps ./apps
 COPY scripts ./scripts
+COPY services/updater ./services/updater
 COPY docs/releases ./docs/releases
 COPY .github/workflows/release.yml ./.github/workflows/release.yml
 # Prisma validates URL syntax but does not connect while generating the checks image.

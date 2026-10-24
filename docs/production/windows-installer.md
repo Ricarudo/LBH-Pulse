@@ -1,3 +1,5 @@
+> Historical 0.1 installer documentation. New managed deployments use the [Docker installation guide](./docker-installation.md). Do not run the old installer against an adopted managed installation.
+
 # Pulse 0.1 Windows installer
 
 `Pulse-Setup-0.1.2.exe` is the normal installation and `0.1.1` update path for a Windows operator. It installs the existing production Docker Compose deployment; it is not a desktop wrapper. The operator does not need the Pulse source, Git, Node.js, or npm.

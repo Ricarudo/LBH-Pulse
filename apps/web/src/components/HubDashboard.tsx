@@ -1,4 +1,7 @@
 "use client";
+import { ListToolbar } from "./lists/ListControls";
+import { useDashboardList, type DashboardListController } from "@/lib/useDashboardList";
+import { options, dateRange, businessDate, type ListDefinition } from "@/lib/listState";
 
 import { apiFetch } from "@/lib/api/client";
 
@@ -151,19 +154,6 @@ function activityStageKind(entityType: string): DashboardWorkKind | null {
   if (entityType === "Project") return "project";
   if (entityType === "Invoice") return "invoice";
   return null;
-}
-
-function visibleWorkItems(items: DashboardWorkItem[], filter: AttentionFilter) {
-  if (filter === "overdue") return items.filter((item) => item.timing === "overdue");
-  if (filter === "today") return items.filter((item) => item.timing === "today");
-  if (filter === "upcoming") return items.filter((item) => item.timing === "upcoming");
-  if (filter === "attention") {
-    return items.filter((item) => item.attentionReasons.length > 0);
-  }
-  if (filter === "unassigned") {
-    return items.filter((item) => !item.owner || item.owner === "Unassigned");
-  }
-  return items;
 }
 
 function DashboardSkeleton() {
@@ -353,17 +343,17 @@ function WidgetPagination({
 
 function WorkQueueWidget({
   data,
-  filter,
+  list,
   completingStepId,
   onCompleteStep
 }: {
   data?: DashboardDataResponse["widgets"]["work-queue"];
-  filter: AttentionFilter;
+  list: DashboardListController<never>;
   completingStepId: string;
   onCompleteStep: (item: DashboardWorkItem) => void;
 }) {
   const [page, setPage] = useState(0);
-  const items = data ? visibleWorkItems(data.items, filter) : [];
+  const items = data?.items ?? [];
   const pageCount = Math.ceil(items.length / workQueuePageSize);
   const pageItems = items.slice(
     page * workQueuePageSize,
@@ -372,20 +362,13 @@ function WorkQueueWidget({
 
   useEffect(() => {
     setPage(0);
-  }, [filter, data?.items]);
+  }, [data?.items]);
 
   if (!data) return <DashboardSkeleton />;
 
   return (
     <>
-      <div className="dashboard-list-context">
-        <span>
-          {filter === "all" ? `${data.total} prioritized items` : `${items.length} matching items`}
-        </span>
-        {filter !== "all" ? (
-          <span className="dashboard-filter-chip">{filter.replace("-", " ")}</span>
-        ) : null}
-      </div>
+      <ListToolbar list={list} count={data.total > items.length ? `Showing ${items.length} of ${data.total} prioritized matches` : `${data.total} prioritized items`} />
       {items.length ? (
         <>
           <div
@@ -652,7 +635,31 @@ export function HubDashboard() {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
-  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>("all");
+  const workDefinition: ListDefinition<never> = {
+    id: "home-work", prefix: "work.", label: "prioritized work", defaultView: "all", defaultSort: "priority", defaultDirection: "asc",
+    filters: [
+      { key: "attention", label: "Attention", options: [{ value: "overdue", label: "Overdue" }, { value: "today", label: "Due today" }, { value: "upcoming", label: "Upcoming" }, { value: "attention", label: "Needs attention" }, { value: "unassigned", label: "Unassigned" }] },
+      { key: "kind", label: "Module", options: [{ value: "request", label: "Requests" }, { value: "quote", label: "Quotes" }, { value: "project", label: "Projects" }, { value: "invoice", label: "Billing" }] },
+      { key: "status", label: "Status", options: options(data?.widgets["work-queue"]?.options?.statuses ?? []) },
+      { key: "owner", label: "Owner", options: options(data?.widgets["work-queue"]?.options?.owners ?? []) }
+    ], dates: [{ key: "timingDate", label: "Next relevant date", value: () => null }, { key: "recordDueDate", label: "Due / Send-by", value: () => null }, { key: "stepTargetDate", label: "Next-action target", value: () => null }],
+    sorts: [{ key: "priority", label: "Contextual priority", orderLabels: { asc: "Most relevant first", desc: "Least relevant first" }, value: () => null, direction: "asc" }, { key: "reference", label: "Record number", numeric: true, value: () => null, direction: "asc" }, { key: "date", label: "Next relevant date", date: true, value: () => null, direction: "asc" }], search: () => "", rowId: () => ""
+  };
+  const workList = useDashboardList(workDefinition, []);
+  const attentionFilter = (workList.state.filters.attention?.[0] ?? "all") as AttentionFilter;
+  const setAttentionFilter = (value: AttentionFilter) => workList.commit({ ...workList.state, filters: { ...workList.state.filters, attention: value === "all" ? [] : [value] } });
+  const workQuery = new URLSearchParams({ q: workList.state.q, sort: workList.state.sort, dir: workList.state.direction });
+  Object.entries(workList.state.filters).forEach(([key, values]) => values.forEach(value => workQuery.append(key, value)));
+  if (workList.state.datePreset !== "any") {
+    workQuery.set("dateField", workList.state.dateField);
+    if (workList.state.datePreset === "missing") workQuery.set("dateMode", "missing");
+    else {
+      const range = dateRange(workList.state, businessDate(new Date(), workspace.timeZone));
+      if (range.from) workQuery.set("dateFrom", range.from);
+      if (range.to) workQuery.set("dateTo", range.to);
+    }
+  }
+  const workQueryKey = workQuery.toString();
   const [completingStepId, setCompletingStepId] = useState("");
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -710,7 +717,7 @@ export function HubDashboard() {
         return;
       }
       const response = await requestJson<DashboardDataResponse>(
-        `/api/dashboard?scope=${scope}&widgets=${encodeURIComponent(visibleWidgetKey)}`,
+        `/api/dashboard?scope=${scope}&widgets=${encodeURIComponent(visibleWidgetKey)}&${workQueryKey}`,
         { cache: "no-store" }
       );
       setData(response);
@@ -719,7 +726,7 @@ export function HubDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [preferences, scope, user, visibleWidgetKey]);
+  }, [preferences, scope, user, visibleWidgetKey, workQueryKey]);
 
   useEffect(() => {
     void loadDashboard();
@@ -880,7 +887,7 @@ export function HubDashboard() {
       return (
         <WorkQueueWidget
           data={data?.widgets["work-queue"]}
-          filter={attentionFilter}
+          list={workList}
           completingStepId={completingStepId}
           onCompleteStep={(item) => void completeStep(item)}
         />
@@ -901,11 +908,11 @@ export function HubDashboard() {
   }
 
   if (userLoading || !user || !activePreferences) {
-    return <div className="dashboard-page"><DashboardSkeleton /></div>;
+    return <div className="dashboard-page dashboard-list"><DashboardSkeleton /></div>;
   }
 
   return (
-    <div className="dashboard-page">
+    <div className="dashboard-page dashboard-list">
       <header className="dashboard-welcome">
         <div>
           <p className="dashboard-eyebrow">

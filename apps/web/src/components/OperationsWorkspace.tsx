@@ -1,7 +1,10 @@
 "use client";
+import { ListToolbar, ListTable, ListFeedback } from "./lists/ListControls";
+import { useDashboardList } from "@/lib/useDashboardList";
+import { options, filterCount, type ListDefinition } from "@/lib/listState";
 
-import { useMemo, useState } from "react";
-import { ArrowRight, CheckCircle2, Plus, SlidersHorizontal } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, CheckCircle2, Plus } from "lucide-react";
 import { canUser } from "@pulse/contracts/auth";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { WorkspaceRow } from "@/lib/starterData";
@@ -46,18 +49,20 @@ export function OperationsWorkspace({
   const { user } = useCurrentUser();
   const canManage = canUser(user, "projects:write");
   const [items, setItems] = useState(rows);
-  const [activeFilter, setActiveFilter] = useState("All");
   const [lastAction, setLastAction] = useState<string | null>(null);
 
-  const filters = useMemo(
-    () => ["All", ...Array.from(new Set(items.map((item) => item.status)))],
-    [items]
-  );
-
-  const visibleItems =
-    activeFilter === "All"
-      ? items
-      : items.filter((item) => item.status === activeFilter);
+  // These are starter records: only filter fields actually present in this dataset.
+  const definition: ListDefinition<WorkspaceRow> = {
+    id: `starter:${title}`, label: title.toLowerCase(), defaultView: "all", defaultSort: "name", defaultDirection: "asc",
+    filters: [
+      { key: "status", label: "Status", options: options(items.map(row => row.status)), values: row => row.status },
+      { key: "client", label: "Customer / Project", options: options(items.map(row => row.customer)), values: row => row.customer },
+      { key: "owner", label: "Owner", options: options(items.map(row => row.owner)), values: row => row.owner }
+    ], sorts: [{ key: "name", label: "Name", value: row => row.title }, { key: "number", label: "Record number", value: row => row.id }],
+    search: row => [row.id, row.title, row.detail, row.customer, row.owner, row.status].join(" "), rowId: row => row.id
+  };
+  const list = useDashboardList(definition, items);
+  const visibleItems = list.rows;
 
   function addItem() {
     const nextNumber = items.length + 1;
@@ -67,7 +72,7 @@ export function OperationsWorkspace({
     };
 
     setItems((current) => [item, ...current]);
-    setActiveFilter("All");
+    list.reset();
     setLastAction(`${item.id} added to ${title}.`);
   }
 
@@ -88,7 +93,7 @@ export function OperationsWorkspace({
   }
 
   return (
-    <div className="workspace-stack">
+    <div className="workspace-stack dashboard-list">
       <section className="metric-grid" aria-label={`${title} metrics`}>
         <article className="metric-card">
           <p className="metric-label">Visible Records</p>
@@ -100,7 +105,7 @@ export function OperationsWorkspace({
         </article>
         <article className="metric-card">
           <p className="metric-label">Active Filter</p>
-          <p className="metric-value metric-text">{activeFilter}</p>
+          <p className="metric-value metric-text">{filterCount(list.state) || "None"}</p>
         </article>
       </section>
 
@@ -132,21 +137,9 @@ export function OperationsWorkspace({
           </div>
         </div>
 
-        <div className="filter-strip" aria-label={`${title} filters`}>
-          <SlidersHorizontal size={16} />
-          {filters.map((filter) => (
-            <button
-              className={filter === activeFilter ? "filter-chip active" : "filter-chip"}
-              key={filter}
-              type="button"
-              onClick={() => setActiveFilter(filter)}
-            >
-              {filter}
-            </button>
-          ))}
-        </div>
-
-        <table className="data-table">
+        <ListToolbar list={list} count={visibleItems.length} />
+        <ListFeedback empty={!visibleItems.length} filtered={Boolean(list.state.q || filterCount(list.state))} onReset={list.reset} />
+        <ListTable className="data-table">
           <thead>
             <tr>
               <th>ID</th>
@@ -161,21 +154,21 @@ export function OperationsWorkspace({
           <tbody>
             {visibleItems.map((item) => (
               <tr key={item.id}>
-                <td>
+                <td data-label="ID">
                   <strong>{item.id}</strong>
                 </td>
-                <td>
+                <td data-label="Work">
                   {item.title}
                   <br />
                   <span className="table-muted">{item.detail}</span>
                 </td>
-                <td>{item.customer}</td>
-                <td>{item.owner}</td>
-                <td>
+                <td data-label="Customer / Project">{item.customer}</td>
+                <td data-label="Owner">{item.owner}</td>
+                <td data-label="Status">
                   <span className={statusClass(item.status)}>{item.status}</span>
                 </td>
-                <td>{item.due}</td>
-                <td>
+                <td data-label="Due">{item.due}</td>
+                <td data-label={valueLabel}>
                   <span className="table-value">
                     {item.value}
                     <ArrowRight size={14} />
@@ -184,7 +177,7 @@ export function OperationsWorkspace({
               </tr>
             ))}
           </tbody>
-        </table>
+        </ListTable>
       </section>
     </div>
   );

@@ -1,3 +1,4 @@
+import { calendarBoundary, nextCalendarDate } from "@pulse/contracts/list-dates";
 import { Inject, Injectable } from "@nestjs/common";
 import type {
   CreateItemInput,
@@ -215,6 +216,16 @@ function searchWhere(input: ItemSearchInput): Prisma.ItemWhereInput {
     ...(input.status ? { status: input.status } : {}),
     ...(input.type ? { itemType: input.type } : {}),
     ...(input.category ? { category: input.category } : {}),
+    ...(input.statuses?.length ? { status: { in: input.statuses } } : {}),
+    ...(input.types?.length ? { itemType: { in: input.types } } : {}),
+    ...(input.categories?.length ? { category: { in: input.categories } } : {}),
+    ...(input.dateMode === "missing" ? { id: { in: [] } } : {}),
+    ...(input.dateField && (input.dateFrom || input.dateTo) ? {
+      [input.dateField]: {
+        ...(input.dateFrom ? { gte: calendarBoundary(input.dateFrom, input.timeZone ?? "UTC") } : {}),
+        ...(input.dateTo ? { lt: calendarBoundary(nextCalendarDate(input.dateTo), input.timeZone ?? "UTC") } : {})
+      }
+    } : {}),
     ...(query
       ? {
           OR: [
@@ -244,11 +255,10 @@ export class ItemsService {
     const items = await this.prisma.item.findMany({
       where: searchWhere(input),
       include: itemInclude,
-      orderBy: [
-        { status: "asc" },
-        { updatedAt: "desc" },
-        { name: "asc" }
-      ],
+      // Filtering and ordering precede the cap; never sort only the first fetched page.
+      orderBy: input.sort
+        ? [{ [input.sort]: input.direction ?? "asc" }, { id: "asc" }]
+        : [{ status: "asc" }, { updatedAt: "desc" }, { name: "asc" }, { id: "asc" }],
       take: 200
     });
 

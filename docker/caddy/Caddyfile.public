@@ -4,6 +4,8 @@
 }
 
 {$PULSE_HOSTNAME} {
+	route {
+	import /etc/caddy/managed/*.caddy
 	@documentPreview path_regexp documentPreview ^/api/documents/[^/]+/preview$
 	handle @documentPreview {
 		header {
@@ -32,4 +34,5 @@
 		}
 		reverse_proxy web:4300
 	}
+}
 }

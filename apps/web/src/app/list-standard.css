@@ -1,0 +1,42 @@
+/* Shared list geometry. Editors (BOM, expense forms, permission matrices) opt out. */
+.dashboard-list { --list-row-height:72px; --list-header-height:44px; width:100%; min-width:0; }
+.dashboard-list :is(.requests-queue-table,.work-queue-table,.data-table,.client-360-table,.analytics-table-frame table) { width:100%; border-collapse:separate; border-spacing:0; }
+.dashboard-list :is(.requests-queue-table,.work-queue-table,.data-table,.client-360-table,.analytics-table-frame table) th { height:var(--list-header-height); padding:12px 16px; font-size:12px; position:sticky; top:0; z-index:2; background:var(--pulse-surface); border-bottom:1px solid var(--pulse-line); text-align:left; }
+.dashboard-list :is(.requests-queue-table,.work-queue-table,.data-table,.client-360-table,.analytics-table-frame table) td { height:var(--list-row-height); padding:12px 16px; font-size:14px; vertical-align:middle; border-bottom:1px solid var(--pulse-line); }
+.dashboard-list :is(.requests-queue-table,.work-queue-table,.data-table,.client-360-table) td :is(strong,a) { font-size:14px; }
+.dashboard-list :is(.requests-queue-table,.work-queue-table,.data-table,.client-360-table) td :is(small,.table-muted) { font-size:12px; }
+.dashboard-list :is(.requests-queue-table,.work-queue-table,.data-table,.client-360-table) tr:hover td,.dashboard-list :is(.requests-queue-table,.work-queue-table,.data-table,.client-360-table) tr:focus-within td { background:var(--pulse-row-hover,var(--pulse-blue-soft)); }
+.dashboard-list :is(.client-row,.client-list-header) { padding:12px 16px; }
+.dashboard-list .client-row { min-height:var(--list-row-height); }
+.dashboard-list .client-list-header { min-height:var(--list-header-height); font-size:12px; }
+.dashboard-list :is(.requests-queue-desktop,.work-queue-desktop,.client-work-table-wrap,.analytics-table-frame) { overflow-x:auto; max-height:none; }
+.dashboard-list :is(a,button,input,select):focus-visible { outline:2px solid var(--pulse-blue); outline-offset:2px; }
+.dashboard-list .list-number,.dashboard-list td:has(> .table-value),.dashboard-list td[data-label="Value"],.dashboard-list td[data-label="Total"],.dashboard-list td[data-label="Budget"],.dashboard-list td[data-label="Amount"] { text-align:right; font-variant-numeric:tabular-nums; }
+.dashboard-list .list-number-header { text-align:right!important; }
+@media (max-width:767px) {
+  .dashboard-list .client-row { height:auto; }
+  .dashboard-list :is(.requests-queue-mobile,.work-queue-mobile) { width:100%; }
+}
+.list-table-overflow { width:100%; overflow-x:auto; }
+.list-table { width:100%; border-spacing:0; border-collapse:separate; }
+.list-table th { height:44px; padding:12px 16px; text-align:left; position:sticky; top:0; background:var(--pulse-surface); border-bottom:1px solid var(--pulse-line); }
+.list-table td { height:72px; padding:12px 16px; border-bottom:1px solid var(--pulse-line); }
+.dashboard-list :is(.dashboard-work-row,.dashboard-activity-row,.dashboard-schedule-row) { min-height:72px; padding:12px 16px; }
+.dashboard-list .dashboard-paged-content { min-height:0; height:auto; }
+@media(max-width:767px) {
+  .list-table-overflow:not(.list-report) .list-table { min-width:0; }
+  .list-table-overflow:not(.list-report) .list-table thead { display:none; }
+  .list-table-overflow:not(.list-report) .list-table :is(tbody,tr,td) { display:block; width:100%; }
+  .list-table-overflow:not(.list-report) .list-table tr { margin-block:12px; border:1px solid var(--pulse-line); border-radius:12px; padding:12px; }
+  .list-table-overflow:not(.list-report) .list-table td { height:auto; border:0; padding:6px 0; text-align:left; overflow-wrap:anywhere; }
+  .list-table-overflow:not(.list-report) .list-table td[data-label]::before { content:attr(data-label); display:block; font-size:12px; color:var(--pulse-muted); margin-bottom:3px; }
+}
+/* Directory headers reserve the same avatar column and gap as their rows. */
+.dashboard-list .client-list-header { padding-left:74px; }
+.dashboard-list :is(.requests-queue-view,.work-queue-view) { min-height:44px; }
+.dashboard-list :is(.queue-mobile-card,.work-queue-mobile-card) { min-height:72px; font-size:14px; }
+.dashboard-list :is(.queue-mobile-card,.work-queue-mobile-card) :is(p,small) { font-size:12px; }
+.dashboard-list :is(.client-list-panel,.client-list) { max-height:none; height:auto; }
+.dashboard-list .client-list { overflow-x:auto; }
+.analytics-range-context { color:var(--pulse-muted); font-size:12px; margin:12px 4px; }
+.analytics-detail-sort { display:flex; justify-content:flex-end; padding:8px 0; }

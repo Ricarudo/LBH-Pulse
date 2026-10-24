@@ -6,6 +6,7 @@ import { recordLifecycleStatusEvent } from "@/lib/services/lifecycleEventService
 import { allocateRecordNumber } from "@/lib/services/recordNumberService";
 import { quoteCommercialContentLocked } from "@pulse/contracts/quote-lifecycle";
 import { assertQuoteCommercialEditable, hasQuoteCommercialChanges } from "@/lib/services/quoteLifecyclePolicy";
+import { applyQuoteSnapshots, captureQuoteCommercialView, quoteCommercialViewSchema } from "@/lib/services/quoteSnapshotService";
 import {
   createQuoteSystemUpdate,
   listQuoteCurrentSteps,
@@ -206,7 +207,7 @@ const quoteItemsOrderBy = [
   { createdAt: "asc" }
 ] satisfies Prisma.QuoteItemOrderByWithRelationInput[];
 
-const quoteDetailInclude = {
+export const quoteDetailInclude = {
   ...quoteInclude,
   items: { orderBy: quoteItemsOrderBy },
   revisions: { orderBy: { revisionNumber: "asc" } }
@@ -854,6 +855,8 @@ function toQuoteRevisionDetailRecord(
   revision: Prisma.QuoteRevisionGetPayload<{}>
 ): QuoteRevisionDetailRecord {
   const snapshot = revisionSnapshotObject(revision.snapshot);
+  const commercialResult = quoteCommercialViewSchema.safeParse(snapshot.commercial);
+  const commercial = commercialResult.success ? commercialResult.data : null;
   const context = snapshot.context && typeof snapshot.context === "object" && !Array.isArray(snapshot.context)
     ? snapshot.context as unknown as QuoteContextSnapshot
     : emptyQuoteContext();
@@ -892,14 +895,14 @@ function toQuoteRevisionDetailRecord(
       ? snapshot.baseQuoteNumber
       : parseQuoteVersionNumber(revision.quoteNumber).baseQuoteNumber,
     clientId: revision.clientIdSnapshot,
-    clientName: revision.clientNameSnapshot ?? "",
+    clientName: commercial?.clientName ?? revision.clientNameSnapshot ?? "",
     revision: {
       id: revision.id,
       revisionNumber: revision.revisionNumber,
       quoteNumber: revision.quoteNumber,
       outcome: "Revision Requested",
       priorStatus: revision.priorStatus as QuoteRecord["status"],
-      title: revision.titleSnapshot,
+      title: commercial?.title ?? revision.titleSnapshot,
       owner: revision.ownerSnapshot,
       total: Number(revision.totalSnapshot),
       versionCreatedAt: dateTimeOutput(revision.versionCreatedAt),
@@ -910,14 +913,14 @@ function toQuoteRevisionDetailRecord(
       isCurrent: false,
       dataAvailable: revisionSnapshotAvailable(revision.snapshot)
     },
-    contact,
-    context,
-    proposalNotes: typeof snapshot.proposalNotes === "string" ? snapshot.proposalNotes : "",
-    proposalPreparedAt: typeof snapshot.proposalPreparedAt === "string" ? snapshot.proposalPreparedAt : "",
+    contact: commercial ? commercial.contact : contact,
+    context: commercial?.context ?? context,
+    proposalNotes: commercial?.proposalNotes ?? (typeof snapshot.proposalNotes === "string" ? snapshot.proposalNotes : ""),
+    proposalPreparedAt: commercial?.proposalPreparedAt ?? (typeof snapshot.proposalPreparedAt === "string" ? snapshot.proposalPreparedAt : ""),
     calculationMode,
-    legacyFinancials,
-    financialSummary: toQuoteFinancialSummary(calculated),
-    items
+    legacyFinancials: commercial?.legacyFinancials ?? legacyFinancials,
+    financialSummary: commercial?.financialSummary ?? toQuoteFinancialSummary(calculated),
+    items: commercial?.items ?? items
   };
 }
 
@@ -1104,8 +1107,8 @@ async function clientOrThrow(clientId: string) {
   return client;
 }
 
-async function contactForClientOrThrow(contactId: string, clientId: string) {
-  const contact = await prisma.pointOfContact.findUnique({
+async function contactForClientOrThrow(contactId: string, clientId: string, db: typeof prisma | Prisma.TransactionClient = prisma) {
+  const contact = await db.pointOfContact.findUnique({
     where: { id: contactId },
     select: {
       ...quoteContactSelect,
@@ -1259,9 +1262,9 @@ export async function listQuotes() {
       orderBy: { updatedAt: "desc" }
     });
   const currentSteps = await listQuoteCurrentSteps(quotes);
-  return quotes.map((quote) =>
+  return applyQuoteSnapshots(prisma, quotes.map((quote) =>
     toQuoteRecord(quote, [], currentSteps.get(quote.id) ?? null)
-  );
+  ));
 }
 
 export async function getQuoteById(id: string, viewerId?: string) {
@@ -1270,7 +1273,7 @@ export async function getQuoteById(id: string, viewerId?: string) {
     listQuoteDocuments(quote.id),
     listQuoteUpdates(quote.id, "all", undefined, 25, viewerId)
   ]);
-  return toQuoteDetailRecord(quote, documents, updateState);
+  return (await applyQuoteSnapshots(prisma, [toQuoteDetailRecord(quote, documents, updateState)]))[0];
 }
 
 export async function getQuoteRevision(id: string, version: string) {
@@ -1875,24 +1878,25 @@ export async function updateQuoteProposal(
   return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
 }
 
-function quoteRevisionSnapshot(quote: QuoteDetailWithRelations): Prisma.InputJsonObject {
+export function quoteRevisionSnapshot(quote: QuoteDetailWithRelations, commercialRecord = toQuoteDetailRecord(quote)): Prisma.InputJsonObject {
   const version = quoteVersionFields(quote);
   const summary = quoteFinancialSummaryDecimal(quote);
   return JSON.parse(JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
+    commercial: captureQuoteCommercialView(commercialRecord),
     dataAvailable: true,
     baseQuoteNumber: version.baseQuoteNumber,
-    title: quote.title,
-    clientName: quote.client?.displayName ?? quote.clientName ?? "",
-    site: toLifecycleSite(quote.site),
-    lifecycleDetails: quote.lifecycleContext?.details ?? quote.scopeDescriptionSnapshot ?? "",
+    title: commercialRecord.title,
+    clientName: commercialRecord.clientName,
+    site: commercialRecord.site,
+    lifecycleDetails: commercialRecord.lifecycleContext.details,
     calculationMode: quote.calculationMode,
     legacyFinancials: legacyFinancialsRecord(quote),
     financialSummary: exactFinancialSummarySnapshot(summary),
-    contact: toQuoteContact(quote.contact),
-    context: toQuoteContextSnapshot(quote),
-    proposalNotes: empty(quote.proposalNotes),
-    proposalPreparedAt: dateTimeOutput(quote.proposalPreparedAt),
+    contact: commercialRecord.contact,
+    context: commercialRecord.context,
+    proposalNotes: commercialRecord.proposalNotes,
+    proposalPreparedAt: commercialRecord.proposalPreparedAt,
     items: quote.calculationMode === "PULSE" ? quote.items.map(toQuoteItemRecord) : [],
     legacyCreatedAt: dateTimeOutput(quote.createdAt),
     legacyUpdatedAt: dateTimeOutput(quote.updatedAt)
@@ -2161,7 +2165,7 @@ export async function updateQuote(id: string, input: UpdateQuoteInput, user?: Au
     title: `${quote.quoteNumber} updated`,
     metadata: { status: quote.status, total: Number(quote.total) }
   });
-  return toQuoteRecord(quote, await listQuoteDocuments(quote.id));
+  return (await applyQuoteSnapshots(prisma, [toQuoteRecord(quote, await listQuoteDocuments(quote.id))]))[0];
 }
 
 const markSentEligibleStatuses = new Set(["Draft", "Review", "On Hold"]);
@@ -2221,7 +2225,7 @@ export async function markQuoteSent(id: string, user?: AuthenticatedUser) {
     detail: "Monetary values locked.",
     metadata: { sentAt: sentAt.toISOString(), revisionNumber: quote.revisionNumber }
   });
-  return toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id));
+  return (await applyQuoteSnapshots(prisma, [toQuoteDetailRecord(quote, await listQuoteDocuments(quote.id))]))[0];
 }
 
 export async function undoQuoteSent(
@@ -2472,7 +2476,8 @@ export async function createQuoteRevision(
     const version = quoteVersionFields(quote);
     const nextRevisionNumber = version.revisionNumber + 1;
     const nextQuoteNumber = `${version.baseQuoteNumber}R${nextRevisionNumber}`;
-    const snapshot = quoteRevisionSnapshot(quote);
+    const frozen = (await applyQuoteSnapshots(tx, [toQuoteDetailRecord(quote)]))[0];
+    const snapshot = quoteRevisionSnapshot(quote, frozen);
     const revisionAnalyticsSnapshot = await quoteAnalyticsSnapshot(
       tx,
       quote.id,
@@ -2710,7 +2715,7 @@ async function createProjectData(
   const contactId = input.contactId ?? sourceQuote?.contactId ?? null;
   const siteId = input.siteId ?? sourceQuote?.siteId ?? null;
   const assignedToId = input.assignedToId ?? sourceQuote?.assignedToId ?? null;
-  if (contactId) await contactForClientOrThrow(contactId, input.clientId);
+  if (contactId) await contactForClientOrThrow(contactId, input.clientId, tx);
   if (siteId) await siteForClientOrThrow(siteId, input.clientId, tx);
   const assignedTo = await resolveWorkAssignee("project", assignedToId, tx);
   const lifecycleContextId = sourceQuote?.lifecycleContextId
@@ -2750,215 +2755,99 @@ export async function createProject(input: CreateProjectInput, user?: Authentica
   }, user);
 }
 
-export async function convertQuoteToProject(
+/** Compose acceptance/handoff in a caller-owned transaction; authorization belongs to the command/controller. */
+export async function convertQuoteToProjectTransaction(
+  tx: Prisma.TransactionClient,
   id: string,
   input: ConvertQuoteInput & { projectId?: string },
   user?: AuthenticatedUser
 ) {
-  const result = await prisma.$transaction(async (tx) => {
-    const lockedQuote = await lockQuoteOrThrow(tx, id);
-    let quote = await tx.quote.findUniqueOrThrow({
-      where: { id: lockedQuote.id },
+  const lockedQuote = await lockQuoteOrThrow(tx, id);
+  let quote = await tx.quote.findUniqueOrThrow({
+    where: { id: lockedQuote.id },
+    include: quoteInclude
+  });
+  if (!["Sent", "Approved"].includes(quote.status)) throw new Error("QUOTE_APPROVAL_ACTION_REQUIRED");
+  const previousStatus = quote.status;
+  if (quote.status === "Sent") {
+    quote = await tx.quote.update({
+      where: { id: quote.id },
+      data: { status: "Approved" },
       include: quoteInclude
     });
-    if (!["Sent", "Approved"].includes(quote.status)) throw new Error("QUOTE_APPROVAL_ACTION_REQUIRED");
-    const previousStatus = quote.status;
-    if (quote.status === "Sent") {
-      quote = await tx.quote.update({
-        where: { id: quote.id },
-        data: { status: "Approved" },
-        include: quoteInclude
-      });
-      await recordLifecycleStatusEvent(tx, {
-        entityType: LifecycleEntityType.QUOTE,
-        entityId: quote.id,
-        fromStatus: previousStatus,
-        toStatus: "Approved",
-        valueSnapshot: quoteFinancialSummaryDecimal(quote).preTaxContractValue.toNumber(),
-        metadata: await quoteAnalyticsSnapshot(tx, quote.id, "quote_approved"),
-        user
-      });
-      await createQuoteSystemUpdate(tx, {
-        quoteId: quote.id,
-        title: `${quote.quoteNumber} approved`,
-        body: "The accepted quote is being handed off to project delivery.",
-        user,
-        metadata: { eventType: "quote_approved", fromStatus: previousStatus, toStatus: "Approved" }
-      });
-    }
-    if (!quote.clientId) throw new Error("QUOTE_CLIENT_REQUIRED");
-    const existingLink = await tx.projectQuote.findUnique({
-      where: { quoteId: quote.id },
-      include: { project: { include: projectInclude } }
+    await recordLifecycleStatusEvent(tx, {
+      entityType: LifecycleEntityType.QUOTE,
+      entityId: quote.id,
+      fromStatus: previousStatus,
+      toStatus: "Approved",
+      valueSnapshot: quoteFinancialSummaryDecimal(quote).preTaxContractValue.toNumber(),
+      metadata: await quoteAnalyticsSnapshot(tx, quote.id, "quote_approved"),
+      user
     });
-    if (existingLink) {
-      if (existingLink.role === ProjectQuoteRole.CHANGE_ORDER && !existingLink.approvedAt) {
-        const financialSummary = quoteFinancialSummaryDecimal(quote);
-        const version = quoteVersionFields(quote);
-        await tx.projectQuote.update({
-          where: { id: existingLink.id },
-          data: {
-            approvedAt: new Date(),
-            financialSnapshot: {
-              sourceQuoteId: quote.id,
-              sourceQuoteNumber: quote.quoteNumber,
-              sourceQuoteRevisionNumber: version.revisionNumber,
-              calculationMode: quote.calculationMode,
-              financialSummary: exactFinancialSummarySnapshot(financialSummary)
-            }
-          }
-        });
-        const approvedLinks = await tx.projectQuote.findMany({
-          where: { projectId: existingLink.projectId, approvedAt: { not: null } },
-          select: { financialSnapshot: true }
-        });
-        const approvedSalesPrice = approvedLinks.reduce((total, link) =>
-          total + (toProjectQuoteFinancialSnapshot(link.financialSnapshot)?.financialSummary.preTaxContractValue ?? 0), 0
-        );
-        await tx.project.update({
-          where: { id: existingLink.projectId },
-          data: { budget: approvedSalesPrice }
-        });
-        await createWorkSystemUpdate(tx, {
-          stage: "project",
-          recordId: existingLink.projectId,
-          title: `CO-${existingLink.sequence} approved`,
-          body: `${quote.quoteNumber} is now included in approved project scope and financials.`,
-          user,
-          metadata: {
-            eventType: "project_change_order_approved",
-            quoteId: quote.id,
-            sequence: existingLink.sequence
-          }
-        });
-      }
-      return {
-        project: await tx.project.findUniqueOrThrow({ where: { id: existingLink.projectId }, include: projectInclude }),
-        quote,
-        linkRole: existingLink.role,
-        linkSequence: existingLink.sequence
-      };
-    }
-    if (quote.project) {
-      const project = await tx.project.findUniqueOrThrow({ where: { id: quote.project.id }, include: projectInclude });
-      const existingSnapshot = project.quoteFinancialSnapshot;
-      await tx.projectQuote.create({
+    await createQuoteSystemUpdate(tx, {
+      quoteId: quote.id,
+      title: `${quote.quoteNumber} approved`,
+      body: "The accepted quote is being handed off to project delivery.",
+      user,
+      metadata: { eventType: "quote_approved", fromStatus: previousStatus, toStatus: "Approved" }
+    });
+  }
+  if (!quote.clientId) throw new Error("QUOTE_CLIENT_REQUIRED");
+  const existingLink = await tx.projectQuote.findUnique({
+    where: { quoteId: quote.id },
+    include: { project: { include: projectInclude } }
+  });
+  if (existingLink) {
+    if (existingLink.role === ProjectQuoteRole.CHANGE_ORDER && !existingLink.approvedAt) {
+      const financialSummary = quoteFinancialSummaryDecimal(quote);
+      const version = quoteVersionFields(quote);
+      await tx.projectQuote.update({
+        where: { id: existingLink.id },
         data: {
-          projectId: project.id,
-          quoteId: quote.id,
-          role: ProjectQuoteRole.ORIGINAL,
-          sequence: 0,
           approvedAt: new Date(),
-          ...(existingSnapshot ? { financialSnapshot: existingSnapshot } : {})
-        }
-      });
-      return {
-        project: await tx.project.findUniqueOrThrow({ where: { id: project.id }, include: projectInclude }),
-        quote,
-        linkRole: ProjectQuoteRole.ORIGINAL,
-        linkSequence: 0
-      };
-    }
-    const financialSummary = quoteFinancialSummaryDecimal(quote);
-    const version = quoteVersionFields(quote);
-    if (input.projectId) {
-      const targetProject = await tx.project.findFirst({
-        where: { id: input.projectId, archivedAt: null },
-        include: projectInclude
-      });
-      if (!targetProject) throw new Error("PROJECT_NOT_FOUND");
-      if (targetProject.clientId !== quote.clientId) throw new Error("WORK_CLIENT_MISMATCH");
-      if (["Completed", "Cancelled"].includes(targetProject.status)) {
-        throw new Error("PROJECT_CHANGE_ORDER_STATUS_INVALID");
-      }
-      await tx.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${targetProject.id} FOR UPDATE`;
-      const latest = await tx.projectQuote.aggregate({
-        where: { projectId: targetProject.id, role: ProjectQuoteRole.CHANGE_ORDER },
-        _max: { sequence: true }
-      });
-      const sequence = (latest._max.sequence ?? 0) + 1;
-      const snapshot = {
-        sourceQuoteId: quote.id,
-        sourceQuoteNumber: quote.quoteNumber,
-        sourceQuoteRevisionNumber: version.revisionNumber,
-        calculationMode: quote.calculationMode,
-        financialSummary: exactFinancialSummarySnapshot(financialSummary)
-      };
-      await tx.projectQuote.create({
-        data: {
-          projectId: targetProject.id,
-          quoteId: quote.id,
-          role: ProjectQuoteRole.CHANGE_ORDER,
-          sequence,
-          approvedAt: new Date(),
-          financialSnapshot: snapshot
+          financialSnapshot: {
+            sourceQuoteId: quote.id,
+            sourceQuoteNumber: quote.quoteNumber,
+            sourceQuoteRevisionNumber: version.revisionNumber,
+            calculationMode: quote.calculationMode,
+            financialSummary: exactFinancialSummarySnapshot(financialSummary)
+          }
         }
       });
       const approvedLinks = await tx.projectQuote.findMany({
-        where: { projectId: targetProject.id, approvedAt: { not: null } },
+        where: { projectId: existingLink.projectId, approvedAt: { not: null } },
         select: { financialSnapshot: true }
       });
       const approvedSalesPrice = approvedLinks.reduce((total, link) =>
         total + (toProjectQuoteFinancialSnapshot(link.financialSnapshot)?.financialSummary.preTaxContractValue ?? 0), 0
       );
       await tx.project.update({
-        where: { id: targetProject.id },
+        where: { id: existingLink.projectId },
         data: { budget: approvedSalesPrice }
       });
       await createWorkSystemUpdate(tx, {
         stage: "project",
-        recordId: targetProject.id,
-        title: `CO-${sequence} approved`,
-        body: `${quote.quoteNumber} was attached as an imported change order and is now included in approved project scope and financials.`,
+        recordId: existingLink.projectId,
+        title: `CO-${existingLink.sequence} approved`,
+        body: `${quote.quoteNumber} is now included in approved project scope and financials.`,
         user,
         metadata: {
-          eventType: "project_imported_change_order_attached",
+          eventType: "project_change_order_approved",
           quoteId: quote.id,
-          sequence
+          sequence: existingLink.sequence
         }
       });
-      return {
-        project: await tx.project.findUniqueOrThrow({ where: { id: targetProject.id }, include: projectInclude }),
-        quote,
-        linkRole: ProjectQuoteRole.CHANGE_ORDER,
-        linkSequence: sequence
-      };
     }
-    const assignedTo = quote.assignedToId
-      ? await findEligibleWorkAssignee("project", quote.assignedToId, tx)
-      : await resolveLegacyWorkAssignee("project", quote.owner, tx);
-    const createdProject = await createProjectData(
-      {
-        title: quote.title,
-        clientId: quote.clientId,
-        quoteId: quote.id,
-        assignedToId: assignedTo?.id ?? null,
-        contactId: quote.contactId,
-        siteId: quote.siteId,
-        lifecycleDetails: undefined,
-        status: "Ready",
-        budget: financialSummary.preTaxContractValue.toNumber(),
-        startDate: input.startDate,
-        dueDate: input.dueDate
-      },
-      tx,
-      user
-    );
-    const project = await tx.project.update({
-      where: { id: createdProject.id },
-      data: {
-        sourceQuoteRevisionNumber: version.revisionNumber,
-        sourceQuoteCalculationMode: quote.calculationMode,
-        quoteFinancialSnapshot: {
-          sourceQuoteId: quote.id,
-          sourceQuoteNumber: quote.quoteNumber,
-          sourceQuoteRevisionNumber: version.revisionNumber,
-          calculationMode: quote.calculationMode,
-          financialSummary: exactFinancialSummarySnapshot(financialSummary)
-        }
-      },
-      include: projectInclude
-    });
+    return {
+      project: await tx.project.findUniqueOrThrow({ where: { id: existingLink.projectId }, include: projectInclude }),
+      quote,
+      linkRole: existingLink.role,
+      linkSequence: existingLink.sequence
+    };
+  }
+  if (quote.project) {
+    const project = await tx.project.findUniqueOrThrow({ where: { id: quote.project.id }, include: projectInclude });
+    const existingSnapshot = project.quoteFinancialSnapshot;
     await tx.projectQuote.create({
       data: {
         projectId: project.id,
@@ -2966,36 +2855,8 @@ export async function convertQuoteToProject(
         role: ProjectQuoteRole.ORIGINAL,
         sequence: 0,
         approvedAt: new Date(),
-        financialSnapshot: {
-          sourceQuoteId: quote.id,
-          sourceQuoteNumber: quote.quoteNumber,
-          sourceQuoteRevisionNumber: version.revisionNumber,
-          calculationMode: quote.calculationMode,
-          financialSummary: exactFinancialSummarySnapshot(financialSummary)
-        }
+        ...(existingSnapshot ? { financialSnapshot: existingSnapshot } : {})
       }
-    });
-    await recordLifecycleStatusEvent(tx, {
-      entityType: LifecycleEntityType.PROJECT,
-      entityId: project.id,
-      toStatus: project.status,
-      changedAt: project.createdAt,
-      valueSnapshot: Number(project.budget),
-      metadata: {
-        eventType: "project_created_from_quote",
-        startDate: project.startDate?.toISOString() ?? null,
-        dueDate: project.dueDate?.toISOString() ?? null
-      },
-      user
-    });
-    await createWorkSystemUpdate(tx, {
-      stage: "project",
-      recordId: project.id,
-      title: `${project.projectNumber} created from ${quote.quoteNumber}`,
-      body: `Approved quote ${quote.quoteNumber} entered project delivery.`,
-      user,
-      createdAt: project.createdAt,
-      metadata: { eventType: "project_created_from_quote", toStatus: project.status }
     });
     return {
       project: await tx.project.findUniqueOrThrow({ where: { id: project.id }, include: projectInclude }),
@@ -3003,7 +2864,159 @@ export async function convertQuoteToProject(
       linkRole: ProjectQuoteRole.ORIGINAL,
       linkSequence: 0
     };
+  }
+  const financialSummary = quoteFinancialSummaryDecimal(quote);
+  const version = quoteVersionFields(quote);
+  if (input.projectId) {
+    const targetProject = await tx.project.findFirst({
+      where: { id: input.projectId, archivedAt: null },
+      include: projectInclude
+    });
+    if (!targetProject) throw new Error("PROJECT_NOT_FOUND");
+    if (targetProject.clientId !== quote.clientId) throw new Error("WORK_CLIENT_MISMATCH");
+    if (["Completed", "Cancelled"].includes(targetProject.status)) {
+      throw new Error("PROJECT_CHANGE_ORDER_STATUS_INVALID");
+    }
+    await tx.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${targetProject.id} FOR UPDATE`;
+    const latest = await tx.projectQuote.aggregate({
+      where: { projectId: targetProject.id, role: ProjectQuoteRole.CHANGE_ORDER },
+      _max: { sequence: true }
+    });
+    const sequence = (latest._max.sequence ?? 0) + 1;
+    const snapshot = {
+      sourceQuoteId: quote.id,
+      sourceQuoteNumber: quote.quoteNumber,
+      sourceQuoteRevisionNumber: version.revisionNumber,
+      calculationMode: quote.calculationMode,
+      financialSummary: exactFinancialSummarySnapshot(financialSummary)
+    };
+    await tx.projectQuote.create({
+      data: {
+        projectId: targetProject.id,
+        quoteId: quote.id,
+        role: ProjectQuoteRole.CHANGE_ORDER,
+        sequence,
+        approvedAt: new Date(),
+        financialSnapshot: snapshot
+      }
+    });
+    const approvedLinks = await tx.projectQuote.findMany({
+      where: { projectId: targetProject.id, approvedAt: { not: null } },
+      select: { financialSnapshot: true }
+    });
+    const approvedSalesPrice = approvedLinks.reduce((total, link) =>
+      total + (toProjectQuoteFinancialSnapshot(link.financialSnapshot)?.financialSummary.preTaxContractValue ?? 0), 0
+    );
+    await tx.project.update({
+      where: { id: targetProject.id },
+      data: { budget: approvedSalesPrice }
+    });
+    await createWorkSystemUpdate(tx, {
+      stage: "project",
+      recordId: targetProject.id,
+      title: `CO-${sequence} approved`,
+      body: `${quote.quoteNumber} was attached as an imported change order and is now included in approved project scope and financials.`,
+      user,
+      metadata: {
+        eventType: "project_imported_change_order_attached",
+        quoteId: quote.id,
+        sequence
+      }
+    });
+    return {
+      project: await tx.project.findUniqueOrThrow({ where: { id: targetProject.id }, include: projectInclude }),
+      quote,
+      linkRole: ProjectQuoteRole.CHANGE_ORDER,
+      linkSequence: sequence
+    };
+  }
+  const assignedTo = quote.assignedToId
+    ? await findEligibleWorkAssignee("project", quote.assignedToId, tx)
+    : await resolveLegacyWorkAssignee("project", quote.owner, tx);
+  const createdProject = await createProjectData(
+    {
+      title: quote.title,
+      clientId: quote.clientId,
+      quoteId: quote.id,
+      assignedToId: assignedTo?.id ?? null,
+      contactId: quote.contactId,
+      siteId: quote.siteId,
+      lifecycleDetails: undefined,
+      status: "Ready",
+      budget: financialSummary.preTaxContractValue.toNumber(),
+      startDate: input.startDate,
+      dueDate: input.dueDate
+    },
+    tx,
+    user
+  );
+  const project = await tx.project.update({
+    where: { id: createdProject.id },
+    data: {
+      sourceQuoteRevisionNumber: version.revisionNumber,
+      sourceQuoteCalculationMode: quote.calculationMode,
+      quoteFinancialSnapshot: {
+        sourceQuoteId: quote.id,
+        sourceQuoteNumber: quote.quoteNumber,
+        sourceQuoteRevisionNumber: version.revisionNumber,
+        calculationMode: quote.calculationMode,
+        financialSummary: exactFinancialSummarySnapshot(financialSummary)
+      }
+    },
+    include: projectInclude
   });
+  await tx.projectQuote.create({
+    data: {
+      projectId: project.id,
+      quoteId: quote.id,
+      role: ProjectQuoteRole.ORIGINAL,
+      sequence: 0,
+      approvedAt: new Date(),
+      financialSnapshot: {
+        sourceQuoteId: quote.id,
+        sourceQuoteNumber: quote.quoteNumber,
+        sourceQuoteRevisionNumber: version.revisionNumber,
+        calculationMode: quote.calculationMode,
+        financialSummary: exactFinancialSummarySnapshot(financialSummary)
+      }
+    }
+  });
+  await recordLifecycleStatusEvent(tx, {
+    entityType: LifecycleEntityType.PROJECT,
+    entityId: project.id,
+    toStatus: project.status,
+    changedAt: project.createdAt,
+    valueSnapshot: Number(project.budget),
+    metadata: {
+      eventType: "project_created_from_quote",
+      startDate: project.startDate?.toISOString() ?? null,
+      dueDate: project.dueDate?.toISOString() ?? null
+    },
+    user
+  });
+  await createWorkSystemUpdate(tx, {
+    stage: "project",
+    recordId: project.id,
+    title: `${project.projectNumber} created from ${quote.quoteNumber}`,
+    body: `Approved quote ${quote.quoteNumber} entered project delivery.`,
+    user,
+    createdAt: project.createdAt,
+    metadata: { eventType: "project_created_from_quote", toStatus: project.status }
+  });
+  return {
+    project: await tx.project.findUniqueOrThrow({ where: { id: project.id }, include: projectInclude }),
+    quote,
+    linkRole: ProjectQuoteRole.ORIGINAL,
+    linkSequence: 0
+  };
+}
+
+export async function convertQuoteToProject(
+  id: string,
+  input: ConvertQuoteInput & { projectId?: string },
+  user?: AuthenticatedUser
+) {
+  const result = await prisma.$transaction(tx => convertQuoteToProjectTransaction(tx, id, input, user));
   const { project, quote, linkRole, linkSequence } = result;
   await Promise.all([
     recordActivity({

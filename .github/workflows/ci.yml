@@ -3,9 +3,9 @@ name: CI
 on:
   workflow_call:
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, master, develop, release/0.2.0]
   push:
-    branches: [main, master]
+    branches: [main, master, release/0.2.0]
   workflow_dispatch:
 
 permissions:
@@ -18,6 +18,25 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Updater signature and interruption tests
+        run: node --test services/updater/test/release.test.mts services/updater/test/engine.test.mts
+
+      - name: Validate managed Docker configuration
+        run: |
+          docker compose -f services/updater/compose.test.yaml build image
+          docker compose -f services/updater/compose.test.yaml run --rm config
+          docker compose -f services/updater/compose.test.yaml run --rm config --test services/updater/test/publishing.test.mts
+
+      - name: Validate maintenance routing and isolated updater restore
+        run: |
+          docker compose -f services/updater/compose.gateway-test.yaml run --rm tests
+          docker compose -f services/updater/compose.operations-test.yaml build maintenance-image minio-init-image
+          docker compose -f services/updater/compose.operations-test.yaml run --rm tests
 
       - name: Generate ephemeral CI secrets
         run: ./scripts/ci/create-env.sh .env.ci
@@ -59,6 +78,9 @@ jobs:
       - name: Run release tests and reconciliation gates
         run: docker compose --env-file .env.ci -f compose.ci.yaml run --no-deps --rm checks
 
+      - name: Typecheck updater
+        run: docker compose --env-file .env.ci -f compose.ci.yaml run --no-deps --rm checks npx tsc -p services/updater/tsconfig.json
+
       - name: Validate encrypted PostgreSQL and MinIO restore
         run: ./scripts/ci/backup-restore.sh .env.ci
 
@@ -69,5 +91,7 @@ jobs:
       - name: Remove CI resources
         if: always()
         run: |
-          docker compose --env-file .env.ci -f compose.ci.yaml down -v --remove-orphans
+          if [ -f .env.ci ]; then docker compose --env-file .env.ci -f compose.ci.yaml down -v --remove-orphans; fi
+          docker compose -f services/updater/compose.gateway-test.yaml down -v --remove-orphans
+          docker compose -f services/updater/compose.operations-test.yaml down -v --remove-orphans
           rm -f .env.ci

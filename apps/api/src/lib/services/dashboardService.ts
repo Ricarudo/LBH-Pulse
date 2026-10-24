@@ -1,3 +1,4 @@
+import { dashboardWorkQuerySchema, filterDashboardWork, type DashboardWorkQuery } from "@pulse/contracts/dashboard";
 import { Prisma } from "@/generated/prisma/client";
 import {
   canUser,
@@ -31,7 +32,7 @@ const terminalRequestStatuses = new Set([
   "Cancelled",
   "Duplicate"
 ]);
-const excludedDashboardQuoteStatuses = new Set(["Sent", "Rejected", "Expired", "Cancelled"]);
+const preparationQuoteStatuses = new Set(["Draft", "Review", "On Hold"]);
 const terminalProjectStatuses = new Set(["Completed", "Cancelled"]);
 const terminalInvoiceStatuses = new Set(["Paid", "Void"]);
 const operationalActivityEntities = new Set([
@@ -188,8 +189,15 @@ export function earliestDashboardDate(...dates: Array<string | undefined>) {
   return dates.filter((date): date is string => Boolean(date)).sort()[0] ?? "";
 }
 
-export function quoteAppearsOnDashboard(status: string) {
-  return !excludedDashboardQuoteStatuses.has(status);
+// Quote dueDate is a preparation deadline, not a customer-response or delivery deadline.
+// Approved quotes remain actionable only until project handoff; both original-project
+// and ProjectQuote (including change-order) links represent that handoff.
+export function quoteAppearsOnDashboard(status: string, hasProject = false) {
+  return preparationQuoteStatuses.has(status) || (status === "Approved" && !hasProject);
+}
+
+export function quoteDashboardDueDate(status: string, ...dates: Array<Date | null | undefined>) {
+  return preparationQuoteStatuses.has(status) ? effectiveDashboardDueDate(...dates) : "";
 }
 
 export function effectiveDashboardDueDate(...dates: Array<Date | null | undefined>) {
@@ -274,7 +282,8 @@ export async function resetDashboardPreferences(user: AuthenticatedUser) {
 export async function getDashboardData(
   user: AuthenticatedUser,
   requestedScope?: DashboardScope,
-  requestedWidgets: DashboardWidgetId[] = [...dashboardWidgetIds]
+  requestedWidgets: DashboardWidgetId[] = [...dashboardWidgetIds],
+  workQuery: DashboardWorkQuery = dashboardWorkQuerySchema.parse({})
 ): Promise<DashboardDataResponse> {
   const preferences = await getDashboardPreferences(user);
   const scope = requestedScope ?? preferences.defaultScope;
@@ -356,7 +365,8 @@ export async function getDashboardData(
                 }
               }
             },
-            project: { select: { id: true } }
+            project: { select: { id: true } },
+            projectLink: { select: { id: true } }
           }
         }),
         prisma.project.findMany({
@@ -420,6 +430,10 @@ export async function getDashboardData(
       quote.currentStepId ?? quote.requests[0]?.currentStepId ?? sourceRequest?.currentStepId ?? null
     ];
   }));
+  // Existing lifecycle behavior: open steps follow the record downstream and are
+  // deduplicated below. Their target dates can still make a project overdue, even
+  // after quote preparation ends. Revisit step ownership/closure in the 0.2 rework;
+  // do not discard real open follow-ups when suppressing old quote due dates.
   const projectStepIds = new Map(projects.map((project) => [
     project.id,
     project.currentStepId ?? (project.quoteId ? quoteStepIds.get(project.quoteId) : null) ?? null
@@ -476,7 +490,7 @@ export async function getDashboardData(
       .filter((record) => !terminalRequestStatuses.has(record.status))
       .map((record) => ({ kind: "request" as const, entityId: record.id, stepId: requestStepIds.get(record.id) })),
     ...scopedQuotes
-      .filter((record) => quoteAppearsOnDashboard(record.status))
+      .filter((record) => quoteAppearsOnDashboard(record.status, Boolean(record.project || record.projectLink)))
       .map((record) => ({ kind: "quote" as const, entityId: record.id, stepId: quoteStepIds.get(record.id) })),
     ...scopedProjects
       .filter((record) => !terminalProjectStatuses.has(record.status))
@@ -541,12 +555,12 @@ export async function getDashboardData(
   }
 
   for (const quote of scopedQuotes) {
-    if (!quoteAppearsOnDashboard(quote.status)) continue;
+    if (!quoteAppearsOnDashboard(quote.status, Boolean(quote.project || quote.projectLink))) continue;
     const sourceRequest = quote.sourceRequestIdSnapshot
       ? requestsById.get(quote.sourceRequestIdSnapshot)
       : undefined;
-    const recordDueDate = effectiveDashboardDueDate(
-      quote.dueDate, quote.requests[0]?.dueDate, sourceRequest?.dueDate
+    const recordDueDate = quoteDashboardDueDate(
+      quote.status, quote.dueDate, quote.requests[0]?.dueDate, sourceRequest?.dueDate
     );
     const currentStep = selectedStepFor("quote", quote.id, quoteStepIds.get(quote.id));
     const stepTargetDate = dateOutput(currentStep?.targetDate);
@@ -555,7 +569,7 @@ export async function getDashboardData(
     const reasons: string[] = [];
     if (isUnassigned(quote.assignedTo?.name ?? quote.owner)) reasons.push("Needs an owner");
     if (quote.status === "Review") reasons.push("Awaiting review");
-    if (quote.status === "Approved" && !quote.project) reasons.push("Ready for project handoff");
+    if (quote.status === "Approved") reasons.push("Ready for project handoff");
     if (timing === "later" && !currentStep && !reasons.length) continue;
     if (timing === "none" && !currentStep && !reasons.length) continue;
     workItems.push({
@@ -687,13 +701,13 @@ export async function getDashboardData(
     });
   }
   for (const quote of scopedQuotes) {
-    if (!quoteAppearsOnDashboard(quote.status)) continue;
+    if (!quoteAppearsOnDashboard(quote.status, Boolean(quote.project || quote.projectLink))) continue;
     const context = quote.client?.displayName ?? quote.clientName ?? "Quote";
     const sourceRequest = quote.sourceRequestIdSnapshot
       ? requestsById.get(quote.sourceRequestIdSnapshot)
       : undefined;
-    const date = effectiveDashboardDueDate(
-      quote.dueDate, quote.requests[0]?.dueDate, sourceRequest?.dueDate
+    const date = quoteDashboardDueDate(
+      quote.status, quote.dueDate, quote.requests[0]?.dueDate, sourceRequest?.dueDate
     );
     if (date) addSchedule({
       id: `quote-due:${quote.id}`,
@@ -835,7 +849,7 @@ export async function getDashboardData(
     (request) => !terminalRequestStatuses.has(request.status)
   );
   const activeQuotes = scopedQuotes.filter(
-    (quote) => quoteAppearsOnDashboard(quote.status)
+    (quote) => quoteAppearsOnDashboard(quote.status, Boolean(quote.project || quote.projectLink))
   );
   const activeProjects = scopedProjects.filter(
     (project) => !terminalProjectStatuses.has(project.status)
@@ -880,7 +894,11 @@ export async function getDashboardData(
   const widgets: Partial<DashboardWidgetPayloadMap> = {};
   if (widgetSet.has("attention-summary")) widgets["attention-summary"] = attentionSummary;
   if (widgetSet.has("work-queue")) {
-    widgets["work-queue"] = { items: workItems.slice(0, 50), total: workItems.length };
+    const matching = filterDashboardWork(workItems, workQuery);
+    widgets["work-queue"] = {
+      items: matching.slice(0, 50), total: matching.length,
+      options: { statuses: [...new Set(workItems.map(item => item.status))].sort(), owners: [...new Set(workItems.map(item => item.owner || "Unassigned"))].sort() }
+    };
   }
   if (widgetSet.has("upcoming-dates")) {
     widgets["upcoming-dates"] = {

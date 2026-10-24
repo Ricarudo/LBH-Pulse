@@ -100,3 +100,21 @@ export function quoteFamilyWinRate(families: readonly Pick<QuoteFamilyProjection
   }
   return decisions ? accepted / decisions : null;
 }
+
+/** Current Home/work-list counts. Working and awaiting-response subsets may overlap. */
+export function quoteFamilyWorkCounts(families: readonly (QuoteFamilyProjection & { needsRefresh: boolean })[]) {
+  const result = { open: 0, working: 0, awaitingResponse: 0, needsRefresh: 0 };
+  const ids = new Set<string>();
+  for (const family of families) {
+    if (ids.has(family.id)) throw new Error("QUOTE_FAMILY_DUPLICATE");
+    ids.add(family.id);
+    if (family.outcome) continue;
+    result.open += 1;
+    if (family.currentDraftId) result.working += 1;
+    if (family.currentOfferId) {
+      result.awaitingResponse += 1;
+      if (family.needsRefresh) result.needsRefresh += 1;
+    }
+  }
+  return result;
+}

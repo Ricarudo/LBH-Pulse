@@ -14,7 +14,8 @@ const sections = new Set<SettingsSection>([
   "audit",
   "request-checklists",
   "import-export",
-  "roadmap"
+  "roadmap",
+  "updates"
 ]);
 
 export default async function SettingsSectionPage({

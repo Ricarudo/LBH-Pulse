@@ -9,6 +9,8 @@ import {
   convertQuoteToProject,
   createQuoteRevision,
   getQuoteRevision,
+  getQuoteById,
+  listQuotes,
   markQuoteSent,
   replaceLegacyQuoteFinancials,
   switchQuoteCalculationMode,
@@ -59,7 +61,8 @@ test("sending freezes commercial PATCH and proposal preparation but permits coll
   });
   try {
     await updateQuoteProposal(quote.id, { proposalNotes: "Original terms" });
-    await markQuoteSent(quote.id);
+    const sent = await markQuoteSent(quote.id);
+    assert.equal(sent.commercialSnapshot?.status, "FROZEN");
     for (const input of [{ title: "Changed" }, { clientId: "other" }, { contactId: null },
       { siteId: null }, { dueDate: null }, { lifecycleDetails: "Changed scope" }, { trades: [] }]) {
       await assert.rejects(updateQuote(quote.id, input), /QUOTE_COMMERCIAL_CONTENT_LOCKED/);
@@ -71,6 +74,9 @@ test("sending freezes commercial PATCH and proposal preparation but permits coll
     assert.equal(stored.proposalNotes, "Original terms");
     assert.equal((await prisma.lifecycleContext.findUniqueOrThrow({ where: { id: context.id } })).details, "Original scope");
     assert.equal((await updateQuote(quote.id, { status: "Rejected" })).status, "Rejected");
+    await prisma.lifecycleContext.update({ where: { id: context.id }, data: { details: "Scope changed through another stage" } });
+    assert.equal((await getQuoteById(quote.id)).lifecycleContext.details, "Original scope");
+    assert.equal((await listQuotes()).find(row => row.id === quote.id)?.lifecycleContext.details, "Original scope");
   } finally {
     await cleanupQuote(quote.id);
     await prisma.lifecycleContext.delete({ where: { id: context.id } });
@@ -92,7 +98,7 @@ test("simultaneous send and commercial edits cannot leave content different from
       const stored = await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } });
       const event = await prisma.lifecycleStatusEvent.findFirstOrThrow({ where: { entityType: "QUOTE", entityId: quote.id, toStatus: "Sent" } });
       const snapshot = (event.metadata as { versionSnapshot: { schemaVersion: number; title: string; proposalNotes: string } }).versionSnapshot;
-      assert.equal(snapshot.schemaVersion, 1);
+      assert.equal(snapshot.schemaVersion, 2);
       assert.equal(stored[field], snapshot[field]);
       assert.equal(stored.status, "Sent");
     } finally {

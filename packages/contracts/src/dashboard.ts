@@ -92,7 +92,7 @@ export type DashboardModuleHealthItem = {
 
 export type DashboardWidgetPayloadMap = {
   "attention-summary": DashboardAttentionSummary;
-  "work-queue": { items: DashboardWorkItem[]; total: number };
+  "work-queue": { items: DashboardWorkItem[]; total: number; options?: { statuses: string[]; owners: string[] } };
   "upcoming-dates": { items: DashboardScheduleItem[]; total: number };
   "recent-activity": { items: DashboardActivityItem[] };
   "module-health": { items: DashboardModuleHealthItem[] };
@@ -138,3 +138,39 @@ export const dashboardPreferencesSchema = z.object({
 });
 
 export type DashboardPreferencesInput = z.infer<typeof dashboardPreferencesSchema>;
+
+const dashboardMulti = z.union([z.string(), z.array(z.string()).max(100)]).optional().transform(value => value ? typeof value === "string" ? [value] : value : []);
+export const dashboardWorkQuerySchema = z.object({
+  q: z.string().trim().max(500).optional(),
+  kind: dashboardMulti.pipe(z.array(z.enum(["request", "quote", "project", "invoice"]))),
+  status: dashboardMulti.pipe(z.array(z.string().max(100))),
+  owner: dashboardMulti.pipe(z.array(z.string().max(160))),
+  attention: dashboardMulti.pipe(z.array(z.enum(["overdue", "today", "upcoming", "attention", "unassigned"]))),
+  sort: z.enum(["priority", "reference", "date"]).default("priority"),
+  dir: z.enum(["asc", "desc"]).default("asc"),
+  dateField: z.enum(["timingDate", "recordDueDate", "stepTargetDate"]).optional(),
+  dateFrom: z.iso.date().optional(), dateTo: z.iso.date().optional(),
+  dateMode: z.literal("missing").optional()
+}).refine(value => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, { message: "Invalid date range" });
+export type DashboardWorkQuery = z.infer<typeof dashboardWorkQuerySchema>;
+
+/** Run against the complete authorized scope, before the Home widget cap. */
+export function filterDashboardWork(items: DashboardWorkItem[], input: DashboardWorkQuery) {
+  return items.filter(item =>
+    (!input.q || [item.reference, item.title, item.context, item.owner, item.status].join(" ").toLowerCase().includes(input.q.toLowerCase())) &&
+    (!input.kind.length || input.kind.includes(item.kind)) &&
+    (!input.status.length || input.status.includes(item.status)) &&
+    (!input.owner.length || input.owner.includes(item.owner || "Unassigned")) &&
+    (!input.attention.length || input.attention.some(filter => filter === "attention" ? item.attentionReasons.length > 0 : filter === "unassigned" ? !item.owner || item.owner === "Unassigned" : item.timing === filter)) &&
+    (!input.dateField || (!input.dateFrom && !input.dateTo && !input.dateMode) || (() => {
+      const date = item[input.dateField!];
+      return input.dateMode === "missing" ? !date : Boolean(date && (!input.dateFrom || date >= input.dateFrom) && (!input.dateTo || date <= input.dateTo));
+    })())
+  ).map((item, index) => ({ item, index })).sort((a, b) => {
+    const left = input.sort === "date" ? a.item.timingDate : a.item.reference;
+    const right = input.sort === "date" ? b.item.timingDate : b.item.reference;
+    if (input.sort !== "priority" && Boolean(left) !== Boolean(right)) return left ? -1 : 1;
+    const result = input.sort === "priority" ? a.index - b.index : (left ?? "").localeCompare(right ?? "", undefined, { numeric: true });
+    return (input.dir === "asc" ? result : -result) || a.item.id.localeCompare(b.item.id);
+  }).map(({ item }) => item);
+}

@@ -188,6 +188,13 @@ export const invoiceStatuses = [
 export type InvoiceStatus = (typeof invoiceStatuses)[number];
 
 export type QuoteRecord = {
+  /** Evidence quality for displayed commercial content; operational fields remain live. */
+  commercialSnapshot?: {
+    status: "DRAFT" | "FROZEN" | "PARTIAL" | "UNAVAILABLE";
+    eventId?: string;
+    snapshotId?: string;
+    capturedAt?: string;
+  };
   id: string;
   quoteNumber: string;
   baseQuoteNumber: string;

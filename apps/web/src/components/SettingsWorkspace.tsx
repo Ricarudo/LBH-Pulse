@@ -1,5 +1,6 @@
 "use client";
 
+import { SettingsUpdatesSection } from "@/components/SettingsUpdatesSection";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -46,7 +47,8 @@ export type SettingsSection =
   | "request-checklists"
   | "import-export"
   | "audit"
-  | "roadmap";
+  | "roadmap"
+  | "updates";
 
 const personalTabs = [
   { key: "account", label: "Account", icon: UserRound },
@@ -320,6 +322,7 @@ export function SettingsWorkspace({ section }: { section: SettingsSection }) {
   const { user, isLoading } = useCurrentUser();
   const tabs = [
     ...personalTabs,
+    ...(canUser(user, "system:updates:read") ? [{ key: "updates" as const, label: "Updates", icon: Plug }] : []),
     ...(canUser(user, "settings:read") ? adminTabs : []),
     ...(canUser(user, "users:manage") ? [userTab] : []),
     ...(user?.isSystemAdmin ? [rolesTab] : []),
@@ -361,6 +364,7 @@ export function SettingsWorkspace({ section }: { section: SettingsSection }) {
         {active === "audit" ? <SettingsAuditSection /> : null}
         {active === "request-checklists" ? <SettingsChecklistsSection readOnly={!canUser(user, "settings:write")} /> : null}
         {active === "import-export" ? <ImportExportWorkspace /> : null}
+        {active === "updates" ? <SettingsUpdatesSection canApply={Boolean(user?.isSystemAdmin && canUser(user, "system:updates:apply"))} /> : null}
         {active === "roadmap" ? <RoadmapSection /> : null}
       </div>
     </section>

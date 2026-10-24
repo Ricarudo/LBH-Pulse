@@ -24,6 +24,12 @@ function itemSearchPath(path: string, input: ItemSearchParams) {
     query.set("includeInactive", String(input.includeInactive));
   }
 
+  for (const key of ["types", "statuses", "categories"] as const) {
+    for (const value of input[key] ?? []) query.append(key, value);
+  }
+  for (const key of ["sort", "direction", "dateField", "dateFrom", "dateTo", "dateMode", "timeZone"] as const) {
+    if (input[key]) query.set(key, input[key]!);
+  }
   const suffix = query.toString();
   return suffix ? `${path}?${suffix}` : path;
 }

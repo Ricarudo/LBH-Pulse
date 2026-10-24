@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { maintenanceMiddleware } from "@/shared/maintenance";
 import { NestFactory } from "@nestjs/core";
 import type { NextFunction, Request, Response } from "express";
 import { parseRuntimeEnvironment, assertProductionDatabaseSafety } from "@/config/runtimeEnvironment";
@@ -26,6 +27,7 @@ async function bootstrap() {
 
   const auth = app.get(AuthService);
   const csrf = app.get(CsrfMiddleware);
+  app.use(maintenanceMiddleware);
   app.use((request: Request, response: Response, next: NextFunction) => csrf.use(request, response, next, auth));
   app.enableShutdownHooks();
 

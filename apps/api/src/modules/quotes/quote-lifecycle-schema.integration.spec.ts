@@ -49,10 +49,13 @@ test("0.2 candidate schema enforces family, snapshot, review and retry constrain
     await db.query(`UPDATE pulse."QuoteVersion" SET outcome = 'SUPERSEDED' WHERE "quoteId" = 'q0'`);
     await db.query(`UPDATE pulse."QuoteVersion" SET "publicationState" = 'SENT', "sentAt" = now(), "frozenSnapshotId" = 's1' WHERE "quoteId" = 'q1'`);
     await db.query(`UPDATE pulse."QuoteFamily" SET "currentDraftId" = NULL, "currentOfferId" = 'q1' WHERE id = 'family-a'`);
-    await rejected(`UPDATE pulse."QuoteVersion" SET "contentVersion" = 2 WHERE "quoteId" = 'q1'`, "23503");
+    await rejected(`UPDATE pulse."QuoteVersion" SET "contentVersion" = 2 WHERE "quoteId" = 'q1'`, "23514");
+    await rejected(`UPDATE pulse."QuoteVersion" SET "publicationState" = 'DRAFT', "sentAt" = NULL WHERE "quoteId" = 'q1'`, "23514");
+    await rejected(`UPDATE pulse."Quote" SET title = 'Changed after sending' WHERE id = 'q1'`, "23514");
     await rejected(`UPDATE pulse."QuoteFamily" SET outcome = 'ACCEPTED' WHERE id = 'family-a'`, "23514");
     await db.query(`UPDATE pulse."QuoteVersion" SET outcome = 'ACCEPTED' WHERE "quoteId" = 'q1'`);
     await db.query(`UPDATE pulse."QuoteFamily" SET outcome = 'ACCEPTED', "currentOfferId" = NULL, "acceptedQuoteId" = 'q1' WHERE id = 'family-a'`);
+    await rejected(`UPDATE pulse."QuoteVersion" SET outcome = NULL WHERE "quoteId" = 'q1'`, "23514");
 
     await db.query(`INSERT INTO pulse."AccessRole" (id, name, "normalizedName", "updatedAt") VALUES ('schema-role', 'Test', 'schema-role', now())`);
     await db.query(`INSERT INTO pulse."LocalUser" (id, name, email, role, "passwordHash", "updatedAt") VALUES

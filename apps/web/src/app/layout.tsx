@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PulseShell } from "@/components/PulseShell";
 import "./globals.css";
+import "./list-standard.css";
 
 export const metadata: Metadata = {
   title: "Pulse",

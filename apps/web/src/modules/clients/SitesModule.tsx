@@ -1,27 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowLeft,
-  Building2,
-  Filter,
-  MapPin,
-  Pencil,
-  Plus,
-  Search,
-  X
-} from "lucide-react";
+import { ListFeedback, ListToolbar } from "@/components/lists/ListControls";
+import { useDashboardList } from "@/lib/useDashboardList";
+import { options, uniqueOptions, filterCount, type ListDefinition } from "@/lib/listState";
+
+import { ArrowLeft, Building2, MapPin, Pencil, Plus, X } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { canUser } from "@pulse/contracts/auth";
-import {
-  clientOwners,
-  clientSiteTypes,
-  clientStatuses,
-  type ClientRecord,
-  type ClientSite,
-  type ClientSiteType,
-  type ClientStatus
-} from "@pulse/contracts/clients";
+import { clientSiteTypes, clientStatuses, type ClientRecord, type ClientSite, type ClientStatus } from "@pulse/contracts/clients";
 import { formJson } from "@/lib/forms/sanitization";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { ViewportPortal } from "@/components/ViewportPortal";
@@ -111,11 +98,6 @@ export function SitesModule() {
   const { user } = useCurrentUser();
   const canWriteSites = canUser(user, "clients:write");
   const [clients, setClients] = useState<ClientRecord[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [clientFilter, setClientFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState<"All" | ClientStatus>("All");
-  const [typeFilter, setTypeFilter] = useState<"All" | ClientSiteType>("All");
-  const [ownerFilter, setOwnerFilter] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -153,55 +135,22 @@ export function SitesModule() {
   }, []);
 
   const sites = useMemo(() => flattenSites(clients), [clients]);
-  const owners = useMemo(
-    () =>
-      Array.from(
-        new Set([
-          ...clientOwners,
-          ...clients.map((client) => client.accountOwner).filter(Boolean)
-        ])
-      ),
-    [clients]
-  );
-  const hasActiveFilters =
-    searchTerm.trim() !== "" ||
-    clientFilter !== "All" ||
-    statusFilter !== "All" ||
-    typeFilter !== "All" ||
-    ownerFilter !== "All";
-
-  const filteredSites = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
-    return sites.filter((row) => {
-      const matchesSearch =
-        !normalizedSearch ||
-        siteSearchValues(row).join(" ").toLowerCase().includes(normalizedSearch);
-      const matchesClient =
-        clientFilter === "All" || row.client.id === clientFilter;
-      const matchesStatus =
-        statusFilter === "All" || row.client.status === statusFilter;
-      const matchesType = typeFilter === "All" || row.site.siteType === typeFilter;
-      const matchesOwner =
-        ownerFilter === "All" || row.client.accountOwner === ownerFilter;
-
-      return (
-        matchesSearch &&
-        matchesClient &&
-        matchesStatus &&
-        matchesType &&
-        matchesOwner
-      );
-    });
-  }, [clientFilter, clients, ownerFilter, searchTerm, sites, statusFilter, typeFilter]);
-
-  function clearFilters() {
-    setSearchTerm("");
-    setClientFilter("All");
-    setStatusFilter("All");
-    setTypeFilter("All");
-    setOwnerFilter("All");
-  }
+  const definition = useMemo<ListDefinition<SiteRow>>(() => ({
+    id: "sites", label: "sites", defaultView: "all", defaultSort: "name", defaultDirection: "asc",
+    filters: [
+      { key: "client", label: "Client", options: uniqueOptions(clients.map(client => ({ value: client.id, label: client.displayName }))), values: row => row.client.id },
+      { key: "status", label: "Client status", options: options(clientStatuses), values: row => row.client.status },
+      { key: "type", label: "Site type", options: options(clientSiteTypes), values: row => row.site.siteType },
+      { key: "owner", label: "Client owner", options: options(clients.map(row => row.accountOwner)), values: row => row.client.accountOwner }
+    ],
+    sorts: [{ key: "name", label: "Name", value: row => row.site.siteName, direction: "asc" }, { key: "client", label: "Client", value: row => row.client.displayName, direction: "asc" }, { key: "city", label: "City", value: row => row.site.city, direction: "asc" }, { key: "type", label: "Site type", value: row => row.site.siteType }],
+    search: row => siteSearchValues(row).join(" "), rowId: row => row.site.id
+  }), [clients]);
+  const list = useDashboardList(definition, sites);
+  const filteredSites = list.rows;
+  const searchTerm = list.state.q;
+  const hasActiveFilters = Boolean(searchTerm || filterCount(list.state));
+  const clearFilters = list.reset;
 
   function replaceClient(nextClient: ClientRecord) {
     setClients((current) =>
@@ -234,7 +183,7 @@ export function SitesModule() {
   }
 
   return (
-    <div className="clients-module sites-module">
+    <div className="clients-module sites-module dashboard-list">
       <section className="clients-command-bar">
         <div className="clients-command-primary">
           <Link className="toolbar-button compact clients-directory-return" href="/directory">
@@ -266,87 +215,9 @@ export function SitesModule() {
       </section>
 
       <section className="client-list-panel site-list-panel">
-        <div className="client-list-toolbar">
-          <label className="lead-search">
-            <Search size={17} />
-            <input
-              aria-label="Search sites"
-              placeholder="Search sites, clients, addresses, owners..."
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
-          </label>
-          <div className="lead-filter-row">
-            <Filter size={16} />
-            <select
-              aria-label="Filter sites by client"
-              value={clientFilter}
-              onChange={(event) => setClientFilter(event.target.value)}
-            >
-              <option value="All">All clients</option>
-              {clients.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.displayName}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter sites by client status"
-              value={statusFilter}
-              onChange={(event) =>
-                setStatusFilter(event.target.value as "All" | ClientStatus)
-              }
-            >
-              <option value="All">All statuses</option>
-              {clientStatuses.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter sites by type"
-              value={typeFilter}
-              onChange={(event) =>
-                setTypeFilter(event.target.value as "All" | ClientSiteType)
-              }
-            >
-              <option value="All">All site types</option>
-              {clientSiteTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter sites by owner"
-              value={ownerFilter}
-              onChange={(event) => setOwnerFilter(event.target.value)}
-            >
-              <option value="All">All owners</option>
-              {owners.map((owner) => (
-                <option key={owner} value={owner}>
-                  {owner}
-                </option>
-              ))}
-            </select>
-            {hasActiveFilters ? (
-              <button className="toolbar-button compact" type="button" onClick={clearFilters}>
-                <X size={16} />
-                Clear
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <ListToolbar list={list} count={filteredSites.length} />
 
-        <div className="client-list-meta">
-          <span>
-            Showing {filteredSites.length} of {sites.length} sites · {clients.length} clients
-          </span>
-          {hasActiveFilters ? <strong>Filters active</strong> : null}
-        </div>
-
-        {loadError ? <div className="form-alert error">{loadError}</div> : null}
+        <ListFeedback error={loadError} onRetry={() => window.location.reload()} />
         {successMessage ? (
           <div className="form-alert contact-create-success" role="status">
             {successMessage}
@@ -439,7 +310,7 @@ export function SitesModule() {
           </div>
         ) : null}
 
-        {!isLoading && filteredSites.length === 0 ? (
+        {!isLoading && !loadError && filteredSites.length === 0 ? (
           <div className="lead-empty-state client-empty-state">
             <strong>
               {sites.length === 0

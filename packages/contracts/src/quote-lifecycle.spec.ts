@@ -5,6 +5,7 @@ import {
   quoteFamilyWinRate, quoteLifecycleGroup, quoteOutcomeFromLegacyStatus,
   quotePricingValidity, quoteStatusLabel, type QuoteFamilyProjection, type QuoteFamilyVersion
 } from "./quote-lifecycle";
+import { quoteFamilyWorkCounts } from "./quote-lifecycle";
 
 test("legacy client approval is an accepted outcome, not an internal review state", () => {
   assert.equal(quoteStatusLabel("Approved"), "Accepted");
@@ -56,4 +57,11 @@ test("win rate counts one family decision and excludes cancellations and open fa
   ]), 1 / 3);
   assert.equal(quoteFamilyWinRate([{ id: "cancelled", outcome: "CANCELLED" }]), null);
   assert.throws(() => quoteFamilyWinRate([{ id: "same", outcome: "ACCEPTED" }, { id: "same", outcome: "ACCEPTED" }]), /DUPLICATE/);
+});
+
+test("Home counts an offer and its draft once while retaining both work categories", () => {
+  const family = { id: "family", outcome: null, currentOfferId: "q0", currentDraftId: "q1", needsRefresh: true };
+  assert.deepEqual(quoteFamilyWorkCounts([family]), { open: 1, working: 1, awaitingResponse: 1, needsRefresh: 1 });
+  assert.deepEqual(quoteFamilyWorkCounts([{ ...family, outcome: "ACCEPTED", currentOfferId: null, currentDraftId: null }]), { open: 0, working: 0, awaitingResponse: 0, needsRefresh: 0 });
+  assert.throws(() => quoteFamilyWorkCounts([family, family]), /DUPLICATE/);
 });

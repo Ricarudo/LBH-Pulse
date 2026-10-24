@@ -230,6 +230,9 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   const [adHocOpen, setAdHocOpen] = useState(false);
   const [itemQuery, setItemQuery] = useState("");
   const [itemResults, setItemResults] = useState<ItemRecord[]>([]);
+  const [itemSearchLoading, setItemSearchLoading] = useState(false);
+  const [itemSearchError, setItemSearchError] = useState("");
+  const [itemSearchAttempt, setItemSearchAttempt] = useState(0);
   const [selectedItemId, setSelectedItemId] = useState("");
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
   const [addQuantity, setAddQuantity] = useState("1");
@@ -1098,6 +1101,8 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
           </div>
 
           {quoteCommercialContentLocked(quote) ? <p className="panel-note" role="status">Commercial details are locked for this sent or closed quote. You can still update its assignment and collaborators.</p> : null}
+          {quote.commercialSnapshot?.status === "FROZEN" ? <p className="panel-note">Commercial information shown here was captured when this offer was sent.</p> : null}
+          {quote.commercialSnapshot?.status === "PARTIAL" || quote.commercialSnapshot?.status === "UNAVAILABLE" ? <p className="panel-note" role="status">The original sent content is {quote.commercialSnapshot.status === "PARTIAL" ? "only partially available" : "unavailable"}. Some displayed information comes from current records.</p> : null}
           {quoteDetailsErrors.form ? <div className="form-alert error" role="alert">{quoteDetailsErrors.form}</div> : null}
 
           <div className="request-details-grid lifecycle-linked-grid">
@@ -1696,16 +1701,28 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
       {addOpen ? (
         <ViewportPortal>
           <div className="client-create-dialog-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddOpen(false); }}>
-          <section className="client-create-dialog quote-add-dialog" role="dialog" aria-modal="true">
+          <section className="client-create-dialog quote-add-dialog" role="dialog" aria-modal="true" aria-labelledby="quote-add-item-title">
             <div className="client-create-dialog-header">
-              <div><span className="dashboard-eyebrow">Directory Items</span><h3>Add Item</h3></div>
+              <div><span className="dashboard-eyebrow">Directory Items</span><h3 id="quote-add-item-title">Add Item</h3></div>
               <button className="icon-button" type="button" aria-label="Close" onClick={() => setAddOpen(false)}><X size={18} /></button>
             </div>
             <label className="lead-search">
-              <Search size={17} /><input autoFocus type="search" placeholder="Search active items..." value={itemQuery} onChange={(event) => setItemQuery(event.target.value)} />
+              <Search size={17} /><input autoFocus type="search" aria-label="Search active items" placeholder="Search active items..." maxLength={100} value={itemQuery} onChange={(event) => setItemQuery(event.target.value)} />
             </label>
             <div className="quote-add-layout">
-              <div className="quote-item-results">
+              <div className="quote-item-results" aria-busy={itemSearchLoading}>
+                {itemSearchLoading ? <div className="work-queue-state" role="status">Loading items…</div> : null}
+                {itemSearchError ? (
+                  <div className="work-queue-state">
+                    <p role="alert">{itemSearchError}</p>
+                    <button className="toolbar-button compact" type="button" onClick={() => setItemSearchAttempt((attempt) => attempt + 1)}>Retry search</button>
+                  </div>
+                ) : null}
+                {!itemSearchLoading && !itemSearchError && itemResults.length === 0 ? (
+                  <div className="work-queue-state" role="status">
+                    {itemQuery.trim() ? "No matching items. Try a different name, SKU, or part number." : "No active items are available."}
+                  </div>
+                ) : null}
                 {itemResults.map((item) => (
                   <button type="button" className={selectedItemId === item.id ? "selected" : ""} key={item.id} onClick={() => { setSelectedItemId(item.id); setSelectedSuggestionIds([]); }}>
                     <strong>{item.name}</strong><span>{item.itemType} · {item.sku || item.partNumber || "No SKU"}</span><em>{formatMoney(item.sellPrice)}</em>

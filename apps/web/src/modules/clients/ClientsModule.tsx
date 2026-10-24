@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { ListFeedback, ListToolbar } from "@/components/lists/ListControls";
+import { useDashboardList } from "@/lib/useDashboardList";
+import { options, filterCount, type ListDefinition } from "@/lib/listState";
+
 import { useRouter } from "next/navigation";
 import { canUser } from "@pulse/contracts/auth";
 import {
@@ -18,24 +22,9 @@ import { FormRequestError, formJson } from "@/lib/forms/sanitization";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import { formatMoney, formatWorkspaceDate } from "@/lib/formatting";
-import {
-  ArrowLeft,
-  Building2,
-  Filter,
-  Plus,
-  Search,
-  X
-} from "lucide-react";
+import { ArrowLeft, Building2, Plus, X } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import {
-  clientIndustries,
-  clientOwners,
-  clientSiteTypes,
-  clientStatuses,
-  type ClientIndustry,
-  type ClientRecord,
-  type ClientStatus
-} from "@pulse/contracts/clients";
+import { clientIndustries, clientSiteTypes, clientStatuses, type ClientRecord, type ClientStatus } from "@pulse/contracts/clients";
 
 type ClientListResponse = {
   clients: ClientRecord[];
@@ -57,12 +46,6 @@ function statusClass(status: ClientStatus) {
   return "status-pill";
 }
 
-function serviceSummary(client: ClientRecord) {
-  return client.serviceProfile.length
-    ? client.serviceProfile.join(", ")
-    : "No service profile";
-}
-
 function displayDate(date: string) {
   return formatWorkspaceDate(date) || "No activity";
 }
@@ -79,10 +62,6 @@ export function ClientsModule() {
   const router = useRouter();
   const { user } = useCurrentUser();
   const [clients, setClients] = useState<ClientRecord[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"All" | ClientStatus>("All");
-  const [industryFilter, setIndustryFilter] = useState<"All" | ClientIndustry>("All");
-  const [ownerFilter, setOwnerFilter] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
@@ -92,12 +71,6 @@ export function ClientsModule() {
   const clientNameInputRef = useRef<HTMLInputElement>(null);
 
   const canWriteCrm = canUser(user, "clients:write");
-
-  const hasActiveFilters =
-    searchTerm.trim() !== "" ||
-    statusFilter !== "All" ||
-    industryFilter !== "All" ||
-    ownerFilter !== "All";
 
   useEffect(() => {
     async function loadClients() {
@@ -153,59 +126,27 @@ export function ClientsModule() {
     };
   }, [isCreatingClient, isQuickCreateOpen]);
 
-  const filteredClients = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
-    return clients.filter((client) => {
-      const haystack = [
-        client.id,
-        client.clientNumber,
-        client.displayName,
-        client.legalName,
-        client.companyName,
-        client.industry,
-        client.status,
-        client.accountOwner,
-        ...client.aliases.map((alias) => alias.name),
-        client.primaryContact.name,
-        client.primaryContact.email,
-        client.primaryContact.phone,
-        client.primaryContact.mobile,
-        ...client.contacts.flatMap((contact) => [
-          contact.name,
-          contact.role,
-          contact.title,
-          contact.email,
-          contact.phone,
-          contact.mobile
-        ]),
-        client.primarySite,
-        client.city,
-        client.state,
-        serviceSummary(client)
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      const matchesSearch =
-        !normalizedSearch || haystack.includes(normalizedSearch);
-      const matchesStatus =
-        statusFilter === "All" || client.status === statusFilter;
-      const matchesIndustry =
-        industryFilter === "All" || client.industry === industryFilter;
-      const matchesOwner =
-        ownerFilter === "All" || client.accountOwner === ownerFilter;
-
-      return matchesSearch && matchesStatus && matchesIndustry && matchesOwner;
-    });
-  }, [clients, industryFilter, ownerFilter, searchTerm, statusFilter]);
-
-  function clearFilters() {
-    setSearchTerm("");
-    setStatusFilter("All");
-    setIndustryFilter("All");
-    setOwnerFilter("All");
-  }
+  const definition = useMemo<ListDefinition<ClientRecord>>(() => ({
+    id: "clients", label: "clients", defaultView: "all", defaultSort: "name", defaultDirection: "asc",
+    filters: [
+      { key: "status", label: "Status", options: options(clientStatuses), values: row => row.status },
+      { key: "industry", label: "Industry", options: options(clients.map(row => row.industry)), values: row => row.industry },
+      { key: "owner", label: "Owner", options: options(clients.map(row => row.accountOwner)), values: row => row.accountOwner }
+    ],
+    dates: [{ key: "createdAt", label: "Created", value: row => row.createdAt }, { key: "updatedAt", label: "Updated", value: row => row.updatedAt }],
+    sorts: [{ key: "name", label: "Name", value: row => row.displayName, direction: "asc" }, { key: "number", label: "Client number", numeric: true, value: row => row.clientNumber, direction: "desc" }, { key: "activity", label: "Updated", date: true, orderLabels: { asc: "Least recently updated", desc: "Most recently updated" }, value: row => row.updatedAt, direction: "desc" },
+      { key: "balance", label: "Outstanding balance", numeric: true, direction: "desc", value: row => row.outstandingBalance },
+      { key: "value", label: "Lifetime value", numeric: true, direction: "desc", value: row => row.lifetimeValue },
+      { key: "owner", label: "Account owner", value: row => row.accountOwner },
+      { key: "created", label: "Created", date: true, direction: "desc", value: row => row.createdAt }],
+    search: row => [row.displayName, row.legalName, row.companyName, row.clientNumber, row.industry, row.accountOwner, row.status, row.primarySite, row.city, row.state, ...row.serviceProfile, ...row.aliases.map(alias => alias.name), ...row.contacts.flatMap(contact => [contact.name, contact.email, contact.phone, contact.mobile])].join(" "),
+    rowId: row => row.id
+  }), [clients]);
+  const list = useDashboardList(definition, clients);
+  const filteredClients = list.rows;
+  const searchTerm = list.state.q;
+  const hasActiveFilters = Boolean(searchTerm || filterCount(list.state));
+  const clearFilters = list.reset;
 
   function openQuickCreateDialog() {
     setQuickCreateForm(createBlankQuickCreateForm());
@@ -282,7 +223,7 @@ export function ClientsModule() {
   }
 
   return (
-    <div className="clients-module">
+    <div className="clients-module dashboard-list">
       <section className="clients-command-bar">
         <div className="clients-command-primary">
           <Link className="toolbar-button compact clients-directory-return" href="/directory">
@@ -317,76 +258,9 @@ export function ClientsModule() {
 
       <section className="clients-workspace">
         <div className="client-list-panel">
-          <div className="client-list-toolbar">
-            <label className="lead-search">
-              <Search size={17} />
-              <input
-                aria-label="Search clients"
-                placeholder="Search clients, contacts, sites, services..."
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-              />
-            </label>
-            <div className="lead-filter-row">
-              <Filter size={16} />
-              <select
-                value={statusFilter}
-                onChange={(event) =>
-                  setStatusFilter(event.target.value as "All" | ClientStatus)
-                }
-              >
-                <option value="All">All statuses</option>
-                {clientStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={industryFilter}
-                onChange={(event) =>
-                  setIndustryFilter(event.target.value as "All" | ClientIndustry)
-                }
-              >
-                <option value="All">All industries</option>
-                {clientIndustries.map((industry) => (
-                  <option key={industry} value={industry}>
-                    {industry}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
-              >
-                <option value="All">All owners</option>
-                {clientOwners.map((owner) => (
-                  <option key={owner} value={owner}>
-                    {owner}
-                  </option>
-                ))}
-              </select>
-              {hasActiveFilters ? (
-                <button
-                  className="toolbar-button compact"
-                  type="button"
-                  onClick={clearFilters}
-                >
-                  <X size={16} />
-                  Clear
-                </button>
-              ) : null}
-            </div>
-          </div>
+          <ListToolbar list={list} count={filteredClients.length} />
 
-          <div className="client-list-meta">
-            <span>
-              Showing {filteredClients.length} of {clients.length} clients
-            </span>
-            {hasActiveFilters ? <strong>Filters active</strong> : null}
-          </div>
-
-          {loadError ? <div className="form-alert error">{loadError}</div> : null}
+          <ListFeedback error={loadError} onRetry={() => window.location.reload()} />
           <div className="client-list" aria-busy={isLoading}>
             {filteredClients.length ? (
               <>
@@ -456,7 +330,7 @@ export function ClientsModule() {
             ) : null}
           </div>
 
-          {!isLoading && filteredClients.length === 0 ? (
+          {!isLoading && !loadError && filteredClients.length === 0 ? (
             <div className="lead-empty-state client-empty-state">
               <strong>
                 {clients.length === 0
