@@ -1,4 +1,4 @@
-import type { Permission, RoleSummary } from "./access-control";
+import { permissionKeys, type Permission, type RoleSummary } from "./access-control";
 export type { Permission } from "./access-control";
 
 export type LocalRole = "Admin" | "Sales" | "ProjectManager" | "Technician";
@@ -36,22 +36,7 @@ export const roleLabels: Record<LocalRole, string> = {
 };
 
 export const rolePermissions: Record<LocalRole, Permission[]> = {
-  Admin: [
-    "requests:read", "requests:write",
-    "clients:read", "clients:write",
-    "items:read", "items:write",
-    "quotes:read", "quotes:write",
-    "projects:read", "projects:write",
-    "billing:read", "billing:write",
-    "activity:write",
-    "activity:read",
-    "analytics:read",
-    "audit:read",
-    "settings:read",
-    "settings:write",
-    "users:manage",
-    "roles:manage"
-  ],
+  Admin: [...permissionKeys],
   Sales: [
     "requests:read", "requests:write", "clients:read", "clients:write",
     "items:read", "items:write", "quotes:read", "quotes:write",
