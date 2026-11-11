@@ -970,7 +970,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               <FieldList items={[
                 { label: "Critical requirement", value: client.purchaseOrderRequired ? "Purchase order required" : "No purchase order requirement" },
                 { label: "Documentation requirements", value: client.documentationRequirements },
-                { label: "Important note", value: client.importantNotes || client.generalNotes }
+                { label: "General notes", value: client.generalNotes }
               ]} />
             </section>
             <section className="client-360-tab-card" id="identity-names">
@@ -1016,14 +1016,7 @@ export function ClientProfileWorkspace({ clientId }: ClientProfileWorkspaceProps
               <h2>Service & Technology</h2>
               <FieldList items={[
                 { label: "Service profile", value: client.serviceProfile.join(", ") },
-                { label: "Brand preferences", value: client.brandPreferences },
-                { label: "Technology preferences", value: client.technologyPreferences },
-                { label: "Preferred vendors", value: client.preferredVendors },
-                { label: "Camera", value: client.preferredCameraBrand },
-                { label: "Access control", value: client.preferredAccessControlBrand },
-                { label: "Network", value: client.preferredNetworkBrand },
-                { label: "Cabling", value: client.preferredCablingBrand },
-                { label: "Standard technologies", value: client.standardTechnologies }
+                ...client.preferences.map((preference) => ({ label: preference.category, value: preference.value + (preference.notes ? ` — ${preference.notes}` : "") }))
               ]} />
             </section>
             <section className="client-360-tab-card">

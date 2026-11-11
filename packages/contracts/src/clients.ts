@@ -179,6 +179,8 @@ export type ClientMergeSource = {
   mergedByName: string;
 };
 
+export type ClientPreference = { category: string; value: string; notes: string };
+
 export type ClientRecord = {
   id: string;
   clientNumber: string;
@@ -205,16 +207,8 @@ export type ClientRecord = {
   outstandingBalance: number;
   lastActivity: string;
   source: string;
-  importantNotes: string;
-  brandPreferences: string;
-  technologyPreferences: string;
   generalNotes: string;
-  preferredVendors: string;
-  preferredCameraBrand: string;
-  preferredAccessControlBrand: string;
-  preferredNetworkBrand: string;
-  preferredCablingBrand: string;
-  standardTechnologies: string;
+  preferences: ClientPreference[];
   documentationRequirements: string;
   invoiceRequirements: string;
   insuranceRequirements: string;
@@ -329,15 +323,8 @@ export type ClientCreatePayload = {
   paymentTerms: string;
   preferredCurrency: string;
   preferredLanguage: string;
-  brandPreferences: string;
-  technologyPreferences: string;
   generalNotes: string;
-  preferredVendors: string;
-  preferredCameraBrand: string;
-  preferredAccessControlBrand: string;
-  preferredNetworkBrand: string;
-  preferredCablingBrand: string;
-  standardTechnologies: string;
+  preferences: ClientPreference[];
   documentationRequirements: string;
   invoiceRequirements: string;
   insuranceRequirements: string;
@@ -564,6 +551,12 @@ export const clientContactSchema = clientContactFieldsSchema
     };
   });
 
+const clientPreferenceSchema = z.object({
+  category: textField({ max: 200, collapseSpaces: true }).refine(Boolean, "Category is required."),
+  value: optionalText.refine(Boolean, "Preference is required."),
+  notes: optionalText
+}).strict();
+
 const clientFieldsSchema = z.object({
   legalName: clientNameText,
   displayName: clientNameText,
@@ -575,15 +568,8 @@ const clientFieldsSchema = z.object({
   paymentTerms: clientPaymentTermsSchema.default(""),
   preferredCurrency: optionalText.default("USD"),
   preferredLanguage: clientLanguageSchema.default("English"),
-  brandPreferences: optionalText,
-  technologyPreferences: optionalText,
   generalNotes: optionalText,
-  preferredVendors: optionalText,
-  preferredCameraBrand: optionalText,
-  preferredAccessControlBrand: optionalText,
-  preferredNetworkBrand: optionalText,
-  preferredCablingBrand: optionalText,
-  standardTechnologies: optionalText,
+  preferences: z.array(clientPreferenceSchema).max(100).default([]),
   documentationRequirements: optionalText,
   invoiceRequirements: optionalText,
   insuranceRequirements: optionalText,
@@ -674,6 +660,7 @@ export const updateClientSchema = clientFieldsSchema
     primaryContact: updatePrimaryContactSchema.optional()
   })
   .partial()
+  .extend({ preferences: z.array(clientPreferenceSchema).max(100).optional() })
   .strict()
   .superRefine((data, context) => {
     if (data.aliases !== undefined && data.manualAliases !== undefined) {

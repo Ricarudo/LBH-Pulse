@@ -121,3 +121,29 @@ describe("client consolidation contracts", () => {
     );
   });
 });
+
+describe("client preferences", () => {
+  it("accepts multiple values in the same category and an empty replacement", () => {
+    const preferences = [
+      { category: " Camera ", value: " Axis ", notes: " Outdoor " },
+      { category: "Camera", value: "Hanwha", notes: "" }
+    ];
+    assert.deepEqual(updateClientSchema.parse({ preferences }).preferences, [
+      { category: "Camera", value: "Axis", notes: "Outdoor" },
+      { category: "Camera", value: "Hanwha", notes: "" }
+    ]);
+    assert.deepEqual(updateClientSchema.parse({ preferences: [] }).preferences, []);
+    assert.equal(updateClientSchema.parse({ generalNotes: "note" }).preferences, undefined);
+  });
+
+  it("rejects blank or unsafe preference categories and values", () => {
+    for (const preference of [
+      { category: " ", value: "Axis" },
+      { category: "Camera", value: " " },
+      { category: "<script>", value: "Axis" },
+      { category: "Camera", value: "javascript:bad" }
+    ]) {
+      assert.equal(updateClientSchema.safeParse({ preferences: [preference] }).success, false);
+    }
+  });
+});

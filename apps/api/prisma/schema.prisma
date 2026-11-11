@@ -1052,16 +1052,7 @@ model Client {
   paymentTerms                String?
   preferredCurrency           String           @default("USD")
   preferredLanguage           String           @default("English")
-  brandPreferences            String?
-  technologyPreferences       String?
   generalNotes                String?
-  importantNotes              String?
-  preferredVendors            String?
-  preferredCameraBrand        String?
-  preferredAccessControlBrand String?
-  preferredNetworkBrand       String?
-  preferredCablingBrand       String?
-  standardTechnologies        String?
   documentationRequirements   String?
   invoiceRequirements         String?
   insuranceRequirements       String?
@@ -1079,6 +1070,7 @@ model Client {
   createdAt                   DateTime         @default(now())
   updatedAt                   DateTime         @updatedAt
   lastActivityAt              DateTime?
+  preferences                 ClientPreference[]
   contacts                    PointOfContact[]
   sites                       ClientSite[]
   services                    ClientService[]
@@ -1095,6 +1087,19 @@ model Client {
   @@index([accountOwner])
   @@index([archivedAt])
   @@index([mergedIntoId])
+}
+
+model ClientPreference {
+  id        String   @id @default(cuid())
+  clientId  String
+  category  String
+  value     String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, category])
 }
 
 model ClientAlias {

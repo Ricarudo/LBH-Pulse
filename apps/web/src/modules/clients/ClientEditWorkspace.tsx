@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
+import { ClientPreferencesEditor } from "@/components/clients/ClientPreferencesEditor";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import { apiFetch } from "@/lib/api/client";
 import { canUser } from "@pulse/contracts/auth";
@@ -63,15 +64,8 @@ type ClientEditState = {
   invoiceRequirements: string;
   insuranceRequirements: string;
   purchaseOrderRequired: boolean;
-  brandPreferences: string;
-  technologyPreferences: string;
   generalNotes: string;
-  preferredVendors: string;
-  preferredCameraBrand: string;
-  preferredAccessControlBrand: string;
-  preferredNetworkBrand: string;
-  preferredCablingBrand: string;
-  standardTechnologies: string;
+  preferences: { category: string; value: string; notes: string }[];
   documentationRequirements: string;
   serviceProfileText: string;
   manualAliases: string[];
@@ -133,15 +127,8 @@ function clientToFormState(client: ClientRecord): ClientEditState {
     invoiceRequirements: client.invoiceRequirements,
     insuranceRequirements: client.insuranceRequirements,
     purchaseOrderRequired: client.purchaseOrderRequired,
-    brandPreferences: client.brandPreferences,
-    technologyPreferences: client.technologyPreferences,
     generalNotes: client.generalNotes,
-    preferredVendors: client.preferredVendors,
-    preferredCameraBrand: client.preferredCameraBrand,
-    preferredAccessControlBrand: client.preferredAccessControlBrand,
-    preferredNetworkBrand: client.preferredNetworkBrand,
-    preferredCablingBrand: client.preferredCablingBrand,
-    standardTechnologies: client.standardTechnologies,
+    preferences: client.preferences,
     documentationRequirements: client.documentationRequirements,
     serviceProfileText: client.serviceProfile.join(", "),
     manualAliases: client.aliases
@@ -790,15 +777,8 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
       invoiceRequirements: formState.invoiceRequirements,
       insuranceRequirements: formState.insuranceRequirements,
       purchaseOrderRequired: formState.purchaseOrderRequired,
-      brandPreferences: formState.brandPreferences,
-      technologyPreferences: formState.technologyPreferences,
       generalNotes: formState.generalNotes,
-      preferredVendors: formState.preferredVendors,
-      preferredCameraBrand: formState.preferredCameraBrand,
-      preferredAccessControlBrand: formState.preferredAccessControlBrand,
-      preferredNetworkBrand: formState.preferredNetworkBrand,
-      preferredCablingBrand: formState.preferredCablingBrand,
-      standardTechnologies: formState.standardTechnologies,
+      preferences: formState.preferences,
       documentationRequirements: formState.documentationRequirements,
       serviceProfile: formState.serviceProfileText
         .split(",")
@@ -1172,75 +1152,18 @@ export function ClientEditWorkspace({ clientId }: ClientEditWorkspaceProps) {
                 onChange={(value) => updateForm("serviceProfileText", value)}
                 wide
               />
-              <TextField
-                label="Preferred vendors"
-                name="preferredVendors"
-                value={formState.preferredVendors}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("preferredVendors", value)}
-                wide
-              />
-              <TextField
-                label="Preferred camera platform"
-                name="preferredCameraBrand"
-                value={formState.preferredCameraBrand}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("preferredCameraBrand", value)}
-              />
-              <TextField
-                label="Preferred access control platform"
-                name="preferredAccessControlBrand"
-                value={formState.preferredAccessControlBrand}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("preferredAccessControlBrand", value)}
-              />
-              <TextField
-                label="Preferred network brand"
-                name="preferredNetworkBrand"
-                value={formState.preferredNetworkBrand}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("preferredNetworkBrand", value)}
-              />
-              <TextField
-                label="Preferred cabling brand"
-                name="preferredCablingBrand"
-                value={formState.preferredCablingBrand}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("preferredCablingBrand", value)}
-              />
-              <TextField
-                label="Standard technologies"
-                name="standardTechnologies"
-                value={formState.standardTechnologies}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("standardTechnologies", value)}
-                wide
-              />
-              <TextAreaField
-                label="Technology preferences"
-                name="technologyPreferences"
-                value={formState.technologyPreferences}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("technologyPreferences", value)}
-              />
+              <ClientPreferencesEditor value={formState.preferences} onChange={(value) => updateForm("preferences", value)} />
             </div>
           </SectionCard>
 
           <SectionCard title="Notes / Documentation" icon={<FileText size={18} />}>
             <div className="client-edit-grid">
               <TextAreaField
-                label="Important notes"
+                label="General notes"
                 name="generalNotes"
                 value={formState.generalNotes}
                 errors={fieldErrors}
                 onChange={(value) => updateForm("generalNotes", value)}
-              />
-              <TextAreaField
-                label="Brand preferences"
-                name="brandPreferences"
-                value={formState.brandPreferences}
-                errors={fieldErrors}
-                onChange={(value) => updateForm("brandPreferences", value)}
               />
               <TextAreaField
                 label="Documentation requirements"

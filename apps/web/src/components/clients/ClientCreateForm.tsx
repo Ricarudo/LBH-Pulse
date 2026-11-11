@@ -16,6 +16,7 @@ import {
   type ClientSiteInput,
   type ClientStatus
 } from "@pulse/contracts/clients";
+import { ClientPreferencesEditor } from "./ClientPreferencesEditor";
 import { ClientContactForm } from "./ClientContactForm";
 import { ClientSiteForm } from "./ClientSiteForm";
 import { WizardNavigation } from "./WizardNavigation";
@@ -36,15 +37,8 @@ type ClientOverviewState = {
   paymentTerms: string;
   preferredCurrency: string;
   preferredLanguage: string;
-  brandPreferences: string;
-  technologyPreferences: string;
   generalNotes: string;
-  preferredVendors: string;
-  preferredCameraBrand: string;
-  preferredAccessControlBrand: string;
-  preferredNetworkBrand: string;
-  preferredCablingBrand: string;
-  standardTechnologies: string;
+  preferences: { category: string; value: string; notes: string }[];
   documentationRequirements: string;
   invoiceRequirements: string;
   insuranceRequirements: string;
@@ -95,15 +89,8 @@ const initialOverview: ClientOverviewState = {
   paymentTerms: "Net 30",
   preferredCurrency: "USD",
   preferredLanguage: "English",
-  brandPreferences: "",
-  technologyPreferences: "",
   generalNotes: "",
-  preferredVendors: "",
-  preferredCameraBrand: "",
-  preferredAccessControlBrand: "",
-  preferredNetworkBrand: "",
-  preferredCablingBrand: "",
-  standardTechnologies: "",
+  preferences: [],
   documentationRequirements: "",
   invoiceRequirements: "",
   insuranceRequirements: "",
@@ -397,15 +384,8 @@ export function ClientCreateForm() {
       paymentTerms: overview.paymentTerms,
       preferredCurrency: overview.preferredCurrency,
       preferredLanguage: overview.preferredLanguage,
-      brandPreferences: overview.brandPreferences,
-      technologyPreferences: overview.technologyPreferences,
       generalNotes: overview.generalNotes,
-      preferredVendors: overview.preferredVendors,
-      preferredCameraBrand: overview.preferredCameraBrand,
-      preferredAccessControlBrand: overview.preferredAccessControlBrand,
-      preferredNetworkBrand: overview.preferredNetworkBrand,
-      preferredCablingBrand: overview.preferredCablingBrand,
-      standardTechnologies: overview.standardTechnologies,
+      preferences: overview.preferences,
       documentationRequirements: overview.documentationRequirements,
       invoiceRequirements: overview.invoiceRequirements,
       insuranceRequirements: overview.insuranceRequirements,
@@ -740,66 +720,7 @@ export function ClientCreateForm() {
           </div>
         </div>
         <div className="client-form-grid">
-          <label>
-            Preferred camera platform
-            <input
-              value={overview.preferredCameraBrand}
-              onChange={(event) =>
-                setOverview({
-                  ...overview,
-                  preferredCameraBrand: event.target.value
-                })
-              }
-            />
-          </label>
-          <label>
-            Preferred access control platform
-            <input
-              value={overview.preferredAccessControlBrand}
-              onChange={(event) =>
-                setOverview({
-                  ...overview,
-                  preferredAccessControlBrand: event.target.value
-                })
-              }
-            />
-          </label>
-          <label>
-            Preferred network platform
-            <input
-              value={overview.preferredNetworkBrand}
-              onChange={(event) =>
-                setOverview({
-                  ...overview,
-                  preferredNetworkBrand: event.target.value
-                })
-              }
-            />
-          </label>
-          <label>
-            Preferred cabling standard
-            <input
-              value={overview.preferredCablingBrand}
-              onChange={(event) =>
-                setOverview({
-                  ...overview,
-                  preferredCablingBrand: event.target.value
-                })
-              }
-            />
-          </label>
-          <label className="client-form-wide">
-            Preferred vendors
-            <input
-              value={overview.preferredVendors}
-              onChange={(event) =>
-                setOverview({
-                  ...overview,
-                  preferredVendors: event.target.value
-                })
-              }
-            />
-          </label>
+          <ClientPreferencesEditor value={overview.preferences} onChange={(preferences) => setOverview({ ...overview, preferences })} />
           <label className="client-form-wide">
             Documentation requirements
             <textarea
@@ -824,18 +745,6 @@ export function ClientCreateForm() {
               }
             />
           </label>
-          <label className="client-form-wide">
-            General technology preferences
-            <textarea
-              value={overview.technologyPreferences}
-              onChange={(event) =>
-                setOverview({
-                  ...overview,
-                  technologyPreferences: event.target.value
-                })
-              }
-            />
-          </label>
         </div>
 
         <details className="client-advanced-panel">
@@ -850,30 +759,6 @@ export function ClientCreateForm() {
                   setOverview({
                     ...overview,
                     serviceProfileText: event.target.value
-                  })
-                }
-              />
-            </label>
-            <label>
-              Standard technologies
-              <input
-                value={overview.standardTechnologies}
-                onChange={(event) =>
-                  setOverview({
-                    ...overview,
-                    standardTechnologies: event.target.value
-                  })
-                }
-              />
-            </label>
-            <label className="client-form-wide">
-              Brand preferences
-              <textarea
-                value={overview.brandPreferences}
-                onChange={(event) =>
-                  setOverview({
-                    ...overview,
-                    brandPreferences: event.target.value
                   })
                 }
               />
@@ -998,16 +883,7 @@ export function ClientCreateForm() {
               </button>
             </div>
             <dl>
-              <dt>Camera</dt>
-              <dd>{cleanValue(overview.preferredCameraBrand)}</dd>
-              <dt>Access control</dt>
-              <dd>{cleanValue(overview.preferredAccessControlBrand)}</dd>
-              <dt>Network</dt>
-              <dd>{cleanValue(overview.preferredNetworkBrand)}</dd>
-              <dt>Cabling</dt>
-              <dd>{cleanValue(overview.preferredCablingBrand)}</dd>
-              <dt>Vendors</dt>
-              <dd>{cleanValue(overview.preferredVendors)}</dd>
+              {overview.preferences.map((preference, index) => <div key={index}><dt>{preference.category}</dt><dd>{preference.value}{preference.notes ? ` — ${preference.notes}` : ""}</dd></div>)}
               <dt>Notes</dt>
               <dd>{cleanValue(overview.generalNotes)}</dd>
             </dl>

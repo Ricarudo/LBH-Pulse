@@ -27,6 +27,7 @@ import type {
 const CLIENT_OWNER_TYPE = "Client";
 
 const clientInclude = {
+  preferences: { orderBy: { createdAt: "asc" } },
   contacts: {
     include: {
       site: true
@@ -260,16 +261,8 @@ function toClientRecord(client: ClientWithRelations): ClientRecord {
       .reduce((total, invoice) => total + Number(invoice.amount), 0),
     lastActivity: formatDateInput(client.lastActivityAt ?? client.updatedAt),
     source: client.source ?? "",
-    importantNotes: client.generalNotes ?? client.brandPreferences ?? "",
-    brandPreferences: client.brandPreferences ?? "",
-    technologyPreferences: client.technologyPreferences ?? "",
     generalNotes: client.generalNotes ?? "",
-    preferredVendors: client.preferredVendors ?? "",
-    preferredCameraBrand: client.preferredCameraBrand ?? "",
-    preferredAccessControlBrand: client.preferredAccessControlBrand ?? "",
-    preferredNetworkBrand: client.preferredNetworkBrand ?? "",
-    preferredCablingBrand: client.preferredCablingBrand ?? "",
-    standardTechnologies: client.standardTechnologies ?? "",
+    preferences: client.preferences.map(({ category, value, notes }) => ({ category, value, notes: notes ?? "" })),
     documentationRequirements: client.documentationRequirements ?? "",
     invoiceRequirements: client.invoiceRequirements ?? "",
     insuranceRequirements: client.insuranceRequirements ?? "",
@@ -434,15 +427,8 @@ export async function createClient(input: CreateClientInput, user?: Authenticate
         paymentTerms: toNullable(input.paymentTerms),
         preferredCurrency: input.preferredCurrency || "USD",
         preferredLanguage: input.preferredLanguage || "English",
-        brandPreferences: toNullable(input.brandPreferences),
-        technologyPreferences: toNullable(input.technologyPreferences),
         generalNotes: toNullable(input.generalNotes),
-        preferredVendors: toNullable(input.preferredVendors),
-        preferredCameraBrand: toNullable(input.preferredCameraBrand),
-        preferredAccessControlBrand: toNullable(input.preferredAccessControlBrand),
-        preferredNetworkBrand: toNullable(input.preferredNetworkBrand),
-        preferredCablingBrand: toNullable(input.preferredCablingBrand),
-        standardTechnologies: toNullable(input.standardTechnologies),
+        preferences: { create: input.preferences.map((p) => ({ ...p, notes: p.notes || null })) },
         documentationRequirements: toNullable(input.documentationRequirements),
         invoiceRequirements: toNullable(input.invoiceRequirements),
         insuranceRequirements: toNullable(input.insuranceRequirements),
@@ -580,35 +566,9 @@ export async function updateClient(id: string, input: UpdateClientInput, user?: 
       ...(input.preferredLanguage !== undefined
         ? { preferredLanguage: input.preferredLanguage || "English" }
         : {}),
-      ...(input.brandPreferences !== undefined
-        ? { brandPreferences: input.brandPreferences || null }
-        : {}),
-      ...(input.technologyPreferences !== undefined
-        ? { technologyPreferences: input.technologyPreferences || null }
-        : {}),
+      ...(input.preferences !== undefined ? { preferences: { deleteMany: {}, create: input.preferences.map((p) => ({ ...p, notes: p.notes || null })) } } : {}),
       ...(input.generalNotes !== undefined
         ? { generalNotes: input.generalNotes || null }
-        : {}),
-      ...(input.preferredVendors !== undefined
-        ? { preferredVendors: input.preferredVendors || null }
-        : {}),
-      ...(input.preferredCameraBrand !== undefined
-        ? { preferredCameraBrand: input.preferredCameraBrand || null }
-        : {}),
-      ...(input.preferredAccessControlBrand !== undefined
-        ? {
-            preferredAccessControlBrand:
-              input.preferredAccessControlBrand || null
-          }
-        : {}),
-      ...(input.preferredNetworkBrand !== undefined
-        ? { preferredNetworkBrand: input.preferredNetworkBrand || null }
-        : {}),
-      ...(input.preferredCablingBrand !== undefined
-        ? { preferredCablingBrand: input.preferredCablingBrand || null }
-        : {}),
-      ...(input.standardTechnologies !== undefined
-        ? { standardTechnologies: input.standardTechnologies || null }
         : {}),
       ...(input.documentationRequirements !== undefined
         ? { documentationRequirements: input.documentationRequirements || null }
@@ -945,7 +905,8 @@ export async function mergeClients(input: MergeClientsInput, user: Authenticated
           isPrimaryContact: false
         }
       }),
-      tx.clientActivity.updateMany({ where: { clientId: { in: sourceIds } }, data: { clientId: input.masterId } })
+      tx.clientActivity.updateMany({ where: { clientId: { in: sourceIds } }, data: { clientId: input.masterId } }),
+      tx.clientPreference.updateMany({ where: { clientId: { in: sourceIds } }, data: { clientId: input.masterId } })
     ]);
 
     if (input.primaryContactId) {
