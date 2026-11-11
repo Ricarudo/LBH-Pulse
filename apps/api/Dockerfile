@@ -7,15 +7,17 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN npm ci -w @pulse/contracts -w @pulse/api
+COPY packages/quote-calculator/package.json ./packages/quote-calculator/package.json
+RUN npm ci -w @pulse/contracts -w @pulse/quote-calculator -w @pulse/api
 
 FROM workspace-deps AS dev
 
 ENV NODE_ENV=development
 
 COPY packages/contracts ./packages/contracts
+COPY packages/quote-calculator ./packages/quote-calculator
 COPY apps/api ./apps/api
-RUN npm run build -w @pulse/contracts
+RUN npm run build -w @pulse/contracts && npm run build -w @pulse/quote-calculator
 
 EXPOSE 3000
 CMD ["npm", "run", "dev:api"]
@@ -27,8 +29,9 @@ FROM workspace-deps AS build
 ENV DATABASE_URL=postgresql://prisma-build@127.0.0.1:1/pulse?schema=pulse
 
 COPY packages/contracts ./packages/contracts
+COPY packages/quote-calculator ./packages/quote-calculator
 COPY apps/api ./apps/api
-RUN npm run build -w @pulse/contracts \
+RUN npm run build -w @pulse/contracts && npm run build -w @pulse/quote-calculator \
   && npm run build -w @pulse/api \
   && test -f /workspace/apps/api/dist/main.js
 
@@ -39,8 +42,9 @@ ENV npm_config_update_notifier=false
 ENV DATABASE_URL=postgresql://prisma-build@127.0.0.1:1/pulse?schema=pulse
 
 COPY --chown=node:node packages/contracts ./packages/contracts
+COPY --chown=node:node packages/quote-calculator ./packages/quote-calculator
 COPY --chown=node:node apps/api ./apps/api
-RUN npm run build -w @pulse/contracts \
+RUN npm run build -w @pulse/contracts && npm run build -w @pulse/quote-calculator \
   && npm run prisma:generate -w @pulse/api
 
 USER node
@@ -54,7 +58,8 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN npm ci --omit=dev -w @pulse/contracts -w @pulse/api
+COPY packages/quote-calculator/package.json ./packages/quote-calculator/package.json
+RUN npm ci --omit=dev -w @pulse/contracts -w @pulse/quote-calculator -w @pulse/api
 
 FROM ${NODE_BASE_IMAGE} AS production
 
@@ -67,6 +72,7 @@ COPY --chown=node:node --from=production-deps /workspace/apps ./apps
 COPY --chown=node:node --from=production-deps /workspace/packages ./packages
 COPY --chown=node:node --from=build /workspace/apps/api/dist ./apps/api/dist
 COPY --chown=node:node --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
+COPY --chown=node:node --from=build /workspace/packages/quote-calculator/dist ./packages/quote-calculator/dist
 
 EXPOSE 3000
 USER node

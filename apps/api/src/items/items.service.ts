@@ -1,5 +1,5 @@
 import { calendarBoundary, nextCalendarDate } from "@pulse/contracts/list-dates";
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type {
   CreateItemInput,
   ItemDetailResponse,
@@ -115,6 +115,9 @@ export function toItemRecord(item: ItemWithRelations): ItemRecord {
     quoteDescription: item.quoteDescription ?? "",
     defaultLaborHours: Number(item.defaultLaborHours),
     defaultLaborItemId: item.defaultLaborItemId,
+    defaultProductionRate: item.defaultProductionRate == null ? null : Number(item.defaultProductionRate),
+    defaultCrewSize: item.defaultCrewSize == null ? null : Number(item.defaultCrewSize),
+    defaultLaborClassId: item.defaultLaborClassId ?? null,
     createdAt: dateOutput(item.createdAt),
     updatedAt: dateOutput(item.updatedAt),
     relations: item.outgoingRelations.map(toRelationRecord)
@@ -146,7 +149,10 @@ function createItemData(
     internalNotes: nullable(input.internalNotes),
     quoteDescription: nullable(input.quoteDescription),
     defaultLaborHours: input.defaultLaborHours,
-    defaultLaborItemId: input.defaultLaborItemId || null
+    defaultLaborItemId: input.defaultLaborItemId || null,
+    defaultProductionRate: input.defaultProductionRate,
+    defaultCrewSize: input.defaultCrewSize,
+    defaultLaborClassId: input.defaultLaborClassId
   };
 }
 
@@ -154,6 +160,9 @@ function updateItemData(
   input: UpdateItemInput
 ): Prisma.ItemUncheckedUpdateInput {
   return {
+    ...(input.defaultProductionRate !== undefined ? { defaultProductionRate: input.defaultProductionRate } : {}),
+    ...(input.defaultCrewSize !== undefined ? { defaultCrewSize: input.defaultCrewSize } : {}),
+    ...(input.defaultLaborClassId !== undefined ? { defaultLaborClassId: input.defaultLaborClassId } : {}),
     ...(input.name !== undefined ? { name: input.name } : {}),
     ...(input.description !== undefined
       ? { description: nullable(input.description) }
@@ -389,6 +398,10 @@ export class ItemsService {
 
   async createItem(input: CreateItemInput): Promise<ItemRecord> {
     const created = await this.prisma.$transaction(async (tx) => {
+      if (input.defaultLaborClassId) {
+        const role = await tx.quoteLaborClass.findUnique({ where: { id: input.defaultLaborClassId } });
+        if (!role?.enabled) throw new BadRequestException("Choose an active company labor class.");
+      }
       await this.itemRelations.validateDefaultLaborItem(
         tx,
         input.defaultLaborItemId,
@@ -424,6 +437,7 @@ export class ItemsService {
         where: { id },
         select: {
           defaultLaborItemId: true,
+          defaultLaborClassId: true,
           defaultLaborHours: true,
           cost: true,
           sellPrice: true
@@ -432,6 +446,11 @@ export class ItemsService {
 
       if (!existing) {
         throw new Error("ITEM_NOT_FOUND");
+      }
+      // Preserve an unchanged disabled reference; only a newly selected default must be active.
+      if (input.defaultLaborClassId && input.defaultLaborClassId !== existing.defaultLaborClassId) {
+        const role = await tx.quoteLaborClass.findUnique({ where: { id: input.defaultLaborClassId } });
+        if (!role?.enabled) throw new BadRequestException("Choose an active company labor class.");
       }
 
       const defaultLaborItemId =

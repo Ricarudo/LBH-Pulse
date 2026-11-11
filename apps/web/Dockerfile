@@ -7,15 +7,17 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN npm ci -w @pulse/contracts -w @pulse/web
+COPY packages/quote-calculator/package.json ./packages/quote-calculator/package.json
+RUN npm ci -w @pulse/contracts -w @pulse/quote-calculator -w @pulse/web
 
 FROM workspace-deps AS dev
 
 ENV NODE_ENV=development
 
 COPY packages/contracts ./packages/contracts
+COPY packages/quote-calculator ./packages/quote-calculator
 COPY apps/web ./apps/web
-RUN npm run build -w @pulse/contracts
+RUN npm run build -w @pulse/contracts && npm run build -w @pulse/quote-calculator
 
 EXPOSE 4300
 CMD ["npm", "run", "dev:web"]
@@ -28,8 +30,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PULSE_API_URL=${PULSE_API_URL}
 
 COPY packages/contracts ./packages/contracts
+COPY packages/quote-calculator ./packages/quote-calculator
 COPY apps/web ./apps/web
-RUN npm run build -w @pulse/contracts \
+RUN npm run build -w @pulse/contracts && npm run build -w @pulse/quote-calculator \
   && npm run build -w @pulse/web
 
 FROM ${NODE_BASE_IMAGE} AS production-deps
@@ -40,7 +43,8 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN npm ci --omit=dev -w @pulse/contracts -w @pulse/web
+COPY packages/quote-calculator/package.json ./packages/quote-calculator/package.json
+RUN npm ci --omit=dev -w @pulse/contracts -w @pulse/quote-calculator -w @pulse/web
 
 FROM ${NODE_BASE_IMAGE} AS production
 
@@ -57,6 +61,7 @@ COPY --chown=node:node --from=build /workspace/apps/web/.next ./apps/web/.next
 COPY --chown=node:node --from=build /workspace/apps/web/next.config.ts ./apps/web/next.config.ts
 COPY --chown=node:node --from=build /workspace/apps/web/public ./apps/web/public
 COPY --chown=node:node --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
+COPY --chown=node:node --from=build /workspace/packages/quote-calculator/dist ./packages/quote-calculator/dist
 
 EXPOSE 4300
 USER node

@@ -1,6 +1,7 @@
 import { UpdateAuditService } from "@/lib/services/updateAuditService";
 import { UpdatesController } from "@/controllers/updates.controller";
 import { Module } from "@nestjs/common";
+import { QuoteBuilderModule } from "@/modules/quote-builder/quote-builder.module";
 import { AuditController } from "@/controllers/audit.controller";
 import { AnalyticsController } from "@/controllers/analytics.controller";
 import { AuthController } from "@/controllers/auth.controller";
@@ -25,6 +26,7 @@ import { ActivityRetentionService } from "@/lib/services/activityRetentionServic
 
 @Module({
   imports: [
+    QuoteBuilderModule,
     AuthModule,
     PrismaModule,
     ItemsModule,

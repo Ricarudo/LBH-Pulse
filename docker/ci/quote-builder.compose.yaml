@@ -1,0 +1,29 @@
+name: pulse-builder-verification
+services:
+  database:
+    image: postgres:16.14-alpine
+    command: ["postgres", "-c", "search_path=pulse,public"]
+    environment:
+      POSTGRES_DB: builder_test
+      POSTGRES_USER: builder_test
+      POSTGRES_PASSWORD: disposable-test-only
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "builder_test", "-d", "builder_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    tmpfs: [/var/lib/postgresql/data]
+  checks:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    working_dir: /workspace/apps/api
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://builder_test:disposable-test-only@database:5432/builder_test?schema=pulse
+      PULSE_RUN_DB_TESTS: "1"
+    command: ["sh", "-c", "npm run prisma:generate && npx prisma migrate deploy --config prisma.config.ts && node --test --import tsx src/modules/quote-builder/*.spec.ts src/items/items.service.spec.ts src/modules/quotes/quote-modes.integration.spec.ts"]
+    depends_on:
+      database:
+        condition: service_healthy

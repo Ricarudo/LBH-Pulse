@@ -3,6 +3,7 @@ import { maintenanceMiddleware } from "@/shared/maintenance";
 import { NestFactory } from "@nestjs/core";
 import type { NextFunction, Request, Response } from "express";
 import { parseRuntimeEnvironment, assertProductionDatabaseSafety } from "@/config/runtimeEnvironment";
+import { builderBodyParser } from "@/modules/quote-builder/builder-body-parser";
 
 async function bootstrap() {
   const config = parseRuntimeEnvironment();
@@ -29,6 +30,7 @@ async function bootstrap() {
   const csrf = app.get(CsrfMiddleware);
   app.use(maintenanceMiddleware);
   app.use((request: Request, response: Response, next: NextFunction) => csrf.use(request, response, next, auth));
+  app.use("/api/quotes/:quoteId/builder", builderBodyParser);
   app.enableShutdownHooks();
 
   await assertProductionDatabaseSafety(config);

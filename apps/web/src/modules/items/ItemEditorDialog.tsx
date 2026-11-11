@@ -1,6 +1,9 @@
 "use client";
 
 import type { Dispatch, FormEvent, SetStateAction } from "react";
+import { useEffect, useState } from "react";
+import type { LaborClass } from "@pulse/contracts/quote-builder";
+import { loadCalculationConfiguration } from "@/lib/api/quoteBuilder";
 import { Plus, X } from "lucide-react";
 import { ViewportPortal } from "@/components/ViewportPortal";
 import {
@@ -43,6 +46,9 @@ export type ItemDraft = {
   quoteDescription: string;
   defaultLaborHours: string;
   defaultLaborItemId: string;
+  defaultProductionRate: string;
+  defaultCrewSize: string;
+  defaultLaborClassId: string;
   relations: ItemRelationDraft[];
 };
 
@@ -69,6 +75,9 @@ export const blankDraft: ItemDraft = {
   quoteDescription: "",
   defaultLaborHours: "0",
   defaultLaborItemId: "",
+  defaultProductionRate: "",
+  defaultCrewSize: "",
+  defaultLaborClassId: "",
   relations: []
 };
 
@@ -96,6 +105,9 @@ export function draftFromItem(item: ItemRecord): ItemDraft {
     quoteDescription: item.quoteDescription,
     defaultLaborHours: String(item.defaultLaborHours),
     defaultLaborItemId: item.defaultLaborItemId ?? "",
+    defaultProductionRate: item.defaultProductionRate == null ? "" : String(item.defaultProductionRate),
+    defaultCrewSize: item.defaultCrewSize == null ? "" : String(item.defaultCrewSize),
+    defaultLaborClassId: item.defaultLaborClassId ?? "",
     relations: item.relations.map((relation) => ({
       childItemId: relation.childItemId,
       relationType: relation.relationType,
@@ -113,6 +125,9 @@ export function payloadFromDraft(draft: ItemDraft) {
     markupPercent: Number(draft.markupPercent || 0),
     defaultLaborHours: Number(draft.defaultLaborHours || 0),
     defaultLaborItemId: draft.defaultLaborItemId,
+    defaultProductionRate: draft.defaultProductionRate.trim() ? Number(draft.defaultProductionRate) : null,
+    defaultCrewSize: draft.defaultCrewSize.trim() ? Number(draft.defaultCrewSize) : null,
+    defaultLaborClassId: draft.defaultLaborClassId || null,
     relations: draft.relations
       .filter((relation) => relation.childItemId)
       .map((relation) => ({
@@ -143,6 +158,13 @@ export function ItemEditorDialog({
   onClose,
   onSubmit
 }: ItemEditorDialogProps) {
+  const [laborClasses, setLaborClasses] = useState<LaborClass[]>([]);
+  const [classesError, setClassesError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadCalculationConfiguration(controller.signal).then(value => setLaborClasses(value.configuration.laborClasses)).catch(error => { if (!controller.signal.aborted) setClassesError(error.message); });
+    return () => controller.abort();
+  }, []);
   function addRelation() {
     setDraft((current) => ({
       ...current,
@@ -197,6 +219,11 @@ export function ItemEditorDialog({
           <label className="material-field"><span>Cost</span><input min="0" step="0.01" type="number" value={draft.cost} onChange={(event) => setDraft({ ...draft, cost: event.target.value })} /></label>
           <label className="material-field"><span>Sell Price</span><input min="0" step="0.01" type="number" value={draft.sellPrice} onChange={(event) => setDraft({ ...draft, sellPrice: event.target.value })} /></label>
           <label className="material-field"><span>Markup %</span><input min="0" step="0.01" type="number" value={draft.markupPercent} onChange={(event) => setDraft({ ...draft, markupPercent: event.target.value })} /></label>
+          <fieldset className="item-field-wide qb-item-defaults"><legend>Builder estimating defaults (optional)</legend><p>Production rate is quantity units completed by this crew per ideal working hour. Quote-line overrides do not change these defaults.</p><div className="qb-fields">
+            <label className="material-field"><span>Production rate ({draft.unitOfMeasure || "units"} / crew-hour)</span><input type="number" min="0.00000001" step="any" value={draft.defaultProductionRate} onChange={event => setDraft({ ...draft, defaultProductionRate: event.target.value })} placeholder="Not set" /></label>
+            <label className="material-field"><span>Default crew size</span><input type="number" min="0.001" step="0.001" value={draft.defaultCrewSize} onChange={event => setDraft({ ...draft, defaultCrewSize: event.target.value })} placeholder="Not set" /></label>
+            <label className="material-field"><span>Default labor class</span><select value={draft.defaultLaborClassId} onChange={event => setDraft({ ...draft, defaultLaborClassId: event.target.value })}><option value="">Not set</option>{draft.defaultLaborClassId && !laborClasses.some(role => role.id === draft.defaultLaborClassId) ? <option value={draft.defaultLaborClassId}>Current reference (unavailable)</option> : null}{laborClasses.map(role => <option key={role.id} value={role.id} disabled={!role.enabled}>{role.name}{!role.enabled ? " (disabled)" : ""}</option>)}</select></label>
+          </div>{classesError ? <p role="alert">{classesError} Existing defaults are retained.</p> : null}</fieldset>
           <label className="material-field"><span>Default Labor Hours</span><input min="0" step="0.25" type="number" value={draft.defaultLaborHours} onChange={(event) => setDraft({ ...draft, defaultLaborHours: event.target.value })} /></label>
           <label className="material-field"><span>Default Labor Item</span><select value={draft.defaultLaborItemId} onChange={(event) => setDraft({ ...draft, defaultLaborItemId: event.target.value, ...(event.target.value ? {} : { defaultLaborHours: "0" }) })}><option value="">None</option>{items.filter((item) => item.itemType === "LABOR" && item.status === "ACTIVE").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label className="material-field item-checkbox-field"><span>Taxable</span><input type="checkbox" checked={draft.taxable} onChange={(event) => setDraft({ ...draft, taxable: event.target.checked })} /></label>

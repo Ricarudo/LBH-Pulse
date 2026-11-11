@@ -113,6 +113,7 @@ services:
     volumes:
       - ./apps/api:/workspace/apps/api
       - ./packages/contracts:/workspace/packages/contracts
+      - ./packages/quote-calculator:/workspace/packages/quote-calculator
       - api-workspace-node-modules:/workspace/apps/api/node_modules
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health/live"]
@@ -147,6 +148,7 @@ services:
     volumes:
       - ./apps/api:/workspace/apps/api
       - ./packages/contracts:/workspace/packages/contracts
+      - ./packages/quote-calculator:/workspace/packages/quote-calculator
       - api-workspace-node-modules:/workspace/apps/api/node_modules
     depends_on:
       postgres:
@@ -168,6 +170,7 @@ services:
     volumes:
       - ./apps/web:/workspace/apps/web
       - ./packages/contracts:/workspace/packages/contracts
+      - ./packages/quote-calculator:/workspace/packages/quote-calculator
       - web-workspace-node-modules:/workspace/apps/web/node_modules
       - web-next:/workspace/apps/web/.next
     healthcheck:

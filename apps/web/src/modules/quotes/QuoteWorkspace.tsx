@@ -92,6 +92,7 @@ import {
 } from "@/lib/forms/quoteDetails";
 import type { FieldErrors } from "@/lib/forms/sanitization";
 import { QuoteUpdatesPanel } from "./QuoteUpdatesPanel";
+import { PulseQuoteBuilder } from "./builder/PulseQuoteBuilder";
 
 type QuoteWorkspaceProps = {
   quoteId: string;
@@ -239,6 +240,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
   const [adHocDraft, setAdHocDraft] = useState<AdHocDraft>(blankAdHoc);
   const [proposalNotes, setProposalNotes] = useState("");
   const [activeTab, setActiveTab] = useState<LifecycleTab>(initialTab);
+  const [workTab, setWorkTab] = useState<"builder" | "analysis" | "proposal">("builder");
   const [detailsEditing, setDetailsEditing] = useState(false);
   const [quoteDetailsDraft, setQuoteDetailsDraft] = useState<QuoteDetailsDraft | null>(null);
   const [quoteDetailsErrors, setQuoteDetailsErrors] = useState<FieldErrors<QuoteDetailsField>>({});
@@ -870,12 +872,6 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
     return <section className="quote-workspace"><div className="work-queue-state error">{loadError || "Quote not found."}</div></section>;
   }
 
-  const financiallyEmpty = quote.items.length === 0 &&
-    quote.financialSummary.preTaxContractValue === 0 &&
-    quote.financialSummary.totalEstimatedCost === 0 &&
-    quote.financialSummary.taxAmount === 0 &&
-    (quote.financialSummary.estimatedDurationBusinessDays === null ||
-      quote.financialSummary.estimatedDurationBusinessDays === 0);
   const collaboratorDirectory = new Map(
     [...quote.collaborators, ...assignees].map((collaborator) => [collaborator.id, collaborator])
   );
@@ -946,20 +942,10 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
               <RotateCcw size={16} />Request revision
             </button>
           ) : null}
-          {quote.status === "Draft" && (!quote.projectId || quote.projectReference?.calculationModeLocked === false) ? (
-            <button
-              className="toolbar-button compact"
-              type="button"
-              disabled={!canWrite || busy}
-              onClick={() => requestModeChange(quote.calculationMode === "LEGACY" ? "PULSE" : "LEGACY")}
-            >
-              Switch to {quote.calculationMode === "LEGACY" ? "Pulse" : "Legacy"}
-            </button>
-          ) : null}
           {quote.status === "Approved" && !quote.projectId ? (
             <button className="primary-button compact" type="button" disabled={!canWrite || busy} onClick={openProjectHandoff}>Complete project handoff</button>
           ) : null}
-          {quote.calculationMode === "PULSE" ? <>
+          {quote.calculationMode === "PULSE" && quote.items.length > 0 ? <>
             <button className="toolbar-button compact" type="button" onClick={() => setAdHocOpen(true)} disabled={!canEditFinancials}><Plus size={16} />Ad hoc line</button>
             <button className="primary-button compact" type="button" onClick={() => setAddOpen(true)} disabled={!canEditFinancials}><PackagePlus size={16} />Add Item</button>
           </> : null}
@@ -1080,6 +1066,21 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
           </button>
         ))}
       </div>
+
+      {activeTab === "work" ? <div className="qb-work-navigation">
+        <div role="tablist" aria-label="Quote work views">{(["builder", "analysis", "proposal"] as const).map(tab => <button key={tab} type="button" role="tab" aria-selected={workTab === tab} onClick={() => setWorkTab(tab)}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
+        <span className="quote-mode-badge">{quote.calculationMode === "LEGACY" ? "Legacy Quote" : "Pulse Quote"}</span>
+          {quote.status === "Draft" && (!quote.projectId || quote.projectReference?.calculationModeLocked === false) ? (
+            <button
+              className="toolbar-button compact"
+              type="button"
+              disabled={!canWrite || busy}
+              onClick={() => requestModeChange(quote.calculationMode === "LEGACY" ? "PULSE" : "LEGACY")}
+            >
+              Switch to {quote.calculationMode === "LEGACY" ? "Pulse" : "Legacy"}
+            </button>
+          ) : null}
+      </div> : null}
 
       {activeTab === "details" ? (
         <section className={`lifecycle-details-panel quote-lifecycle-details${detailsEditing ? " is-editing" : ""}`}>
@@ -1301,29 +1302,6 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
         } : current)}
       /> : null}
 
-      {activeTab === "work" && quote.status === "Draft" && !quote.projectId && financiallyEmpty ? (
-        <section className="quote-empty-mode-selector" aria-labelledby="empty-quote-mode-heading">
-          <div><span>Calculation setup</span><h2 id="empty-quote-mode-heading">How should this quote be built?</h2><p>You can switch freely while this draft remains financially empty.</p></div>
-          <div className="quote-mode-options">
-            {([
-              ["LEGACY", "Legacy Quote", "Enter summarized values calculated outside Pulse."],
-              ["PULSE", "Pulse Quote", "Build and calculate the quote using Pulse line items."]
-            ] as const).map(([mode, label, description]) => (
-              <button
-                className={`quote-mode-option${quote.calculationMode === mode ? " selected" : ""}`}
-                type="button"
-                key={mode}
-                disabled={!canEditFinancials || busy || quote.calculationMode === mode}
-                onClick={() => requestModeChange(mode)}
-              >
-                <span><strong>{label}</strong><small>{description}</small></span>
-                {quote.calculationMode === mode ? <em>Selected</em> : null}
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       {activeTab === "work" && quoteCommercialContentLocked(quote) ? (
         <section className="settings-callout" aria-label="Quote commercial content lock">
           <Lock size={17} />
@@ -1331,7 +1309,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
         </section>
       ) : null}
 
-      {activeTab === "work" ? <div className="quote-workspace-grid lifecycle-work-grid">
+      {activeTab === "work" && workTab === "builder" && (quote.calculationMode === "LEGACY" || quote.items.length > 0) ? <div className="quote-workspace-grid lifecycle-work-grid">
         {quote.calculationMode === "LEGACY" && legacyFinancialDraft ? (
           <form className="quote-bom-panel quote-legacy-panel" onSubmit={saveLegacyFinancials}>
             <div className="panel-header">
@@ -1426,6 +1404,15 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
             <p>{quote.calculationMode === "PULSE" ? `${quote.items.length} BOM line${quote.items.length === 1 ? "" : "s"}` : "Summary-based quote"}</p>
             <SummaryMetrics summary={quote.financialSummary} />
           </section>
+
+        </aside>
+      </div> : null}
+
+      {quote.items.length === 0 ? <div hidden={activeTab !== "work" || workTab === "proposal" || quote.calculationMode !== "PULSE"}>
+        <PulseQuoteBuilder key={quote.id} quoteId={quote.id} enabled={quote.calculationMode === "PULSE"} canEdit={canEditFinancials} tab={workTab === "analysis" ? "analysis" : "builder"} />
+      </div> : null}
+      {activeTab === "work" && workTab === "analysis" && (quote.calculationMode === "LEGACY" || quote.items.length > 0) ? <section className="qb-empty"><h2>Builder Analysis</h2><p>{quote.calculationMode === "LEGACY" ? "Legacy Quote uses its existing summarized financials." : "This populated PULSE quote uses the compatibility BOM editor."} Analysis requires Pulse Builder estimating inputs. Existing financials remain available in Builder.</p></section> : null}
+      {activeTab === "work" && workTab === "proposal" ? <section className="qb-proposal-placeholder"><h2>Proposal</h2><p>Proposal composition is planned for a later pass. The Builder provides descriptions, quantities, group organization, rounded customer prices, totals, and separate tax components for that future view.</p>
           <section className="quote-proposal-panel">
             <div className="settings-section-title">
               <div><h3>Proposal Preparation</h3><p>Reserved space for future proposal package, review, and export features.</p></div>
@@ -1443,8 +1430,7 @@ export function QuoteWorkspace({ quoteId, initialTab = "work" }: QuoteWorkspaceP
               <Save size={15} />Save prep
             </button>
           </section>
-        </aside>
-      </div> : null}
+      </section> : null}
 
       {activeTab === "files" ? (
         <section className="work-record-surface request-supporting-panel">

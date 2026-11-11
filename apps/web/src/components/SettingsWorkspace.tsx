@@ -1,6 +1,7 @@
 "use client";
 
 import { SettingsUpdatesSection } from "@/components/SettingsUpdatesSection";
+import { SettingsQuoteCalculationSection } from "@/components/SettingsQuoteCalculationSection";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -42,6 +43,7 @@ export type SettingsSection =
   | "appearance"
   | "privacy"
   | "general"
+  | "quote-calculation"
   | "users"
   | "roles"
   | "request-checklists"
@@ -57,6 +59,7 @@ const personalTabs = [
 ] as const;
 
 const adminTabs = [
+  { key: "quote-calculation", label: "Quote calculation", icon: FileSpreadsheet },
   { key: "general", label: "General", icon: Building2 },
   { key: "request-checklists", label: "Request checklists", icon: ClipboardCheck },
   { key: "import-export", label: "Import / Export", icon: FileSpreadsheet },
@@ -359,6 +362,7 @@ export function SettingsWorkspace({ section }: { section: SettingsSection }) {
         {active === "appearance" ? <AppearanceSection /> : null}
         {active === "privacy" ? <SettingsPrivacySection /> : null}
         {active === "general" ? <GeneralSection canManage={canUser(user, "settings:write")} /> : null}
+        {active === "quote-calculation" ? <SettingsQuoteCalculationSection canManage={canUser(user, "settings:write")} /> : null}
         {active === "users" && user ? <SettingsAccountsSection currentUserId={user.id} currentUserIsSystemAdmin={user.isSystemAdmin} /> : null}
         {active === "roles" ? <SettingsRolesSection /> : null}
         {active === "audit" ? <SettingsAuditSection /> : null}

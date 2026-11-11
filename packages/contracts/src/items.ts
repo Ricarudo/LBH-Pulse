@@ -52,6 +52,10 @@ export type ItemRecord = {
   quoteDescription: string;
   defaultLaborHours: number;
   defaultLaborItemId: string | null;
+  /** Quantity units completed by the configured crew per ideal working hour. */
+  defaultProductionRate?: number | null;
+  defaultCrewSize?: number | null;
+  defaultLaborClassId?: string | null;
   createdAt: string;
   updatedAt: string;
   relations: ItemRelationRecord[];
@@ -216,6 +220,9 @@ const itemFieldsSchema = z.object({
   internalNotes: textField({ max: 4000 }),
   quoteDescription: textField({ max: 2000 }),
   defaultLaborHours: z.coerce.number().min(0).max(9999),
+  defaultProductionRate: z.coerce.number().positive().max(999999999).refine(value => Number(value.toFixed(8)) === value, "Production rate supports up to eight decimal places.").nullable().optional(),
+  defaultCrewSize: z.coerce.number().positive().max(9999).refine(value => Number(value.toFixed(3)) === value, "Crew size supports up to three decimal places.").nullable().optional(),
+  defaultLaborClassId: z.string().trim().min(1).nullable().optional(),
   defaultLaborItemId: z.string().trim().optional().transform((value) => value ?? "")
 }).strict();
 

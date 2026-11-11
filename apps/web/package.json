@@ -8,7 +8,11 @@
     "start": "next start --hostname 0.0.0.0 --port 4300",
     "typecheck": "node scripts/clear-next-types.mjs && next typegen && tsc --noEmit",
     "test": "node --test --import tsx src/lib/*.spec.ts",
-    "responsive:check": "node scripts/check-responsive-breakpoints.mjs"
+    "responsive:check": "node scripts/check-responsive-breakpoints.mjs",
+    "predev": "npm run build:shared --prefix ../..",
+    "prebuild": "npm run build:shared --prefix ../..",
+    "pretypecheck": "npm run build:shared --prefix ../..",
+    "pretest": "npm run build:shared --prefix ../.."
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -20,7 +24,8 @@
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "react-is": "^19.2.6",
-    "recharts": "^3.9.2"
+    "recharts": "^3.9.2",
+    "@pulse/quote-calculator": "*"
   },
   "devDependencies": {
     "@types/node": "25.6.2",

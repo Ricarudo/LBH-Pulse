@@ -37,6 +37,9 @@ function catalogItem(
     quoteDescription: null,
     defaultLaborHours: new Prisma.Decimal(0),
     defaultLaborItemId: null,
+    defaultProductionRate: null,
+    defaultCrewSize: null,
+    defaultLaborClassId: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-02T00:00:00.000Z"),
     outgoingRelations: [],
@@ -296,6 +299,25 @@ test("item deletion is a soft transition to inactive", async () => {
     (updateQuery as { where: unknown; data: unknown }).data,
     { status: "INACTIVE" }
   );
+});
+
+test("estimating default edits leave legacy labor and Item price history untouched", async () => {
+  let updateData: Record<string, unknown> = {};
+  const original = catalogItem({ defaultLaborClassId: "disabled-existing", defaultLaborHours: new Prisma.Decimal(7), defaultLaborItemId: "legacy-labor" });
+  const transaction = {
+    item: {
+      findUnique: async ({ where }: { where: { id: string } }) => where.id === "legacy-labor" ? { itemType: "LABOR", status: "ACTIVE" } : original,
+      update: async ({ data }: { data: Record<string, unknown> }) => { updateData = data; return original; },
+      findUniqueOrThrow: async () => ({ ...original, defaultProductionRate: new Prisma.Decimal(1500), defaultCrewSize: new Prisma.Decimal(4) })
+    },
+    // No history writer or labor-class lookup: unchanged disabled references are preserved.
+  };
+  const db = { $transaction: async (callback: (tx: unknown) => unknown) => callback(transaction) } as unknown as PrismaClient;
+  const result = await new ItemsService(db, new ItemRelationsService()).updateItem(original.id, { defaultProductionRate: 1500, defaultCrewSize: 4, defaultLaborClassId: "disabled-existing" });
+  assert.equal(result.defaultProductionRate, 1500);
+  assert.equal(result.defaultLaborHours, 7);
+  assert.equal("defaultLaborHours" in updateData, false);
+  assert.equal("defaultLaborItemId" in updateData, false);
 });
 
 test("popup filters and sell-price ordering reach the database before the catalog cap", async () => {
