@@ -100,6 +100,8 @@ export type AnalyticsCalculation = {
 
 export type AnalyticsMetricQuality = {
   status: AnalyticsQualityStatus;
+  /** Distinguishes source permissions and an accessible empty selection from historical quality. */
+  availabilityReason?: "restricted" | "no_records";
   knownCount: number;
   eligibleCount: number;
   exactCount?: number;

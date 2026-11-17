@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import type { Request } from "express";
 import type { AuthenticatedUser } from "@pulse/contracts/auth";
 import { addAdHocQuoteItemSchema } from "@pulse/contracts/items";
+import { ProjectsController } from "@/controllers/projects.controller";
+import { QuotesController } from "@/controllers/quotes.controller";
+import { QuotesService } from "./quotes.service";
 import { prisma } from "@/lib/db";
+import { AuthError, AuthService } from "@/shared/auth.service";
 import {
   addAdHocQuoteItem,
-  convertQuoteToProject,
   createQuoteRevision,
   getQuoteRevision,
   getQuoteById,
@@ -303,7 +307,7 @@ test("marking a quote sent freezes finances and Administrator undo restores edit
   }
 });
 
-test("project conversion snapshots Legacy finances and excludes tax from the budget", { skip: !runDatabaseTests }, async () => {
+test("Project creation requires both permissions and snapshots Legacy finances before tax", { skip: !runDatabaseTests }, async (t) => {
   const client = await prisma.client.create({
     data: { clientNumber: key("CLIENT"), displayName: "Quote conversion client" }
   });
@@ -327,6 +331,29 @@ test("project conversion snapshots Legacy finances and excludes tax from the bud
       status: "Draft"
     }
   });
+  const roleName = key("handoff-role");
+  const role = await prisma.accessRole.create({ data: { id: key("HANDOFF-ROLE"), name: roleName, normalizedName: roleName.toLowerCase() } });
+  const account = await prisma.localUser.create({
+    data: { name: "Handoff User", email: `${randomUUID()}@example.test`, role: role.id, passwordHash: "unused" }
+  });
+  let permissions: AuthenticatedUser["permissions"] = ["projects:write"];
+  const auth = new AuthService();
+  t.mock.method(auth, "getCurrentUser", async (): Promise<AuthenticatedUser> => ({
+    id: account.id,
+    name: account.name,
+    email: account.email,
+    role: role.id,
+    roleLabel: role.name,
+    accessRole: { id: role.id, name: role.name, color: role.color },
+    permissions,
+    isSystemAdmin: false,
+    mustChangePassword: false,
+    authProvider: "LOCAL"
+  }));
+  const projects = new ProjectsController(auth);
+  const quotes = new QuotesController(auth, new QuotesService());
+  const request = { headers: {} } as Request;
+  const input = { title: quote.title, clientId: client.id, quoteId: quote.id };
   try {
     await replaceLegacyQuoteFinancials(quote.id, {
       materialSale: 1000,
@@ -337,17 +364,41 @@ test("project conversion snapshots Legacy finances and excludes tax from the bud
       estimatedDurationBusinessDays: 12
     });
     await markQuoteSent(quote.id);
-    const project = await convertQuoteToProject(quote.id, {
-      startDate: undefined,
-      dueDate: undefined
-    });
+    const sent = await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } });
+    const lifecycle = { entityType: "QUOTE", entityId: quote.id } as const;
+    const sentEvents = await prisma.lifecycleStatusEvent.findMany({ where: lifecycle, orderBy: { id: "asc" } });
+    for (const permission of ["projects:write", "quotes:write"] as const) {
+      permissions = [permission];
+      await assert.rejects(
+        projects.create(request, input),
+        (error: unknown) => error instanceof AuthError && error.status === 403
+      );
+      await assert.rejects(
+        quotes.approve(request, quote.id, {}),
+        (error: unknown) => error instanceof AuthError && error.status === 403
+      );
+      assert.deepEqual(await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } }), sent);
+      assert.equal(await prisma.project.count({ where: { quoteId: quote.id } }), 0);
+      assert.equal(await prisma.projectQuote.count({ where: { quoteId: quote.id } }), 0);
+      assert.deepEqual(await prisma.lifecycleStatusEvent.findMany({ where: lifecycle, orderBy: { id: "asc" } }), sentEvents);
+    }
+
+    permissions = ["projects:write", "quotes:write"];
+    const { project } = await projects.create(request, input);
+    assert.equal((await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } })).status, "Approved");
     assert.equal(project.budget, 1500);
     assert.equal(project.sourceQuoteCalculationMode, "LEGACY");
     assert.equal(project.quoteFinancialSnapshot?.financialSummary.taxAmount, 120);
     assert.equal(project.quoteFinancialSnapshot?.financialSummary.finalCustomerTotal, 1620);
     assert.equal(project.dueDate, "");
+    const approved = await quotes.approve(request, quote.id, {});
+    assert.equal(approved.quote.status, "Approved");
+    assert.equal(approved.project.id, project.id);
+    assert.equal(await prisma.projectQuote.count({ where: { quoteId: quote.id } }), 1);
   } finally {
     await cleanupQuote(quote.id);
+    await prisma.localUser.delete({ where: { id: account.id } });
+    await prisma.accessRole.delete({ where: { id: role.id } });
     await prisma.client.deleteMany({ where: { id: client.id } });
   }
 });

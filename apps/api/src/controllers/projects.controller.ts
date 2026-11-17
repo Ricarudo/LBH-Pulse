@@ -57,7 +57,7 @@ export class ProjectsController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
   @Get() async list(@Req() request: Request) { await this.auth.requireUser(request, "projects:read"); return { projects: await listProjects() }; }
   @Post() async create(@Req() request: Request, @Body() body: unknown) {
-    const user = await this.auth.requireUser(request, "projects:write");
+    const user = await this.auth.requireUser(request, { allOf: ["quotes:write", "projects:write"] });
     return { project: await createProject(createProjectSchema.parse(body), user) };
   }
   @Get("team-members") async teamMembers(@Req() request: Request) {

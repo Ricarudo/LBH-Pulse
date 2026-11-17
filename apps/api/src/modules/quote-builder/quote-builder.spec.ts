@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ConflictException } from "@nestjs/common";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { emptyBuilderWorkspace, type CalculationConfiguration } from "@pulse/contracts/quote-builder";
+import { emptyBuilderWorkspace, type BuilderLine, type CalculationConfiguration } from "@pulse/contracts/quote-builder";
 import { QuoteBuilderService } from "./quote-builder.service";
 import { CalculationConfigService, configurationIdentifier } from "./calculation-config.service";
 import { initialCalculationSettings } from "./calculation-settings";
@@ -12,9 +12,14 @@ function setup() {
   const quote = { id: "q", archivedAt: null, status: "Draft", sentAt: null, calculationMode: "PULSE" };
   const configuration: CalculationConfiguration = { ...initialCalculationSettings, laborClasses: [] };
   let bomCount = 0;
+  const catalog = [{ id: "item", status: "ACTIVE", cost: "1.001", name: "Original catalog label" }];
   // Deliberately no writers for Quote, Item, Updates, Files, or lifecycle tables.
   const db = {
     quote: { findUnique: async () => quote }, quoteItem: { count: async () => bomCount },
+    item: {
+      findMany: async ({ where }: { where: { id: { in: string[] }; status: string } }) =>
+        catalog.filter(item => where.id.in.includes(item.id) && item.status === where.status)
+    },
     $queryRaw: async () => [{ id: "q" }],
     quoteBuilderWorkspace: {
       findUnique: async () => saved,
@@ -24,7 +29,7 @@ function setup() {
     $transaction: async <T>(callback: (tx: unknown) => T) => callback(db)
   };
   const config = { read: async () => ({ configuration: structuredClone(configuration), configurationId: configurationIdentifier(configuration) }) } as CalculationConfigService;
-  return { service: new QuoteBuilderService(db as unknown as PrismaClient, config), configuration, quote, setBomCount: (n: number) => { bomCount = n; }, getSaved: () => saved };
+  return { service: new QuoteBuilderService(db as unknown as PrismaClient, config), configuration, quote, catalog, setBomCount: (n: number) => { bomCount = n; }, getSaved: () => saved };
 }
 
 test("load is read-only and isolated saves round-trip incomplete working state", async () => {
@@ -118,4 +123,99 @@ test("server verification rejects class/role changes and accepts equivalent envi
   ctx.configuration.indirectRoles[0].weeklyCost = "101";
   await assert.rejects(ctx.service.calculate("q", loaded.state, loaded.configurationId), ConflictException);
   assert.equal(ctx.getSaved(), null);
+});
+
+function estimatingLine(): BuilderLine {
+  return {
+    id: "line", itemId: null, itemFacts: null, name: "Quote-specific label", unit: "ft",
+    proposalDescription: "", imageUrl: null, groupId: null, order: 0, quantity: "2",
+    mode: "MATERIAL_ONLY", origins: {},
+    material: {
+      baseUnitCost: "1.001", margin: "0", contingency: "0", freight: "0",
+      materialIvuEnabled: false, materialIvuRate: null
+    },
+    labor: { laborClassId: "a", productionRate: "1", crewSize: "2", overtimeMultiplier: "1" }
+  };
+}
+
+test("a stale editor retains its draft and cannot replace a newer saved revision", async () => {
+  const { service, quote } = setup();
+  const originalQuote = structuredClone(quote);
+  const initial = await service.load("q");
+  const first = await service.save("q", { state: initial.state, expectedWriteToken: initial.writeToken });
+  const editorA = await service.load("q");
+  const editorB = await service.load("q");
+  assert.equal(editorA.writeToken, first.writeToken);
+  assert.equal(editorB.writeToken, first.writeToken);
+
+  editorA.state.projectCosts.travelTotal = "10";
+  editorB.state.projectCosts.travelTotal = "20";
+  const draft = structuredClone(editorB.state);
+  const latest = await service.save("q", { state: editorA.state, expectedWriteToken: editorA.writeToken });
+  assert.equal(latest.writeToken, first.writeToken + 1);
+  await assert.rejects(
+    service.save("q", { state: editorB.state, expectedWriteToken: editorB.writeToken }),
+    (error: unknown) => {
+      if (!(error instanceof ConflictException)) return false;
+      const body = error.getResponse() as { code: string; error: string };
+      return body.code === "BUILDER_WRITE_CONFLICT" && body.error.includes("Your local edits are retained");
+    }
+  );
+  const reopened = await service.load("q");
+  assert.equal(reopened.writeToken, latest.writeToken);
+  assert.deepEqual(reopened.state, editorA.state);
+  assert.deepEqual(editorB.state, draft);
+  assert.deepEqual(quote, originalQuote);
+});
+
+test("saved labor inputs survive settings changes and unavailable labor is diagnosed with a current ID", async () => {
+  const { service, configuration } = setup();
+  configuration.laborClasses = [{ id: "a", name: "Technician", enabled: true, hourlyRate: "10" }];
+  const loaded = await service.load("q");
+  const state = loaded.state;
+  state.lines.push({ ...estimatingLine(), mode: "LABOR_ONLY" });
+  const saved = await service.save("q", { state, expectedWriteToken: loaded.writeToken });
+  const initial = await service.calculate("q", state, loaded.configurationId);
+  assert.equal(initial.calculation.labor.directCost, "40");
+
+  configuration.laborClasses[0].enabled = false;
+  for (const incorrectId of [loaded.configurationId, "incorrect-configuration"]) {
+    await assert.rejects(service.calculate("q", state, incorrectId), ConflictException);
+  }
+  for (const availability of ["disabled", "removed"]) {
+    if (availability === "removed") configuration.laborClasses = [];
+    const reopened = await service.load("q");
+    assert.notEqual(reopened.configurationId, loaded.configurationId);
+    assert.deepEqual(reopened.state, state);
+    assert.equal(reopened.writeToken, saved.writeToken);
+    const { calculation } = await service.calculate("q", reopened.state, reopened.configurationId);
+    assert.equal(calculation.status, "incomplete");
+    assert.equal(calculation.totals.finalPayableTotal, null);
+    assert.ok(calculation.diagnostics.some(issue => issue.code === "LABOR_CLASS_UNAVAILABLE" && issue.lineId === "line"));
+  }
+});
+
+test("reopening keeps copied prices and verifies Decimal rounding, explicit zero, and missing cost", async () => {
+  const { service, catalog } = setup();
+  const { state, writeToken } = await service.load("q");
+  state.lines.push({ ...estimatingLine(), itemId: "item" });
+  const saved = await service.save("q", { state, expectedWriteToken: writeToken });
+  Object.assign(catalog[0], { cost: "99", name: "Updated catalog label" });
+  const reopened = await service.load("q");
+  assert.deepEqual(reopened.state, state);
+  assert.deepEqual(reopened.unavailableItemIds, []);
+  assert.equal(reopened.writeToken, saved.writeToken);
+  assert.equal(reopened.calculation.totals.finalPayableTotal, "2.02");
+
+  const line = reopened.state.lines[0];
+  line.material.baseUnitCost = "0";
+  const explicitZero = await service.calculate("q", reopened.state, reopened.configurationId);
+  assert.equal(explicitZero.calculation.status, "complete");
+  assert.equal(explicitZero.calculation.totals.finalPayableTotal, "0");
+  line.material.baseUnitCost = null;
+  const missing = await service.calculate("q", reopened.state, reopened.configurationId);
+  assert.equal(missing.calculation.status, "incomplete");
+  assert.equal(missing.calculation.totals.finalPayableTotal, null);
+  assert.ok(missing.calculation.diagnostics.some(issue => issue.lineId === "line" && issue.path.endsWith("baseUnitCost")));
+  assert.deepEqual((await service.load("q")).state, state);
 });

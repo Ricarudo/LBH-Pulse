@@ -148,6 +148,8 @@ function AnimatedMetric({ kpi, reduced }: { kpi: AnalyticsKpi; reduced: boolean 
 }
 
 function qualityLabel(kpi: AnalyticsKpi) {
+  if (kpi.quality.availabilityReason === "restricted") return "Restricted";
+  if (kpi.quality.availabilityReason === "no_records") return "No eligible records";
   if (kpi.quality.status === "unavailable") return "Unavailable";
   if (kpi.quality.status === "partial") return "Partial coverage";
   if (kpi.quality.status === "estimated") return "Estimated history";
@@ -156,6 +158,7 @@ function qualityLabel(kpi: AnalyticsKpi) {
 }
 
 function DeltaContext({ kpi, allTime = false }: { kpi: AnalyticsKpi; allTime?: boolean }) {
+  if (kpi.quality.availabilityReason === "restricted") return <em className="is-neutral">Source access required</em>;
   if (allTime) return <em className="is-neutral">All recorded history</em>;
   if (kpi.scope === "asOf") return <em className="is-neutral">End-of-period snapshot</em>;
   if (kpi.value === null) return <em className="is-neutral">Calculation unavailable</em>;
@@ -207,7 +210,7 @@ function KpiCard({
       transition={{ duration: reduced ? 0.1 : 0.25, delay: reduced ? 0 : Math.min(index * 0.03, 0.18) }}
     >
       <span className="analytics-kpi-glow" aria-hidden="true" />
-      <button type="button" className="analytics-kpi-open" onClick={onSelect}>
+      <button type="button" className="analytics-kpi-open" disabled={kpi.quality.availabilityReason === "restricted"} onClick={onSelect}>
         <span className="analytics-kpi-heading"><span>{kpi.label}</span><Icon size={17} /></span>
         <strong><AnimatedMetric kpi={kpi} reduced={reduced} /></strong>
         <span className="analytics-kpi-context"><DeltaContext kpi={kpi} allTime={allTime} /></span>
@@ -531,7 +534,7 @@ function ChartCard({
         <BarChart3 size={19} aria-hidden="true" />
       </div>
       <ChartLegend chart={chart} />
-      {chart.points.length && hasValues ? (
+      {!chart.series.length ? null : chart.points.length && hasValues ? (
         chart.type === "donut" ? <DonutChart chart={chart} reduced={reduced} onSelect={onSelect} />
           : chart.type === "stackedBar" ? <StackedBarChart chart={chart} onSelect={onSelect} />
             : chart.orientation === "horizontal" ? <RankedChart chart={chart} onSelect={onSelect} />

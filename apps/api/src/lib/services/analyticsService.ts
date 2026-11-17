@@ -342,7 +342,29 @@ function matchesSentVersionFilters(record: SentVersionRecord, query: AnalyticsQu
   return true;
 }
 
+type AnalyticsSourceAccess = {
+  requests: boolean;
+  quotes: boolean;
+  projects: boolean;
+  invoices: boolean;
+};
+
+const restrictedMetricNote = "You do not have permission to view the source records for this metric.";
+const restrictedChartNote = "You do not have permission to view the source records for this chart.";
+
+function canReadMetric(access: AnalyticsSourceAccess, metric: string) {
+  if (metric === "quotes.turnaround") return access.quotes && access.requests;
+  if (metric === "projects.end_to_end") return access.projects && access.requests;
+  if (metric === "requests.source_converted") return access.requests && access.quotes;
+  if (metric.startsWith("requests.")) return access.requests;
+  if (metric.startsWith("quotes.")) return access.quotes;
+  if (metric.startsWith("projects.")) return access.projects;
+  if (metric.startsWith("invoices.")) return access.invoices;
+  return true;
+}
+
 type AnalyticsData = {
+  access: AnalyticsSourceAccess;
   range: AnalyticsRange;
   timeZone: string;
   today: string;
@@ -368,23 +390,29 @@ async function loadAnalyticsData(
   });
   const timeZone = workspace?.timeZone ?? "America/Puerto_Rico";
   const range = resolveAnalyticsRange(query, timeZone);
+  const access: AnalyticsSourceAccess = {
+    requests: canUser(user, "requests:read"),
+    quotes: canUser(user, "quotes:read"),
+    projects: canUser(user, "projects:read"),
+    invoices: canUser(user, "billing:read")
+  };
   const allowedEventTypes = [
-    canUser(user, "requests:read") ? LifecycleEntityType.REQUEST : null,
-    canUser(user, "quotes:read") ? LifecycleEntityType.QUOTE : null,
-    canUser(user, "projects:read") ? LifecycleEntityType.PROJECT : null,
-    canUser(user, "billing:read") ? LifecycleEntityType.INVOICE : null
+    access.requests ? LifecycleEntityType.REQUEST : null,
+    access.quotes ? LifecycleEntityType.QUOTE : null,
+    access.projects ? LifecycleEntityType.PROJECT : null,
+    access.invoices ? LifecycleEntityType.INVOICE : null
   ].filter((value): value is LifecycleEntityType => value !== null);
 
   const [requests, quotes, projects, invoices, events, clients] = await Promise.all([
-    canUser(user, "requests:read") ? prisma.request.findMany({
+    access.requests ? prisma.request.findMany({
       include: {
         trades: { select: { serviceCategory: true } },
         assignedTo: { select: { name: true } },
         client: { select: { id: true, displayName: true } },
-        relatedQuote: { select: { id: true, createdAt: true } }
+        relatedQuote: access.quotes && { select: { createdAt: true } }
       }
     }) : [],
-    canUser(user, "quotes:read") ? prisma.quote.findMany({
+    access.quotes ? prisma.quote.findMany({
       include: {
         client: { select: { id: true, displayName: true } },
         items: { select: { itemType: true, lineSubtotal: true, lineTax: true, quantity: true, unitCost: true } },
@@ -395,7 +423,7 @@ async function loadAnalyticsData(
         revisions: { orderBy: { revisionNumber: "asc" } }
       }
     }) : [],
-    canUser(user, "projects:read") ? prisma.project.findMany({
+    access.projects ? prisma.project.findMany({
       include: {
         client: { select: { id: true, displayName: true } },
         assignedTo: { select: { name: true } },
@@ -409,7 +437,7 @@ async function loadAnalyticsData(
         }
       }
     }) : [],
-    canUser(user, "billing:read") ? prisma.invoice.findMany({
+    access.invoices ? prisma.invoice.findMany({
       include: {
         client: { select: { id: true, displayName: true } },
         assignedTo: { select: { name: true } },
@@ -512,7 +540,7 @@ async function loadAnalyticsData(
       archivedAt: quote.archivedAt,
       dueDate: null,
       value: financialSummary.preTaxContractValue.toNumber(),
-      requestReceivedAt: request?.receivedDate,
+      requestReceivedAt: access.requests ? request?.receivedDate : undefined,
       quoteCreatedAt: quote.createdAt,
       revisionNumber: quote.revisionNumber,
       calculationMode: quote.calculationMode,
@@ -618,7 +646,7 @@ async function loadAnalyticsData(
       archivedAt: project.archivedAt,
       dueDate: project.dueDate,
       value: valueOf(project.budget),
-      requestReceivedAt: request?.receivedDate,
+      requestReceivedAt: access.requests ? request?.receivedDate : undefined,
       projectStartAt: project.startDate,
       href: `/projects/${encodeURIComponent(project.id)}`
     };
@@ -653,6 +681,7 @@ async function loadAnalyticsData(
   }).filter((record) => matchesFilters(record, query));
 
   return {
+    access,
     range,
     timeZone,
     today: analyticsLocalDate(new Date(), timeZone),
@@ -1024,7 +1053,18 @@ function calculation(
   return { formula, scopeLabel, components, includes, excludes };
 }
 
-function makeKpi(input: AnalyticsKpi) {
+function makeKpi(input: AnalyticsKpi, applicableCount?: number): AnalyticsKpi {
+  if (applicableCount === 0 && (input.quality.status === "exact" || input.quality.status === "unavailable")) {
+    return {
+      ...input,
+      quality: {
+        ...input.quality,
+        status: input.value === null ? "unavailable" : input.quality.status,
+        availabilityReason: "no_records",
+        note: input.quality.note ?? "No eligible records are available for this calculation in the selected period."
+      }
+    };
+  }
   if (input.value !== null || input.quality.status === "unavailable") return input;
   return {
     ...input,
@@ -1032,6 +1072,23 @@ function makeKpi(input: AnalyticsKpi) {
       ...input.quality,
       status: "unavailable" as const,
       note: input.quality.note ?? "No eligible records are available for this calculation in the selected period."
+    }
+  };
+}
+
+function restrictKpi(input: AnalyticsKpi): AnalyticsKpi {
+  return {
+    ...input,
+    value: null,
+    comparisonValue: null,
+    deltaPercent: null,
+    calculation: { ...input.calculation, components: [] },
+    quality: {
+      status: "unavailable",
+      availabilityReason: "restricted",
+      knownCount: 0,
+      eligibleCount: 0,
+      note: restrictedMetricNote
     }
   };
 }
@@ -1124,26 +1181,46 @@ function bucketPoints(
   }));
 }
 
-function activityChart(facts: PeriodFacts): AnalyticsChart {
+function activityChart(data: AnalyticsData, facts: PeriodFacts): AnalyticsChart {
   const stages = [
     { key: "requests", label: "New requests", value: facts.requests.length, metric: "requests.received" },
     { key: "quotes", label: "Quotes created", value: facts.quotesCreated.length, metric: "quotes.created" },
     { key: "approved", label: "Quotes approved", value: facts.approved.length, metric: "quotes.approved" },
     { key: "completed", label: "Projects completed", value: facts.completions.length, metric: "projects.completed" }
   ];
+  const readableStages = stages.filter((stage) => canReadMetric(data.access, stage.metric));
   return {
     id: "period-activity",
     title: "Period activity",
-    description: "Independent activity totals in the selected period — not a sequential conversion funnel.",
+    description: readableStages.length === stages.length
+      ? "Independent activity totals in the selected period — not a sequential conversion funnel."
+      : readableStages.length ? "Activity is shown for sources you have permission to view." : restrictedChartNote,
     type: "column",
     layout: "standard",
-    series: [series("count", "Records", "number", seriesColors.blue)],
-    points: stages.map((stage) => ({
+    series: readableStages.length ? [series("count", "Records", "number", seriesColors.blue)] : [],
+    points: readableStages.map((stage) => ({
       key: stage.key,
       label: stage.label,
       values: { count: stage.value },
       drilldowns: { count: { metric: stage.metric, label: stage.label } }
     }))
+  };
+}
+
+function readableChartSeries(chart: AnalyticsChart, restrictedKeys: string[]): AnalyticsChart {
+  if (!restrictedKeys.length) return chart;
+  const readable = chart.series.filter((entry) => !restrictedKeys.includes(entry.key));
+  return {
+    ...chart,
+    description: readable.length
+      ? `${chart.description} Some series require additional permissions.`
+      : restrictedChartNote,
+    series: readable,
+    points: readable.length ? chart.points.map((point) => ({
+      ...point,
+      values: Object.fromEntries(Object.entries(point.values).filter(([key]) => !restrictedKeys.includes(key))),
+      drilldowns: Object.fromEntries(Object.entries(point.drilldowns ?? {}).filter(([key]) => !restrictedKeys.includes(key)))
+    })) : []
   };
 }
 
@@ -1181,6 +1258,11 @@ function valueMovementChart(data: AnalyticsData, facts: PeriodFacts): AnalyticsC
     ],
     points
   };
+}
+
+function demandChartRestrictions(access: AnalyticsSourceAccess) {
+  if (!access.requests) return ["requests", "approvedValue"];
+  return access.quotes ? [] : ["approvedValue"];
 }
 
 function tradeDemandChart(
@@ -1499,8 +1581,6 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
     analyticsLocalDate(snapshot.dueDate, data.timeZone) < data.range.to
   );
 
-  const commonActivity = activityChart(facts);
-  const commonValue = valueMovementChart(data, facts);
   let kpis: AnalyticsKpi[] = [];
   let charts: AnalyticsChart[] = [];
 
@@ -1526,7 +1606,7 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
           ["Approved, rejected, expired, and cancelled quotes"]
         ),
         quality: pipelineQuality
-      }),
+      }, pipeline.length),
       makeKpi({
         id: "win-rate",
         label: "Quote win rate",
@@ -1550,7 +1630,7 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
           ["Cancelled decisions", "Decisions superseded by a revision by period end"]
         ),
         quality: winQuality
-      }),
+      }, facts.decisions.length),
       makeKpi({
         id: "active-project-value",
         label: "Active project budget",
@@ -1571,7 +1651,7 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
           ["Completed and cancelled projects"]
         ),
         quality: activeProjectQuality
-      }),
+      }, activeProjects.length),
       makeKpi({
         id: "on-time",
         label: "On-time completion",
@@ -1595,7 +1675,7 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
           ["Projects explicitly recorded without a due date"]
         ),
         quality: onTimeQuality
-      }),
+      }, onTimeEligible.length + onTimeUnknown.length),
       makeKpi({
         id: "invoiced",
         label: "Invoiced",
@@ -1618,7 +1698,7 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
           ["Draft invoices without an issue date", "Invoices void by period end"]
         ),
         quality: invoicedQuality
-      }),
+      }, facts.issued.length),
       makeKpi({
         id: "overdue-ar",
         label: "Overdue receivables",
@@ -1637,9 +1717,17 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
           ]
         ),
         quality: overdueQuality
-      })
+      }, overdue.length)
     ];
-    charts = [commonActivity, commonValue, tradeDemandChart(facts)];
+    charts = [
+      activityChart(data, facts),
+      readableChartSeries(valueMovementChart(data, facts), [
+        ...(!data.access.quotes ? ["approved"] : []),
+        ...(!data.access.projects ? ["completed"] : []),
+        ...(!data.access.invoices ? ["invoiced"] : [])
+      ]),
+      readableChartSeries(tradeDemandChart(facts), demandChartRestrictions(data.access))
+    ];
   }
 
   if (query.view === "sales") {
@@ -1853,7 +1941,10 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
         series: [series("value", "Approved value", "currency", seriesColors.green)],
         points: approvedValue
       },
-      sourceChart(data, facts),
+      readableChartSeries(sourceChart(data, facts), [
+        ...(!data.access.requests ? ["requests"] : []),
+        ...(!canReadMetric(data.access, "requests.source_converted") ? ["converted"] : [])
+      ]),
       {
         id: "client-revisions",
         title: "Client revision behavior",
@@ -1879,7 +1970,7 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
           .sort((a, b) => b.values.revisions - a.values.revisions)
           .slice(0, 8)
       },
-      tradeDemandChart(facts)
+      readableChartSeries(tradeDemandChart(facts), demandChartRestrictions(data.access))
     ];
   }
 
@@ -2252,7 +2343,11 @@ function viewPresentation(data: AnalyticsData, query: AnalyticsQuery | Analytics
     ];
   }
 
-  return { kpis, charts, facts };
+  return {
+    kpis: kpis.map((item) => canReadMetric(data.access, item.metric) ? item : restrictKpi(item)),
+    charts,
+    facts
+  };
 }
 
 function filterOptions(records: BaseRecord[], clients: Array<{ id: string; displayName: string }>) {
@@ -2624,6 +2719,15 @@ export async function getAnalyticsDetails(
   query: AnalyticsDetailsQuery
 ): Promise<AnalyticsDetailsResponse> {
   const data = await loadAnalyticsData(user, query);
+  if (!canReadMetric(data.access, query.metric)) {
+    return {
+      metric: query.metric,
+      label: "Restricted records",
+      total: 0,
+      summary: restrictedMetricNote,
+      rows: []
+    };
+  }
   const selection = detailSelection(data, query);
   const rows = selection.rows.sort((a, b) => {
     const result = compareDetailRows(a, b, query.sort);
