@@ -49,6 +49,7 @@ export const analyticsDetailsQuerySchema = z.object({
   owner: optionalFilter,
   clientId: optionalFilter,
   metric: z.string().trim().min(1).max(100).default("recent"),
+  kpiId: z.string().trim().min(1).max(100).optional(),
   segment: optionalFilter,
   bucketFrom: dateString.optional(),
   bucketTo: dateString.optional(),
@@ -58,6 +59,9 @@ export const analyticsDetailsQuerySchema = z.object({
   take: z.coerce.number().int().min(1).max(50).default(25)
 }).superRefine((value, context) => {
   validateRange(value, context);
+  if (value.kpiId && (value.segment || value.bucketFrom || value.bucketTo)) {
+    context.addIssue({ code: "custom", message: "A KPI drilldown cannot select a chart segment or bucket.", path: ["kpiId"] });
+  }
   if (Boolean(value.bucketFrom) !== Boolean(value.bucketTo)) {
     context.addIssue({
       code: "custom",
@@ -127,6 +131,7 @@ export type AnalyticsKpi = {
 
 export type AnalyticsDrilldown = {
   metric: string;
+  kpiId?: string;
   segment?: string;
   bucketFrom?: string;
   bucketTo?: string;
@@ -215,6 +220,7 @@ export type AnalyticsDetailsResponse = {
   summary: string;
   valueLabel?: string;
   calculation?: AnalyticsCalculation;
+  kpi?: Pick<AnalyticsKpi, "id" | "value" | "format" | "decimals" | "quality">;
   rows: AnalyticsDetailRow[];
   nextCursor?: string;
 };

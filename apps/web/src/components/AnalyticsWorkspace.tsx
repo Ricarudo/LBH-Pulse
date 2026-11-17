@@ -44,6 +44,7 @@ import type {
   AnalyticsDetailsResponse,
   AnalyticsDrilldown,
   AnalyticsKpi,
+  AnalyticsMetricQuality,
   AnalyticsPoint,
   AnalyticsResponse,
   AnalyticsValueFormat,
@@ -147,13 +148,13 @@ function AnimatedMetric({ kpi, reduced }: { kpi: AnalyticsKpi; reduced: boolean 
   return <span>{formatValue(display, kpi.format, kpi.decimals)}</span>;
 }
 
-function qualityLabel(kpi: AnalyticsKpi) {
-  if (kpi.quality.availabilityReason === "restricted") return "Restricted";
-  if (kpi.quality.availabilityReason === "no_records") return "No eligible records";
-  if (kpi.quality.status === "unavailable") return "Unavailable";
-  if (kpi.quality.status === "partial") return "Partial coverage";
-  if (kpi.quality.status === "estimated") return "Estimated history";
-  if (kpi.quality.status === "mixed") return "Mixed precision";
+function qualityLabel(quality: AnalyticsMetricQuality) {
+  if (quality.availabilityReason === "restricted") return "Restricted";
+  if (quality.availabilityReason === "no_records") return "No eligible records";
+  if (quality.status === "unavailable") return "Unavailable";
+  if (quality.status === "partial") return "Partial coverage";
+  if (quality.status === "estimated") return "Estimated history";
+  if (quality.status === "mixed") return "Mixed precision";
   return "Exact coverage";
 }
 
@@ -226,7 +227,7 @@ function KpiCard({
       >
         <Info size={14} />
       </button>
-      <span className={`analytics-quality-badge quality-${kpi.quality.status}`}>{qualityLabel(kpi)}</span>
+      <span className={`analytics-quality-badge quality-${kpi.quality.status}`}>{qualityLabel(kpi.quality)}</span>
       <div className="analytics-kpi-popover" id={popoverId} role="tooltip">
         <div className="analytics-kpi-popover-heading">
           <span><Info size={14} /> How this KPI is calculated</span>
@@ -246,7 +247,7 @@ function KpiCard({
         {kpi.calculation.excludes?.length ? <p><b>Excludes</b>{kpi.calculation.excludes.join(" · ")}</p> : null}
         <p className={`analytics-kpi-quality-note quality-${kpi.quality.status}`}>
           <Database size={13} />
-          <span><b>{qualityLabel(kpi)}</b>{kpi.quality.note ?? `${kpi.quality.knownCount} of ${kpi.quality.eligibleCount} eligible records are covered.`}</span>
+          <span><b>{qualityLabel(kpi.quality)}</b>{kpi.quality.note ?? `${kpi.quality.knownCount} of ${kpi.quality.eligibleCount} eligible records are covered.`}</span>
         </p>
       </div>
     </m.article>
@@ -641,13 +642,28 @@ function DetailPanel({
           <div><span className="analytics-eyebrow"><Database size={12} /> Calculation evidence</span><h2 id="analytics-detail-title">{details?.label ?? "Loading detail…"}</h2><p id="analytics-detail-summary">{details?.summary ?? "Loading the exact records behind this selection."}</p></div>
           <div><span className="analytics-live-indicator"><i /> On demand</span><button type="button" className="analytics-detail-close" onClick={onClose}><X size={16} /> Close</button></div>
         </div>
+        {details?.kpi && details.calculation ? (
+          <details className="analytics-detail-calculation">
+            <summary>Calculation · {formatValue(details.kpi.value, details.kpi.format, details.kpi.decimals)} · {qualityLabel(details.kpi.quality)}</summary>
+            <strong>{details.calculation.formula}</strong>
+            <small>{details.calculation.scopeLabel}</small>
+            <dl>
+              {details.calculation.components.map((component) => (
+                <div key={component.label}><dt>{component.label}</dt><dd>{formatValue(component.value, component.format, component.decimals, false)}</dd></div>
+              ))}
+            </dl>
+            {details.calculation.includes?.length ? <p>Includes {details.calculation.includes.join(" · ")}</p> : null}
+            {details.calculation.excludes?.length ? <p>Excludes {details.calculation.excludes.join(" · ")}</p> : null}
+            <p>{details.kpi.quality.note ?? `${details.kpi.quality.knownCount} of ${details.kpi.quality.eligibleCount} eligible records are covered.`}</p>
+          </details>
+        ) : null}
         <div className="analytics-detail-sort"><ListSortControl definition={{ label: "report records", defaultSort: "date", defaultDirection: "desc", sorts: ["reference", "client", "status", "owner", "date", "value"].map(key => ({ key, label: key[0].toUpperCase() + key.slice(1), date: key === "date", numeric: key === "value" || key === "reference", value: () => null })) }} sort={sort} direction={direction} onChange={(key, order) => onSort(key as SortKey, order)} /></div>
         <div className="analytics-table-frame">
           {loading ? <div className="analytics-table-shimmer" aria-label="Loading detail records" /> : null}
           <ListTable report>
             <thead><tr><th>{header("Record", "reference")}</th><th>{header("Client", "client")}</th><th>Trades</th><th>{header("Status", "status")}</th><th>{header("Owner", "owner")}</th><th>{header("Date", "date")}</th><th className="list-number-header">{header(details?.valueLabel ?? "Value", "value")}</th><th><span className="sr-only">Action</span></th></tr></thead>
             <AnimatePresence initial={false} mode="popLayout">
-              <tbody key={`${details?.metric}-${details?.segment}-${page}-${sort}-${direction}`}>
+              <tbody key={`${details?.kpi?.id ?? details?.metric}-${details?.segment}-${page}-${sort}-${direction}`}>
                 {rows.map((row, index) => <DetailRow key={row.id} row={row} index={index} reduced={reduced} />)}
               </tbody>
             </AnimatePresence>
@@ -788,6 +804,7 @@ export function AnalyticsWorkspace({
     setPage(nextPage);
     const detailParams = new URLSearchParams(params);
     detailParams.set("metric", drilldown.metric);
+    if (drilldown.kpiId) detailParams.set("kpiId", drilldown.kpiId);
     detailParams.set("take", "25");
     detailParams.set("sort", nextSort);
     detailParams.set("direction", nextDirection);
@@ -806,12 +823,14 @@ export function AnalyticsWorkspace({
   }, [direction, params, sort]);
 
   function selectDetail(drilldown: AnalyticsDrilldown) {
+    setDetails(null);
     detailReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     void loadDetails(drilldown, 0, sort, direction);
     window.requestAnimationFrame(() => document.querySelector(".analytics-detail-shell")?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" }));
   }
 
   function closeDetails() {
+    detailRequest.current += 1;
     const returnFocus = detailReturnFocus.current;
     detailReturnFocus.current = null;
     setSelected(null);
@@ -858,7 +877,7 @@ export function AnalyticsWorkspace({
         {data?.dataQuality.message ? <div className="analytics-quality"><Clock3 size={15} /><span>{data.dataQuality.message}</span><strong>{data.dataQuality.exactLifecycleEvents} exact · {data.dataQuality.estimatedLifecycleEvents} estimated</strong></div> : null}
 
         <section className="analytics-kpi-grid" aria-label={`${viewLabels[view]} key performance indicators`}>
-          {data?.kpis.map((item, index) => <KpiCard key={item.id} kpi={item} index={index} selected={selected?.metric === item.metric && !selected.segment && !selected.bucketFrom} reduced={reduced} popoverOpen={openKpi === item.id} allTime={preset === "all"} onTogglePopover={() => setOpenKpi((current) => current === item.id ? null : item.id)} onSelect={() => selectDetail({ metric: item.metric, label: item.label })} />)}
+          {data?.kpis.map((item, index) => <KpiCard key={item.id} kpi={item} index={index} selected={selected?.kpiId === item.id} reduced={reduced} popoverOpen={openKpi === item.id} allTime={preset === "all"} onTogglePopover={() => setOpenKpi((current) => current === item.id ? null : item.id)} onSelect={() => selectDetail({ metric: item.metric, kpiId: item.id })} />)}
         </section>
 
         <div className="analytics-chart-grid">

@@ -42,6 +42,15 @@ describe("analytics query contracts", () => {
     );
   });
 
+  it("accepts a bounded KPI ID only for a full-selection drilldown", () => {
+    const input = { view: "billing", metric: "invoices.overdue", kpiId: "overdue-count" };
+    assert.equal(analyticsDetailsQuerySchema.parse(input).kpiId, input.kpiId);
+    assert.equal(analyticsDetailsQuerySchema.safeParse({ ...input, kpiId: "" }).success, false);
+    assert.equal(analyticsDetailsQuerySchema.safeParse({ ...input, kpiId: "x".repeat(101) }).success, false);
+    assert.equal(analyticsDetailsQuerySchema.safeParse({ ...input, segment: "Other" }).success, false);
+    assert.equal(analyticsDetailsQuerySchema.safeParse({ ...input, bucketFrom: "2026-06-01", bucketTo: "2026-06-07" }).success, false);
+  });
+
   it("rejects partial and reversed chart buckets", () => {
     assert.equal(analyticsDetailsQuerySchema.safeParse({ bucketFrom: "2026-06-01" }).success, false);
     assert.equal(analyticsDetailsQuerySchema.safeParse({

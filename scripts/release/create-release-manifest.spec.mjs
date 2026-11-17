@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -21,13 +21,31 @@ const components = [
   "minioMc"
 ];
 
-test("generates a digest-pinned 0.1.2 manifest with an exact upgrade contract", () => {
+// Directory inventory from the immutable v0.1.2 source snapshot.
+const sourceMigrations = [
+  "202607210001_pulse_0_1_baseline",
+  "202607210002_enterprise_security",
+  "202607290001_record_number_sequences",
+  "202607300001_client_consolidation",
+  "202608030001_quote_due_date",
+  "202608030002_lifecycle_collaborators"
+];
+const targetMigrations = ["202608070001_project_quote_change_orders"];
+
+test("generates a digest-pinned 0.1.2 manifest with an exact upgrade contract", async (t) => {
   const temporaryRoot = mkdtempSync(resolve(tmpdir(), "pulse-release-manifest-"));
   const input = resolve(temporaryRoot, "digests");
   const output = resolve(temporaryRoot, "output");
   const bases = resolve(temporaryRoot, "build-bases.json");
   try {
     mkdirSync(input, { recursive: true });
+    const metadataDirectory = resolve(temporaryRoot, "docs/releases");
+    mkdirSync(metadataDirectory, { recursive: true });
+    copyFileSync(resolve(repositoryRoot, "docs/releases/0.1.2.json"), resolve(metadataDirectory, "0.1.2.json"));
+    const migrations = resolve(temporaryRoot, "apps/api/prisma/migrations");
+    for (const name of [...sourceMigrations, ...targetMigrations]) {
+      mkdirSync(resolve(migrations, name), { recursive: true });
+    }
     for (const [index, component] of components.entries()) {
       writeFileSync(
         resolve(input, `${component}.json`),
@@ -39,17 +57,18 @@ test("generates a digest-pinned 0.1.2 manifest with an exact upgrade contract", 
       `${JSON.stringify({ node: `node@sha256:${"a".repeat(64)}` })}\n`
     );
 
-    const result = spawnSync(process.execPath, [
-      "scripts/release/create-release-manifest.mjs",
+    const generate = () => spawnSync(process.execPath, [
+      resolve(repositoryRoot, "scripts/release/create-release-manifest.mjs"),
       "--version", "0.1.2",
       "--commit", "b".repeat(40),
       "--input", input,
       "--build-bases", bases,
       "--output", output
     ], {
-      cwd: repositoryRoot,
+      cwd: temporaryRoot,
       encoding: "utf8"
     });
+    const result = generate();
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 
     const manifest = JSON.parse(readFileSync(resolve(output, "release-manifest.json"), "utf8"));
@@ -57,19 +76,30 @@ test("generates a digest-pinned 0.1.2 manifest with an exact upgrade contract", 
     assert.equal(manifest.version, "0.1.2");
     assert.equal(manifest.tag, "v0.1.2");
     assert.equal(manifest.upgrade.minimumVersion, "0.1.1");
-    assert.deepEqual(manifest.upgrade.sourceMigrations, [
-      "202607210001_pulse_0_1_baseline",
-      "202607210002_enterprise_security",
-      "202607290001_record_number_sequences",
-      "202607300001_client_consolidation",
-      "202608030001_quote_due_date",
-      "202608030002_lifecycle_collaborators"
-    ]);
-    assert.deepEqual(manifest.upgrade.targetMigrations, [
-      "202608070001_project_quote_change_orders"
-    ]);
+    assert.deepEqual(manifest.upgrade.sourceMigrations, sourceMigrations);
+    assert.deepEqual(manifest.upgrade.targetMigrations, targetMigrations);
     assert.equal(manifest.upgrade.rollbackPolicy, "restore-required-after-migration");
     assert.deepEqual(Object.keys(manifest.images).sort(), [...components].sort());
+
+    function assertMigrationMismatch() {
+      const rejected = generate();
+      assert.equal(rejected.status, 1);
+      assert.match(rejected.stderr, /Release metadata migrations do not exactly match the Prisma migration directories/);
+    }
+
+    await t.test("rejects a missing declared migration", () => {
+      const migration = resolve(migrations, targetMigrations[0]);
+      rmSync(migration, { recursive: true });
+      try {
+        assertMigrationMismatch();
+      } finally {
+        mkdirSync(migration);
+      }
+    });
+    await t.test("rejects an undeclared newer migration", () => {
+      mkdirSync(resolve(migrations, "202610290001_quote_builder_workspace"));
+      assertMigrationMismatch();
+    });
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
   }

@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { LifecycleEntityType, type LifecycleEventPrecision } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import {
@@ -2719,10 +2720,29 @@ export async function getAnalyticsDetails(
   query: AnalyticsDetailsQuery
 ): Promise<AnalyticsDetailsResponse> {
   const data = await loadAnalyticsData(user, query);
-  if (!canReadMetric(data.access, query.metric)) {
+  const canRead = canReadMetric(data.access, query.metric);
+  const candidates = canRead || query.kpiId
+    ? viewPresentation(data, query).kpis.filter((item) => item.metric === query.metric)
+    : [];
+  const matchingKpi = query.kpiId
+    ? candidates.find((item) => item.id === query.kpiId)
+    : candidates.length === 1 ? candidates[0] : undefined;
+  if (query.kpiId && !matchingKpi) {
+    throw new BadRequestException("The KPI does not match this view and metric.");
+  }
+  const kpi = query.kpiId && matchingKpi ? {
+    id: matchingKpi.id,
+    value: matchingKpi.value,
+    format: matchingKpi.format,
+    decimals: matchingKpi.decimals,
+    quality: matchingKpi.quality
+  } : undefined;
+  const selectedLabel = query.kpiId ? matchingKpi?.label : undefined;
+  if (!canRead) {
     return {
       metric: query.metric,
-      label: "Restricted records",
+      label: selectedLabel ?? "Restricted records",
+      kpi,
       total: 0,
       summary: restrictedMetricNote,
       rows: []
@@ -2735,12 +2755,11 @@ export async function getAnalyticsDetails(
   });
   const offset = Math.max(0, Number(query.cursor) || 0);
   const page = rows.slice(offset, offset + query.take);
-  const presentation = viewPresentation(data, query);
-  const matchingKpi = presentation.kpis.find((item) => item.metric === query.metric);
   return {
     metric: query.metric,
     segment: query.segment,
-    label: selection.label,
+    label: selectedLabel ?? selection.label,
+    kpi,
     total: rows.length,
     summary: `${rows.length} ${rows.length === 1 ? "record" : "records"} match this selection`,
     valueLabel: selection.valueLabel,

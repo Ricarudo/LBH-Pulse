@@ -187,3 +187,103 @@ test("multiple missing sources do not expose restricted evidence through alterna
     assert.match(details.summary, /permission/);
   }
 });
+
+test("billing KPIs sharing overdue evidence retain their own calculation and unit", async () => {
+  const { getAnalytics, getAnalyticsDetails } = await analytics;
+  const query = { ...range, view: "billing", clientId: client.id };
+  const summary = await getAnalytics(fullAccess, analyticsQuerySchema.parse(query));
+  const amount = kpi(summary, "billing-overdue-ar");
+  const count = kpi(summary, "overdue-count");
+  assert.equal(amount.metric, count.metric);
+
+  const open = (id: string) => getAnalyticsDetails(fullAccess, analyticsDetailsQuerySchema.parse({
+    ...query, metric: amount.metric, kpiId: id, sort: "value", direction: "asc"
+  }));
+  const amountDetails = await open(amount.id);
+  const countDetails = await open(count.id);
+  for (const [item, details] of [[amount, amountDetails], [count, countDetails]] as const) {
+    assert.equal(details.label, item.label);
+    assert.equal(details.kpi?.id, item.id);
+    assert.deepEqual(details.calculation, item.calculation);
+    assert.deepEqual(details.kpi?.quality, item.quality);
+    assert.equal(details.rows[0].reference, invoice.invoiceNumber);
+  }
+  assert.deepEqual(amountDetails.rows, countDetails.rows);
+  assert.equal(amountDetails.kpi?.value, 375);
+  assert.equal(amountDetails.kpi?.format, "currency");
+  assert.equal(countDetails.kpi?.value, 1);
+  assert.equal(countDetails.kpi?.format, "number");
+  assert.notEqual(amountDetails.calculation?.formula, countDetails.calculation?.formula);
+
+  const filtered = await getAnalyticsDetails(fullAccess, analyticsDetailsQuerySchema.parse({
+    ...query, metric: amount.metric, kpiId: count.id, clientId: "another-client"
+  }));
+  assert.equal(filtered.kpi?.value, 0);
+  assert.equal(filtered.calculation?.components[0].value, 0);
+  assert.deepEqual(filtered.rows, []);
+});
+
+test("legacy metric requests preserve evidence and return a formula only when unambiguous", async () => {
+  const { getAnalyticsDetails } = await analytics;
+  const ambiguous = await getAnalyticsDetails(fullAccess, analyticsDetailsQuerySchema.parse({
+    ...range, view: "billing", metric: "invoices.overdue"
+  }));
+  assert.equal(ambiguous.total, 1);
+  assert.equal(ambiguous.calculation, undefined);
+  assert.equal(ambiguous.kpi, undefined);
+
+  const unique = await getAnalyticsDetails(fullAccess, analyticsDetailsQuerySchema.parse({
+    ...range, view: "overview", metric: "invoices.overdue"
+  }));
+  assert.deepEqual(unique.rows, ambiguous.rows);
+  assert.ok(unique.calculation);
+  assert.equal(unique.kpi, undefined);
+});
+
+test("KPI identity cannot bypass permission checks or select another metric's evidence", async () => {
+  const { getAnalyticsDetails } = await analytics;
+  const query = { ...range, view: "billing", metric: "invoices.overdue", kpiId: "overdue-count" };
+  const restricted = await getAnalyticsDetails(reader("projects:read"), analyticsDetailsQuerySchema.parse(query));
+  assert.equal(restricted.kpi?.quality.availabilityReason, "restricted");
+  assert.equal(restricted.kpi?.value, null);
+  assert.equal(restricted.kpi?.quality.exactCount, undefined);
+  assert.equal(restricted.calculation, undefined);
+  assert.equal(restricted.total, 0);
+  assert.deepEqual(restricted.rows, []);
+  for (const selection of [
+    { ...query, view: "overview" },
+    { ...query, metric: "invoices.paid" },
+    { ...query, kpiId: "unknown" }
+  ]) {
+    await assert.rejects(getAnalyticsDetails(fullAccess, analyticsDetailsQuerySchema.parse(selection)), /does not match/);
+  }
+});
+
+test("paid amount and time to pay report different availability for the same evidence", async (t) => {
+  const { getAnalyticsDetails } = await analytics;
+  t.mock.method(database.invoice, "findMany", async () => [{ ...invoice, status: "Paid" }]);
+  t.mock.method(database.lifecycleStatusEvent, "findMany", async () => [
+    invoiceIssued,
+    {
+      ...invoiceIssued,
+      id: "invoice-paid-event",
+      changedAt: new Date("2026-11-19T12:00:00Z"),
+      fromStatus: "Sent",
+      toStatus: "Paid"
+    }
+  ]);
+  const open = (kpiId: string) => getAnalyticsDetails(fullAccess, analyticsDetailsQuerySchema.parse({
+    ...range, view: "billing", metric: "invoices.paid", kpiId
+  }));
+  const amount = await open("marked-paid");
+  const duration = await open("days-to-pay");
+  assert.equal(amount.kpi?.value, 375);
+  assert.equal(amount.kpi?.quality.status, "exact");
+  assert.equal(duration.kpi?.value, null);
+  assert.equal(duration.kpi?.format, "duration");
+  assert.equal(duration.kpi?.quality.status, "unavailable");
+  assert.match(duration.kpi?.quality.note ?? "", /lack a captured issue date/);
+  assert.deepEqual(duration.rows, amount.rows);
+  assert.equal(duration.rows[0].precision, "EXACT");
+  assert.equal(duration.calculation?.components[1].label, "Average days");
+});
