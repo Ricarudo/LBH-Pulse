@@ -7,7 +7,7 @@
 .filterButton { flex:0 0 44px; width:44px; }
 .sort:hover,.filterButton:hover { background:var(--pulse-surface-soft); }
 .sort[aria-expanded="true"],.filterButton[aria-expanded="true"],.active { border-color:var(--pulse-blue); background:var(--pulse-blue-soft); color:var(--pulse-blue); }
-.badge { position:absolute; top:1px; right:1px; min-width:15px; height:15px; line-height:15px; border-radius:8px; font-size:10px; background:var(--pulse-blue); color:white; }
+.badge { position:absolute; top:1px; right:1px; min-width:15px; height:15px; line-height:15px; border-radius:8px; font-size:10px; background:var(--pulse-action); color:var(--pulse-on-action); }
 .count { margin-left:auto; font-size:12px; color:var(--pulse-muted); }
 /* Native dialogs enter the top layer, above route transforms and other overlays. */
 .popup { position:fixed; inset:auto; top:var(--popup-top,16px); left:var(--popup-left,16px); display:none; flex-direction:column; margin:0; padding:0; width:var(--popup-width,min(480px,calc(100vw - 32px))); max-width:calc(100vw - 32px); max-height:var(--popup-max-height,calc(100dvh - 32px)); border:1px solid var(--pulse-line); border-radius:14px; background:var(--pulse-surface); color:var(--pulse-text); box-shadow:0 12px 48px rgb(0 0 0 / .2); overflow:hidden; font-size:14px; }
@@ -21,8 +21,21 @@
 .popup button,.feedback button { min-height:44px; min-width:44px; border:1px solid var(--pulse-line); border-radius:8px; padding:8px 12px; background:var(--pulse-surface); color:var(--pulse-text); font:inherit; cursor:pointer; }
 .popup button:hover,.feedback button:hover { background:var(--pulse-surface-soft); }
 .popup header button { display:grid; place-items:center; padding:0; border-color:transparent; }
-.popup .apply { background:var(--pulse-blue); color:white; border-color:var(--pulse-blue); min-width:80px; }
-.popup .apply:hover { filter:brightness(.95); }
+.popup .apply {
+  min-width: 80px;
+  border-color: var(--pulse-action);
+  background: var(--pulse-action);
+  color: var(--pulse-on-action);
+}
+.popup .apply:hover:not(:disabled) {
+  border-color: var(--pulse-action-hover);
+  background: var(--pulse-action-hover);
+}
+.popup .apply:disabled {
+  border-color: var(--pulse-line-strong);
+  background: var(--pulse-line-strong);
+  color: var(--pulse-muted);
+}
 .popup button:disabled { opacity:.5; cursor:not-allowed; }
 .body { min-height:0; overflow:auto; padding:16px; overscroll-behavior:contain; }
 .field { min-width:0; border:0; padding:0; margin:0; }

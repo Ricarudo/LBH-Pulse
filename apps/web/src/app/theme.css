@@ -1,0 +1,140 @@
+:root {
+  --pulse-bg: #f7f9fd;
+  --pulse-bg-gradient:
+    linear-gradient(135deg, rgba(21, 82, 255, 0.075) 0%, rgba(247, 249, 253, 0) 34%),
+    linear-gradient(180deg, #fbfdff 0%, #f4f7fc 48%, #eef4fb 100%);
+  --pulse-surface: #ffffff;
+  --pulse-surface-soft: #f4f7fc;
+  --pulse-line: #dfe7f2;
+  --pulse-line-strong: #cdd8e7;
+  --pulse-text: #101828;
+  --pulse-muted: #5f6f87;
+  --pulse-muted-strong: #42516d;
+  --pulse-blue: #1552ff;
+  --pulse-blue-hover: #0d43db;
+  --pulse-blue-soft: #e8efff;
+  --pulse-purple: #6b2fe8;
+  --pulse-purple-soft: #f0e8ff;
+  --pulse-green: #0b7546;
+  --pulse-green-soft: #e4f7ed;
+  --pulse-orange: #ff7a00;
+  --pulse-orange-soft: #fff0e5;
+  --pulse-cyan: #04aeea;
+  --pulse-cyan-soft: #e4f7fd;
+  --pulse-amber: #8a5a00;
+  --pulse-amber-soft: #fff5df;
+  --pulse-danger: #b4232f;
+  --pulse-danger-soft: #ffe8ec;
+  --pulse-shell-bg: #08111f;
+  --pulse-shell-bg-soft: #111d30;
+  --pulse-shell-line: rgba(255, 255, 255, 0.11);
+  --pulse-shell-text: #e8eef8;
+  --pulse-shell-muted: #91a0b8;
+  --pulse-sidebar-text: #c9d4e5;
+  --pulse-sidebar-bg: #0b1424;
+  --pulse-auth-card: rgba(255, 255, 255, 0.96);
+  --pulse-nav-active-bg: rgba(75, 126, 255, 0.18);
+  --pulse-row-hover: #f4f7ff;
+  --pulse-muted-surface: #fbfcff;
+  --pulse-input-icon: #5d6b83;
+  --pulse-button-text: #2b3852;
+  --pulse-icon-muted: #42516d;
+  --pulse-shadow: 0 18px 48px rgba(21, 39, 71, 0.08);
+  --pulse-shadow-soft: 0 8px 24px rgba(21, 39, 71, 0.06);
+  --pulse-radius: 14px;
+
+  /* The pulse-blue family follows the selected accent. Keep filled actions paired with their text. */
+  --pulse-action: var(--pulse-blue);
+  --pulse-action-hover: var(--pulse-blue-hover);
+  --pulse-on-action: #ffffff;
+  --pulse-danger-hover: color-mix(in srgb, var(--pulse-danger) 86%, var(--pulse-text));
+  --pulse-on-danger: #ffffff;
+  --pulse-warning-hover: color-mix(in srgb, var(--pulse-amber) 86%, var(--pulse-text));
+  --pulse-on-warning: #ffffff;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --pulse-bg: #0b1220;
+  --pulse-bg-gradient:
+    linear-gradient(135deg, rgba(122, 162, 255, 0.14) 0%, rgba(11, 18, 32, 0) 36%),
+    linear-gradient(180deg, #0a1020 0%, #0d1627 52%, #101827 100%);
+  --pulse-surface: #111827;
+  --pulse-surface-soft: #172033;
+  --pulse-line: #263449;
+  --pulse-line-strong: #3a4a63;
+  --pulse-text: #eef4ff;
+  --pulse-muted: #9aa8bd;
+  --pulse-muted-strong: #c9d4e5;
+  --pulse-blue: #7aa2ff;
+  --pulse-blue-hover: #9ab8ff;
+  --pulse-blue-soft: #162a56;
+  --pulse-purple: #b49cff;
+  --pulse-purple-soft: #2a2148;
+  --pulse-green: #55d891;
+  --pulse-green-soft: #123b2d;
+  --pulse-orange: #ffb061;
+  --pulse-orange-soft: #412817;
+  --pulse-cyan: #55d7ff;
+  --pulse-cyan-soft: #10384a;
+  --pulse-amber: #ffd166;
+  --pulse-amber-soft: #3d3014;
+  --pulse-danger: #ff7d86;
+  --pulse-danger-soft: #452029;
+  --pulse-shell-bg: #050b14;
+  --pulse-shell-bg-soft: #0c1728;
+  --pulse-shell-line: rgba(255, 255, 255, 0.12);
+  --pulse-shell-text: #eef4ff;
+  --pulse-shell-muted: #9aa8bd;
+  --pulse-sidebar-text: #cfdaea;
+  --pulse-sidebar-bg: #07101d;
+  --pulse-auth-card: rgba(17, 24, 39, 0.96);
+  --pulse-nav-active-bg: rgba(122, 162, 255, 0.2);
+  --pulse-row-hover: #16243a;
+  --pulse-muted-surface: #141f31;
+  --pulse-input-icon: #9aa8bd;
+  --pulse-button-text: #d8e3f4;
+  --pulse-icon-muted: #b8c4d6;
+  --pulse-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
+  --pulse-shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.24);
+  --pulse-on-action: var(--pulse-bg);
+  --pulse-on-danger: var(--pulse-bg);
+  --pulse-on-warning: var(--pulse-bg);
+  color-scheme: dark;
+}
+
+[data-accent="violet"] {
+  --pulse-blue: #7048e8;
+  --pulse-blue-hover: #5f3dc4;
+  --pulse-blue-soft: #eee9ff;
+}
+
+[data-theme="dark"][data-accent="violet"] {
+  --pulse-blue: #b197fc;
+  --pulse-blue-hover: #c4b5fd;
+  --pulse-blue-soft: #30245c;
+}
+
+[data-accent="teal"] {
+  --pulse-blue: #087f5b;
+  --pulse-blue-hover: #066649;
+  --pulse-blue-soft: #e1f5ee;
+}
+
+[data-theme="dark"][data-accent="teal"] {
+  --pulse-blue: #63e6be;
+  --pulse-blue-hover: #96f2d7;
+  --pulse-blue-soft: #123d34;
+}
+
+[data-accent="orange"] {
+  --pulse-blue: #c2410c;
+  --pulse-blue-hover: #9a3412;
+  --pulse-blue-soft: #fff0e8;
+}
+
+[data-theme="dark"][data-accent="orange"] {
+  --pulse-blue: #ff9b66;
+  --pulse-blue-hover: #ffb38a;
+  --pulse-blue-soft: #4a2819;
+}
